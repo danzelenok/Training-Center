@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "inngest:dev": "npx inngest-cli@latest dev -u http://localhost:3000/api/inngest",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"
@@ -20,6 +21,7 @@
     "date-fns": "^4.3.0",
     "drizzle-orm": "^0.45.2",
     "embla-carousel-react": "^8.6.0",
+    "embla-carousel-wheel-gestures": "^8.1.0",
     "grammy": "^1.43.0",
     "imagekit": "^6.0.0",
     "inngest": "^4.5.0",

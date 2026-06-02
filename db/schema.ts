@@ -8,7 +8,7 @@ export const courses = pgTable("courses", {
   status: text("status").$type<"draft" | "published">().default("draft").notNull(),
   telegramMessageId: bigint("telegram_message_id", { mode: "bigint" }),
   telegramGroupId: bigint("telegram_group_id", { mode: "bigint" }),
-  generationStatus: text("generation_status").$type<"none" | "pending" | "ready" | "failed">().default("none").notNull(),
+  generationStatus: text("generation_status").$type<"none" | "pending" | "generating" | "ready" | "failed">().default("none").notNull(),
   themeType: text("theme_type").default("preset").notNull(),
   themeValue: text("theme_value").default("linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -25,7 +25,7 @@ export const slides = pgTable("slides", {
   type: text("type").$type<"text" | "image" | "video" | "audio" | "quiz" | "dialogue" | "chat" | "poll">().notNull(),
   content: jsonb("content").notNull(),
   language: text("language").default("en").notNull(),
-  assetStatus: text("asset_status").$type<"pending" | "ready" | "failed">().default("ready").notNull(),
+  assetStatus: text("asset_status").$type<"pending" | "generating" | "ready" | "failed">().default("ready").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

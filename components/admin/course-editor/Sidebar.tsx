@@ -48,7 +48,7 @@ export default function Sidebar({
     { type: "audio", label: "Audio", icon: Music, desc: "Voiceover playback" },
     { type: "chat", label: "Chat", icon: MessageSquare, desc: "WhatsApp simulation" },
     { type: "dialogue", label: "Roleplay", icon: Users, desc: "Foreman vs Worker tree" },
-    { type: "poll", label: "Poll / Rate", icon: BarChart3, desc: "Feedback rating scale" },
+    { type: "poll", label: "Rate", icon: BarChart3, desc: "Feedback rating scale" },
   ] as const;
 
   return (

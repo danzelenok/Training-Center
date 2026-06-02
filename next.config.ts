@@ -8,4 +8,6 @@ const nextConfig: NextConfig = {
   },
 };
 
+// Force dev server restart to reload middleware
 export default nextConfig;
+

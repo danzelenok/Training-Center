@@ -43,14 +43,6 @@ export const SlideInputSchema = z.discriminatedUnion("type", [
     }),
   }),
   z.object({
-    type: z.literal("image"),
-    content: z.object({
-      heading: z.string().min(1),
-      body: z.string().min(1),
-      visualKeywords: z.string().min(1),
-    }),
-  }),
-  z.object({
     type: z.literal("audio"),
     content: z.object({
       heading: z.string().min(1),
@@ -87,17 +79,12 @@ const systemInstruction = `You are an expert safety training content creator.
 Generate a structured, cohesive, and educational slide deck for a safety training course based on the topic prompt.
 The course must cover essential safety concepts, scaffolded logically, and end with a relevant evaluation quiz to test knowledge.
 
-CRITICAL DESIGN REQUIREMENT: The course slides are designed for a 9:16 vertical mobile presentation screen layout. 
+CRITICAL DESIGN REQUIREMENT: The course slides are designed for a 9:16 vertical mobile presentation screen layout.
 Therefore, you MUST strictly adhere to the following length constraints to ensure all content fits beautifully without scrolling, scrollbars, or text clipping:
 
 - Text Slide:
   * "heading": Extremely concise, maximum 4-6 words (no more than 30 characters). Auto-wrapping is supported but must not exceed 2 lines.
   * "body": Punchy, bite-sized instructions. Maximum 2-3 short sentences (no more than 150-180 characters total). Avoid large blocks of paragraphs!
-
-- Image Slide:
-  * "heading": Maximum 4-5 words (no more than 25 characters).
-  * "body" (caption): Maximum 1-2 short sentences (no more than 100 characters).
-  * "visualKeywords": Detailed descriptive keywords for image generation (e.g. 'construction worker wearing harness correctly on high scaffold, clear day').
 
 - Audio Slide:
   * "heading": Maximum 4-5 words (no more than 25 characters).
@@ -126,17 +113,7 @@ Each slide in the array must be an object matching one of the following schemas:
      }
    }
 
-2. Image Slide:
-   {
-     "type": "image",
-     "content": {
-       "heading": "Visual Concept Title",
-       "body": "Explanation or visual caption describing the risk/procedure",
-       "visualKeywords": "Detailed descriptive keywords for image search"
-     }
-   }
-
-3. Audio Slide:
+2. Audio Slide:
    {
      "type": "audio",
      "content": {
@@ -146,7 +123,7 @@ Each slide in the array must be an object matching one of the following schemas:
      }
    }
 
-4. Dialogue Slide (Conversational roleplay):
+3. Dialogue Slide (Conversational roleplay):
    {
      "type": "dialogue",
      "content": {
@@ -158,18 +135,18 @@ Each slide in the array must be an object matching one of the following schemas:
      }
    }
 
-5. Quiz Slide:
+4. Quiz Slide:
    {
      "type": "quiz",
      "content": {
        "heading": "Evacuation/Safety Question?",
        "options": ["First potential answer", "Second potential answer", "Third potential answer"],
-       "correctIndex": 0, // 0-indexed index of correct answer in the options array
+       "correctIndex": 0,
        "explanation": "Why this answer is the correct safety procedure"
      }
    }
 
-Make sure to include a good mix of slide types (e.g. a text slide, a dialogue roleplay, a visual image slide, an audio explanation, and finally 1 or 2 quiz slides) to maximize worker engagement. All text must be in English.`;
+Make sure to include a good mix of slide types (e.g. text slides, a dialogue roleplay, an audio explanation, and finally 1 or 2 quiz slides) to maximize worker engagement. All text must be in English.`;
 
 export async function generateCourseStructure(prompt: string, modelName: string = "gemini-2.5-pro"): Promise<SlideInput[]> {
   const apiKey = process.env.GEMINI_API_KEY;

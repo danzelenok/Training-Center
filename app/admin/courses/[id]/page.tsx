@@ -13,8 +13,6 @@ import {
   Upload,
   Image as ImageIcon,
   Sparkles,
-  Save,
-  Send,
 } from "lucide-react";
 import { toast, Toaster } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -58,7 +56,7 @@ interface Course {
   telegramMessageId: string | null;
   telegramGroupId: string | null;
   slides: Slide[];
-  generationStatus?: "none" | "pending" | "ready" | "failed";
+  generationStatus?: "none" | "pending" | "generating" | "ready" | "failed";
   themeType?: string;
   themeValue?: string;
 }
@@ -75,6 +73,7 @@ export default function CourseEditorPage() {
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "error" | null>("saved");
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isInitialLoad = useRef(true);
+  const prevPollStatusesRef = useRef<Record<string, string>>({});
 
   const triggerAutoSave = useCallback(() => {
     if (loading || !course) return;
@@ -104,6 +103,18 @@ export default function CourseEditorPage() {
           throw new Error(errorText || "Failed to save changes");
         }
 
+        const data = await res.json();
+        if (Array.isArray(data.slides)) {
+          const serverIds = data.slides.map((s: Slide) => s.id).filter(Boolean);
+          const hasIdChanges = slidesList.some((slide, idx) => serverIds[idx] && slide.id !== serverIds[idx]);
+          if (hasIdChanges) {
+            isInitialLoad.current = true;
+            setSlidesList(prev => prev.map((slide, idx) => ({
+              ...slide,
+              id: serverIds[idx] || slide.id,
+            })));
+          }
+        }
         setSaveStatus("saved");
       } catch (err: any) {
         console.error("Auto-save error:", err);
@@ -143,7 +154,6 @@ export default function CourseEditorPage() {
   const [activeSlideIndex, setActiveSlideIndex] = useState<number | null>(null);
 
   // States for interactive processes
-  const [saving, setSaving] = useState(false);
   const [importing, setImporting] = useState(false);
   const [publishing, setPublishing] = useState(false);
 
@@ -152,6 +162,11 @@ export default function CourseEditorPage() {
   const [mediaFiles, setMediaFiles] = useState<MediaLibraryFile[]>([]);
   const [mediaLoading, setMediaLoading] = useState(false);
   const [slideUploading, setSlideUploading] = useState(false);
+  const [activeTab, setActiveTab] = useState<"library" | "upload" | "pexels">("library");
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [pexelsQuery, setPexelsQuery] = useState("");
+  const [pexelsResults, setPexelsResults] = useState<{ id: number; url: string; thumbnail: string; photographer: string }[]>([]);
+  const [pexelsLoading, setPexelsLoading] = useState(false);
 
   // Course styling states
   const [styleDialogOpen, setStyleDialogOpen] = useState(false);
@@ -179,7 +194,11 @@ export default function CourseEditorPage() {
       if (!res.ok) throw new Error("Course not found");
       const data = await res.json();
       setCourse(data);
-      setSlidesList(data.slides || []);
+      const loadedSlides = (data.slides || []).map((s: Slide) => ({
+        ...s,
+        id: s.id || crypto.randomUUID()
+      }));
+      setSlidesList(loadedSlides);
       if (data.slides && data.slides.length > 0) {
         setActiveSlideIndex(0);
       }
@@ -194,6 +213,70 @@ export default function CourseEditorPage() {
   useEffect(() => {
     fetchCourse();
   }, [id]);
+
+  // Poll only while Inngest is actively processing slides
+  const anySlideGenerating = slidesList.some(
+    (s) => s.assetStatus === "generating"
+  );
+
+  useEffect(() => {
+    const shouldPoll = course?.generationStatus === "generating" || anySlideGenerating;
+    if (!shouldPoll) return;
+
+    const intervalId = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/courses/${id}/generation-status`);
+        if (res.ok) {
+          const data = await res.json();
+
+          // Detect status transitions from server response (before state update)
+          (data.slides || []).forEach((serverSlide: any) => {
+            const prev = prevPollStatusesRef.current[serverSlide.id];
+            if (prev === "generating" && serverSlide.assetStatus === "failed") {
+              const label = serverSlide.type.charAt(0).toUpperCase() + serverSlide.type.slice(1);
+              toast.error(`${label} generation failed.`);
+            }
+            prevPollStatusesRef.current[serverSlide.id] = serverSlide.assetStatus;
+          });
+
+          // Prevent this update from triggering auto-save
+          isInitialLoad.current = true;
+          setSlidesList((prevSlides) =>
+            prevSlides.map((slide, idx) => {
+              // Match by ID first; fall back to position if IDs are stale after re-save
+              const match =
+                data.slides?.find((s: any) => s.id === slide.id) ??
+                data.slides?.[idx];
+              if (match) {
+                return { ...slide, id: match.id, content: match.content, assetStatus: match.assetStatus };
+              }
+              return slide;
+            })
+          );
+
+          const mediaSlides = (data.slides || []).filter((s: any) => s.type === "audio" || s.type === "image" || s.type === "dialogue" || s.type === "video");
+          const allDone =
+            mediaSlides.length === 0 ||
+            mediaSlides.every((s: any) => s.assetStatus === "ready" || s.assetStatus === "failed");
+
+          if (allDone) {
+            setCourse((prev) => prev ? { ...prev, generationStatus: "ready" } : null);
+            fetch(`/api/courses/${id}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ generationStatus: "ready" }),
+            }).catch(() => {});
+          } else {
+            setCourse((prev) => prev ? { ...prev, generationStatus: data.generationStatus } : null);
+          }
+        }
+      } catch (err) {
+        console.error("Error polling generation status:", err);
+      }
+    }, 2000);
+
+    return () => clearInterval(intervalId);
+  }, [course?.generationStatus, anySlideGenerating, id]);
 
   const fetchMediaFiles = useCallback(async () => {
     setMediaLoading(true);
@@ -210,8 +293,73 @@ export default function CourseEditorPage() {
   }, []);
 
   const openMediaPicker = () => {
+    setActiveTab("library");
     setMediaPickerOpen(true);
     fetchMediaFiles();
+  };
+
+  // Upload and auto-apply file logic for the Media Library Sheet
+  const handleUploadFile = async (file: File) => {
+    setMediaLoading(true);
+    const toastId = toast.loading(`Uploading ${file.name} to library…`);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/media/upload", { method: "POST", body: formData });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || data.message || "Upload failed");
+      
+      // Refresh the media library list
+      await fetchMediaFiles();
+      
+      // Auto-select/apply the uploaded file
+      const uploadedFile: MediaLibraryFile = {
+        fileId: data.fileId,
+        name: file.name,
+        url: data.url,
+        fileType: file.type,
+      };
+      handleSelectFromLibrary(uploadedFile);
+      toast.success(`${file.name} uploaded and applied!`, { id: toastId });
+    } catch (err: any) {
+      toast.error(err.message || "Upload failed", { id: toastId });
+    } finally {
+      setMediaLoading(false);
+    }
+  };
+
+  const searchPexels = async (query: string) => {
+    if (!query.trim()) return;
+    setPexelsLoading(true);
+    try {
+      const res = await fetch(`/api/pexels?query=${encodeURIComponent(query)}`);
+      if (!res.ok) throw new Error("Pexels search failed");
+      const data = await res.json();
+      setPexelsResults(data);
+    } catch {
+      toast.error("Failed to search Pexels");
+    } finally {
+      setPexelsLoading(false);
+    }
+  };
+
+  const handleSelectPexelsPhoto = (photo: { id: number; url: string; thumbnail: string }) => {
+    if (themeImagePending) {
+      updateCourseStyle("image", photo.url);
+      setThemeImagePending(false);
+      setMediaPickerOpen(false);
+      setStyleDialogOpen(true);
+      toast.success("Course theme background set!");
+      return;
+    }
+    if (activeSlideIndex === null) return;
+    updateActiveSlideContent(activeSlideIndex, {
+      url: photo.url,
+      imageUrl: photo.url,
+      imageKitFileId: undefined,
+    });
+    setMediaPickerOpen(false);
+    toast.success("Pexels photo applied!");
   };
 
   const handleSelectFromLibrary = (file: MediaLibraryFile) => {
@@ -267,7 +415,6 @@ export default function CourseEditorPage() {
 
   // Add slide manually
   const addSlide = (type: Slide["type"]) => {
-    const nextOrder = slidesList.length + 1;
     let newContent = {};
 
     if (type === "text") {
@@ -296,27 +443,26 @@ export default function CourseEditorPage() {
       };
     } else if (type === "poll") {
       newContent = {
-        heading: "How helpful was today's training module?",
-        pollType: "stars",
-        options: ["Strongly Agree", "Agree", "Disagree"]
+        heading: "",
       };
     } else {
       newContent = {
-        heading: "Quiz Question?",
-        options: ["Correct Option", "Incorrect Option B", "Incorrect Option C", "Incorrect Option D"],
+        heading: "",
+        options: ["", ""],
         correctIndex: 0,
-        correctAnswer: "Correct Option",
-        explanation: "Why this is correct..."
+        correctAnswer: "",
+        explanation: ""
       };
     }
 
     const insertIdx = activeSlideIndex !== null ? activeSlideIndex + 1 : slidesList.length;
 
     const newSlide: Slide = {
+      id: crypto.randomUUID(),
       type,
       content: newContent,
       order: insertIdx + 1,
-      assetStatus: (type === "image" || type === "audio" || type === "dialogue" || type === "chat") ? "pending" : "ready"
+      assetStatus: type === "image" ? "pending" : "ready"
     };
 
     const newList = [...slidesList];
@@ -335,6 +481,7 @@ export default function CourseEditorPage() {
 
   // Delete slide
   const deleteSlide = (indexToDelete: number) => {
+    const targetSlide = slidesList[indexToDelete];
     const filtered = slidesList.filter((_, idx) => idx !== indexToDelete);
     const reordered = filtered.map((slide, idx) => ({
       ...slide,
@@ -350,7 +497,24 @@ export default function CourseEditorPage() {
     } else if (activeSlideIndex !== null && activeSlideIndex > indexToDelete) {
       setActiveSlideIndex(activeSlideIndex - 1);
     }
-    toast.info("Slide removed");
+
+    toast.info("Slide removed", {
+      action: {
+        label: "Undo",
+        onClick: () => {
+          const newList = [...filtered];
+          newList.splice(indexToDelete, 0, targetSlide);
+          const reorderedBack = newList.map((slide, idx) => ({
+            ...slide,
+            order: idx + 1,
+          }));
+          setSlidesList(reorderedBack);
+          setActiveSlideIndex(indexToDelete);
+          toast.success("Slide restored");
+        }
+      },
+      duration: 6000,
+    });
   };
 
   // Duplicate slide
@@ -358,6 +522,7 @@ export default function CourseEditorPage() {
     const target = slidesList[indexToDuplicate];
     const newSlide: Slide = {
       ...target,
+      id: crypto.randomUUID(),
       order: slidesList.length + 1,
       content: JSON.parse(JSON.stringify(target.content)) // deep copy
     };
@@ -375,7 +540,7 @@ export default function CourseEditorPage() {
   };
 
   // Update content of the active slide
-  const updateActiveSlideContent = (index: number, updatedFields: any) => {
+  const updateActiveSlideContent = (index: number, updatedFields: any, slideFields?: any) => {
     const newList = [...slidesList];
     newList[index] = {
       ...newList[index],
@@ -383,6 +548,7 @@ export default function CourseEditorPage() {
         ...newList[index].content,
         ...updatedFields,
       },
+      ...slideFields,
     };
     setSlidesList(newList);
   };
@@ -393,7 +559,6 @@ export default function CourseEditorPage() {
       toast.error("Course title cannot be empty");
       return;
     }
-    setSaving(true);
     setSaveStatus("saving");
     const toastId = toast.loading("Saving changes to server...");
     try {
@@ -417,14 +582,16 @@ export default function CourseEditorPage() {
       
       isInitialLoad.current = true;
       setCourse(data);
-      setSlidesList(data.slides || []);
+      const savedSlides = (data.slides || []).map((s: Slide) => ({
+        ...s,
+        id: s.id || crypto.randomUUID()
+      }));
+      setSlidesList(savedSlides);
       setSaveStatus("saved");
       toast.success("All changes saved successfully!", { id: toastId });
     } catch (err: any) {
       setSaveStatus("error");
       toast.error(err.message || "Error saving changes", { id: toastId });
-    } finally {
-      setSaving(false);
     }
   };
 
@@ -516,7 +683,11 @@ export default function CourseEditorPage() {
       if (!res.ok) throw new Error(data.details || data.error || "Upload failed");
 
       toast.success(`Successfully imported ${data.slides?.length || 0} slides!`, { id: toastId });
-      setSlidesList(data.slides || []);
+      const importedSlides = (data.slides || []).map((s: Slide) => ({
+        ...s,
+        id: s.id || crypto.randomUUID()
+      }));
+      setSlidesList(importedSlides);
       if (data.slides && data.slides.length > 0) {
         setActiveSlideIndex(0);
       }
@@ -540,6 +711,18 @@ export default function CourseEditorPage() {
   return (
     <div className="space-y-5 h-full">
       <Toaster theme="dark" closeButton richColors />
+
+      {/* Real-time Asset Generation Progress Banner */}
+      {course?.generationStatus === "generating" && (() => {
+        const totalMedia = slidesList.filter(s => s.type === "audio" || s.type === "image" || s.type === "dialogue" || s.type === "video").length;
+        const readyMedia = slidesList.filter(s => (s.type === "audio" || s.type === "image" || s.type === "dialogue" || s.type === "video") && s.assetStatus === "ready").length;
+        return (
+          <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3.5 flex items-center gap-2.5 text-xs text-blue-400 font-semibold animate-pulse select-none">
+            <Loader2 className="h-4 w-4 animate-spin text-blue-400 shrink-0" />
+            <span>Generating assets… {readyMedia} of {totalMedia} ready</span>
+          </div>
+        );
+      })()}
 
       {/* Editor Header Navigation */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-border">
@@ -790,58 +973,237 @@ export default function CourseEditorPage() {
           setThemeImagePending(false);
         }
       }}>
-        <SheetContent side="right" className="w-full sm:max-w-xl flex flex-col gap-0 p-0">
-          <SheetHeader className="px-5 pt-5 pb-3 border-b border-border">
+        <SheetContent side="right" className="w-full sm:max-w-xl flex flex-col gap-0 p-0 border-l border-border bg-card">
+          <SheetHeader className="px-5 pt-5 pb-3 border-b border-border bg-card">
             <SheetTitle className="text-base font-bold text-[#1B2A6B] dark:text-[#C8D400]">
-              Media Library
+              Media Manager
             </SheetTitle>
           </SheetHeader>
-          <div className="flex-1 overflow-y-auto p-4">
-            {mediaLoading ? (
-              <div className="flex items-center justify-center h-40">
-                <Loader2 className="h-8 w-8 animate-spin text-[#C8D400] shrink-0" />
-              </div>
-            ) : mediaFiles.length === 0 ? (
-              <div className="text-center py-10 text-muted-foreground text-sm">
-                No media assets found in library.
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {mediaFiles.map((file) => {
-                  const isImg = /\.(jpe?g|png|gif|webp|svg|avif)$/i.test(file.name) || (file.mime || "").startsWith("image/");
-                  const isVid = /\.(mp4|mov|avi|webm|mkv)$/i.test(file.name) || (file.mime || "").startsWith("video/");
-                  const isAud = /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(file.name) || (file.mime || "").startsWith("audio/");
-                  return (
-                    <button
-                      key={file.fileId}
-                      onClick={() => handleSelectFromLibrary(file)}
-                      className="group relative flex flex-col rounded-xl border border-border overflow-hidden hover:border-[#C8D400]/60 hover:shadow-md transition-all duration-200 bg-card text-left cursor-pointer"
-                    >
-                      <div className="relative h-24 bg-background flex items-center justify-center overflow-hidden">
-                        {isImg ? (
-                          <img
-                            src={file.thumbnailUrl || `${file.url}?tr=w-200,h-96,fo-auto`}
-                            alt={file.name}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-                          />
-                        ) : isVid ? (
-                          <Film className="h-7 w-7 text-blue-400 shrink-0" />
-                        ) : isAud ? (
-                          <Music className="h-7 w-7 text-purple-400 shrink-0" />
-                        ) : (
-                          <FolderOpen className="h-7 w-7 text-muted-foreground shrink-0" />
-                        )}
-                        <div className="absolute inset-0 bg-[#C8D400]/0 group-hover:bg-[#C8D400]/10 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
-                          <Check className="h-6 w-6 text-[#C8D400] drop-shadow shrink-0" />
+
+          {/* Custom Sleek Tabs */}
+          <div className="flex border-b border-border bg-muted/20">
+            <button
+              type="button"
+              onClick={() => setActiveTab("library")}
+              className={`flex-1 py-3 text-center text-xs font-bold uppercase tracking-wider transition-all border-b-2 cursor-pointer
+                ${activeTab === "library"
+                  ? "border-[#C8D400] text-[#C8D400] bg-[#C8D400]/5"
+                  : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/10"
+                }`}
+            >
+              📁 Library
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("upload")}
+              className={`flex-1 py-3 text-center text-xs font-bold uppercase tracking-wider transition-all border-b-2 cursor-pointer
+                ${activeTab === "upload"
+                  ? "border-[#C8D400] text-[#C8D400] bg-[#C8D400]/5"
+                  : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/10"
+                }`}
+            >
+              📤 Upload File
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("pexels")}
+              className={`flex-1 py-3 text-center text-xs font-bold uppercase tracking-wider transition-all border-b-2 cursor-pointer
+                ${activeTab === "pexels"
+                  ? "border-[#C8D400] text-[#C8D400] bg-[#C8D400]/5"
+                  : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/10"
+                }`}
+            >
+              🔍 Pexels
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-5">
+            {activeTab === "library" ? (
+              mediaLoading ? (
+                <div className="flex items-center justify-center h-40">
+                  <Loader2 className="h-8 w-8 animate-spin text-[#C8D400] shrink-0" />
+                </div>
+              ) : mediaFiles.length === 0 ? (
+                <div className="text-center py-10 text-muted-foreground text-sm">
+                  No media assets found in library.
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {mediaFiles.map((file) => {
+                    const isImg = /\.(jpe?g|png|gif|webp|svg|avif)$/i.test(file.name) || (file.mime || "").startsWith("image/");
+                    const isVid = /\.(mp4|mov|avi|webm|mkv)$/i.test(file.name) || (file.mime || "").startsWith("video/");
+                    const isAud = /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(file.name) || (file.mime || "").startsWith("audio/");
+                    return (
+                      <button
+                        key={file.fileId}
+                        type="button"
+                        onClick={() => handleSelectFromLibrary(file)}
+                        className="group relative flex flex-col rounded-xl border border-border overflow-hidden hover:border-[#C8D400]/60 hover:shadow-md transition-all duration-200 bg-card text-left cursor-pointer"
+                      >
+                        <div className="relative h-24 bg-background flex items-center justify-center overflow-hidden">
+                          {isImg ? (
+                            <img
+                              src={file.thumbnailUrl || `${file.url}?tr=w-200,h-96,fo-auto`}
+                              alt={file.name}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                            />
+                          ) : isVid ? (
+                            <Film className="h-7 w-7 text-blue-400 shrink-0" />
+                          ) : isAud ? (
+                            <Music className="h-7 w-7 text-purple-400 shrink-0" />
+                          ) : (
+                            <FolderOpen className="h-7 w-7 text-muted-foreground shrink-0" />
+                          )}
+                          <div className="absolute inset-0 bg-[#C8D400]/0 group-hover:bg-[#C8D400]/10 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                            <Check className="h-6 w-6 text-[#C8D400] drop-shadow shrink-0" />
+                          </div>
                         </div>
+                        <div className="px-2 py-1.5 border-t border-border/40">
+                          <p className="text-[10px] font-semibold text-foreground truncate">{file.name}</p>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )
+            ) : activeTab === "upload" ? (() => {
+              const activeSlide = activeSlideIndex !== null ? slidesList[activeSlideIndex] : null;
+              const activeSlideType = activeSlide?.type || "text";
+              let acceptTypes = "image/*,video/*,audio/*";
+              let typeInstructions = "Supports images, videos, or audio files";
+              if (activeSlideType === "image" || activeSlideType === "text") {
+                acceptTypes = "image/*";
+                typeInstructions = "Supports PNG, JPEG, GIF, WebP (Images)";
+              } else if (activeSlideType === "video") {
+                acceptTypes = "video/*";
+                typeInstructions = "Supports MP4, WebM, MOV (Videos)";
+              } else if (activeSlideType === "audio") {
+                acceptTypes = "audio/*";
+                typeInstructions = "Supports MP3, WAV, OGG, M4A (Audio)";
+              }
+
+              return (
+                <div className="flex flex-col justify-center items-center py-6 h-full min-h-[350px]">
+                  {mediaLoading ? (
+                    <div className="flex flex-col items-center justify-center gap-3 py-12">
+                      <Loader2 className="h-10 w-10 animate-spin text-[#C8D400] shrink-0" />
+                      <p className="text-xs text-muted-foreground font-semibold">Uploading and processing file...</p>
+                    </div>
+                  ) : (
+                    <div
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        setIsDragOver(true);
+                      }}
+                      onDragLeave={() => setIsDragOver(false)}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        setIsDragOver(false);
+                        const file = e.dataTransfer.files?.[0];
+                        if (file) {
+                          handleUploadFile(file);
+                        }
+                      }}
+                      className={`w-full max-w-md aspect-video border-2 border-dashed rounded-2xl flex flex-col items-center justify-center text-center p-6 gap-4 cursor-pointer transition-all duration-300 group
+                        ${isDragOver
+                          ? "border-[#C8D400] bg-[#C8D400]/10 scale-[1.02]"
+                          : "border-border hover:border-[#C8D400]/50 hover:bg-neutral-500/5 bg-card/65"
+                        }`}
+                      onClick={() => {
+                        const fileInput = document.getElementById("media-upload-input");
+                        if (fileInput) fileInput.click();
+                      }}
+                    >
+                      <input
+                        id="media-upload-input"
+                        type="file"
+                        accept={acceptTypes}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            handleUploadFile(file);
+                          }
+                        }}
+                        className="hidden"
+                      />
+                      <div className={`p-4 rounded-full transition-all duration-300
+                        ${isDragOver
+                          ? "bg-[#C8D400]/20 text-[#C8D400]"
+                          : "bg-muted text-muted-foreground group-hover:scale-110 group-hover:bg-[#C8D400]/10 group-hover:text-[#C8D400]"
+                        }`}>
+                        <Upload className="h-8 w-8 animate-pulse shrink-0" />
                       </div>
-                      <div className="px-2 py-1.5 border-t border-border/40">
-                        <p className="text-[10px] font-semibold text-foreground truncate">{file.name}</p>
+                      <div>
+                        <p className="text-sm font-bold text-foreground">Drag & drop your file here</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">or click to browse files</p>
                       </div>
-                    </button>
-                  );
-                })}
+                      <div className="px-4 py-1.5 bg-muted/60 dark:bg-muted/40 rounded-full border border-border/60">
+                        <p className="text-[10px] font-semibold text-muted-foreground">{typeInstructions}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })() : (
+              <div className="flex flex-col gap-4">
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    searchPexels(pexelsQuery);
+                  }}
+                  className="flex gap-2"
+                >
+                  <input
+                    type="text"
+                    value={pexelsQuery}
+                    onChange={(e) => setPexelsQuery(e.target.value)}
+                    placeholder="Search photos, e.g. safety helmet"
+                    className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:border-[#C8D400]"
+                  />
+                  <button
+                    type="submit"
+                    disabled={pexelsLoading || !pexelsQuery.trim()}
+                    className="px-4 py-2 rounded-lg bg-[#C8D400] text-[#1B2A6B] text-xs font-bold uppercase tracking-wider disabled:opacity-50 hover:bg-[#d4e000] transition-colors"
+                  >
+                    {pexelsLoading ? <Loader2 className="h-4 w-4 animate-spin shrink-0" /> : "Search"}
+                  </button>
+                </form>
+
+                {pexelsLoading ? (
+                  <div className="flex items-center justify-center h-40">
+                    <Loader2 className="h-8 w-8 animate-spin text-[#C8D400] shrink-0" />
+                  </div>
+                ) : pexelsResults.length === 0 ? (
+                  <div className="text-center py-10 text-muted-foreground text-sm">
+                    {pexelsQuery ? "No photos found. Try different keywords." : "Enter keywords to search Pexels."}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {pexelsResults.map((photo) => (
+                      <button
+                        key={photo.id}
+                        type="button"
+                        onClick={() => handleSelectPexelsPhoto(photo)}
+                        className="group relative flex flex-col rounded-xl border border-border overflow-hidden hover:border-[#C8D400]/60 hover:shadow-md transition-all duration-200 bg-card text-left cursor-pointer"
+                      >
+                        <div className="relative h-24 bg-background flex items-center justify-center overflow-hidden">
+                          <img
+                            src={photo.thumbnail}
+                            alt=""
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          />
+                          <div className="absolute inset-0 bg-[#C8D400]/0 group-hover:bg-[#C8D400]/10 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                            <Check className="h-6 w-6 text-[#C8D400] drop-shadow shrink-0" />
+                          </div>
+                        </div>
+                        <div className="px-2 py-1.5 border-t border-border/40">
+                          <p className="text-[10px] font-semibold text-muted-foreground truncate">{photo.photographer}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>

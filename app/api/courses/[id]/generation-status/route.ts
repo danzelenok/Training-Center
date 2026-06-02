@@ -35,7 +35,7 @@ export async function GET(
       .where(eq(slides.courseId, id))
       .orderBy(asc(slides.order));
 
-    // Map slides to required return schema: { id, type, heading, assetStatus }
+    // Map slides to required return schema: { id, type, heading, content, assetStatus }
     const mappedSlides = courseSlides.map((slide) => {
       const content = (slide.content || {}) as Record<string, any>;
       // Heading fallback hierarchy
@@ -45,6 +45,7 @@ export async function GET(
         id: slide.id,
         type: slide.type,
         heading,
+        content,
         assetStatus: slide.assetStatus,
       };
     });

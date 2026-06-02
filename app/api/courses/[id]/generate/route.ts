@@ -4,6 +4,7 @@ import { auth } from "@clerk/nextjs/server";
 import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { generateCourseStructure } from "@/lib/gemini";
+import { inngest } from "@/lib/inngest";
 
 export async function POST(
   req: Request,
@@ -27,6 +28,10 @@ export async function POST(
 
     if (!course) {
       return new NextResponse("Course not found", { status: 404 });
+    }
+
+    if (course.generationStatus === "generating") {
+      return new NextResponse("Generation already in progress", { status: 409 });
     }
 
     // Parse request body
@@ -57,7 +62,7 @@ export async function POST(
     const slidesToInsert = generatedSlides.map((slide, index) => {
       // Dialogue has text lines but is visual dialogue roleplay, so it is considered a media slide in S4.1 spec
       // "image, audio, dialogue slides show their text fields editable; media area shows 'Asset pending'"
-      const isMedia = slide.type === "image" || slide.type === "audio" || slide.type === "dialogue";
+      const isMedia = (slide.type as string) === "image" || slide.type === "audio" || slide.type === "dialogue";
       return {
         courseId: id,
         order: index + 1,
@@ -76,14 +81,20 @@ export async function POST(
         .returning();
     }
 
-    // 3. Set courses.generationStatus = ready
+    // 3. Set courses.generationStatus = generating
     await db
       .update(courses)
       .set({
-        generationStatus: "ready",
+        generationStatus: "generating",
         updatedAt: new Date(),
       })
       .where(eq(courses.id, id));
+
+    // 4. Trigger background asset generation event
+    await inngest.send({
+      name: "course/generate.assets",
+      data: { courseId: id },
+    });
 
     return NextResponse.json(finalSlides);
   } catch (error: any) {

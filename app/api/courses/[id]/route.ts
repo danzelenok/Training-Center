@@ -59,7 +59,7 @@ export async function PATCH(
     }
 
     const body = await req.json();
-    const { title, description, themeType, themeValue, slides: updatedSlides } = body;
+    const { title, description, themeType, themeValue, slides: updatedSlides, generationStatus } = body;
 
     // 1. Update Course details
     const [updatedCourse] = await db
@@ -69,6 +69,7 @@ export async function PATCH(
         description: description || "",
         themeType: themeType !== undefined ? themeType : undefined,
         themeValue: themeValue !== undefined ? themeValue : undefined,
+        generationStatus: generationStatus !== undefined ? generationStatus : undefined,
         updatedAt: new Date(),
       })
       .where(eq(courses.id, id))
@@ -80,16 +81,19 @@ export async function PATCH(
 
     // 2. Reconcile Slides (if provided)
     if (Array.isArray(updatedSlides)) {
-      // Delete existing slides for this course
       await db.delete(slides).where(eq(slides.courseId, id));
 
-      // Insert new slides list
       if (updatedSlides.length > 0) {
+        const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
         const slidesToInsert = updatedSlides.map((slide, index) => ({
+          // Preserve existing UUID so Inngest updates land on the right row
+          ...(UUID_RE.test(slide.id || "") ? { id: slide.id as string } : {}),
           courseId: id,
           order: index + 1,
-          type: slide.type || "text",
+          type: (slide.type || "text") as "text" | "image" | "video" | "audio" | "quiz" | "dialogue" | "chat" | "poll",
           content: slide.content || {},
+          language: slide.language || "en",
+          assetStatus: (slide.assetStatus || "ready") as "pending" | "generating" | "ready" | "failed",
         }));
 
         await db.insert(slides).values(slidesToInsert);
