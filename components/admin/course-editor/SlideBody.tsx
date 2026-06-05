@@ -1,0 +1,52 @@
+"use client";
+
+import React from "react";
+
+interface SlideBodyProps {
+  value: string;
+  isActive: boolean;
+  onChange: (val: string) => void;
+  hasHeading?: boolean;
+  hasImage?: boolean;
+  placeholder?: string;
+}
+
+export function SlideBody({
+  value,
+  isActive,
+  onChange,
+  hasHeading = false,
+  hasImage = false,
+  placeholder = "Enter description text here...",
+}: SlideBodyProps) {
+  const len = value.length;
+
+  let className =
+    "font-sans font-medium text-left resize-none bg-transparent focus:outline-none leading-relaxed w-full p-0 border-0 focus:ring-0 overflow-y-auto scrollbar-none max-h-full text-foreground placeholder-muted-foreground/40";
+
+  if (!hasHeading && !hasImage) {
+    if (len < 100) className += " text-xl md:text-2xl";
+    else if (len < 300) className += " text-lg md:text-xl";
+    else className += " text-base md:text-lg";
+  } else {
+    if (len < 80) className += " text-lg md:text-xl";
+    else className += " text-base md:text-lg";
+  }
+
+  return (
+    <textarea
+      ref={(node) => {
+        if (node) {
+          node.style.height = "auto";
+          node.style.height = `${node.scrollHeight}px`;
+        }
+      }}
+      disabled={!isActive}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      rows={1}
+      className={className}
+    />
+  );
+}

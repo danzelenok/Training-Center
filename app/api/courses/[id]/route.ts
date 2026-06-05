@@ -81,20 +81,46 @@ export async function PATCH(
 
     // 2. Reconcile Slides (if provided)
     if (Array.isArray(updatedSlides)) {
+      const existingSlides = await db
+        .select()
+        .from(slides)
+        .where(eq(slides.courseId, id));
+
       await db.delete(slides).where(eq(slides.courseId, id));
 
       if (updatedSlides.length > 0) {
         const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-        const slidesToInsert = updatedSlides.map((slide, index) => ({
-          // Preserve existing UUID so Inngest updates land on the right row
-          ...(UUID_RE.test(slide.id || "") ? { id: slide.id as string } : {}),
-          courseId: id,
-          order: index + 1,
-          type: (slide.type || "text") as "text" | "image" | "video" | "audio" | "quiz" | "dialogue" | "chat" | "poll",
-          content: slide.content || {},
-          language: slide.language || "en",
-          assetStatus: (slide.assetStatus || "ready") as "pending" | "generating" | "ready" | "failed",
-        }));
+        const slidesToInsert = updatedSlides.map((slide, index) => {
+          const existingSlide = UUID_RE.test(slide.id || "")
+            ? existingSlides.find((es) => es.id === slide.id)
+            : undefined;
+
+          const existingContent = (existingSlide?.content || {}) as Record<string, any>;
+          const clientContent = (slide.content || {}) as Record<string, any>;
+
+          // Merge content: keep existing keys unless overwritten by a defined client value.
+          // Specifically preserve backend-controlled fields if they are missing or undefined in clientContent.
+          const mergedContent = { ...existingContent };
+          for (const key of Object.keys(clientContent)) {
+            if (clientContent[key] !== undefined) {
+              mergedContent[key] = clientContent[key];
+            }
+          }
+
+          // If the database has a newer/processing assetStatus, preserve it.
+          const mergedAssetStatus = existingSlide ? existingSlide.assetStatus : (slide.assetStatus || "ready");
+
+          return {
+            // Preserve existing UUID so Inngest updates land on the right row
+            ...(existingSlide ? { id: existingSlide.id } : (UUID_RE.test(slide.id || "") ? { id: slide.id as string } : {})),
+            courseId: id,
+            order: index + 1,
+            type: (slide.type || "text") as "text" | "video" | "audio" | "quiz" | "dialogue" | "chat" | "poll",
+            content: mergedContent,
+            language: slide.language || "en",
+            assetStatus: mergedAssetStatus as "pending" | "generating" | "ready" | "failed",
+          };
+        });
 
         await db.insert(slides).values(slidesToInsert);
       }

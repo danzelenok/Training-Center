@@ -1,11 +1,43 @@
 import { inngest } from "./inngest";
+import { ROLE_STUDENT, ROLE_INSTRUCTOR } from "./avatar-roles";
 import { db } from "@/db";
 import { courses, slides } from "@/db/schema";
 import { eq, and, sql } from "drizzle-orm";
 import { generateTTS } from "./openai";
 import { searchPhoto } from "./pexels";
 import { imagekit } from "./imagekit";
-import { submitDialogueVideo, checkDialogueVideoStatus } from "./heygen";
+import { submitDialogueVideo, submitSingleVideo, checkDialogueVideoStatus } from "./heygen";
+
+// Splits dialogue lines between slot 0 (instructor) and slot 1 (student).
+// Priority: explicit slotIndex field → "instructor"/"student" character string → first two unique character names in order.
+function splitDialogueLinesBySlot(allLines: any[]): { slot0: any[]; slot1: any[] } {
+  if (allLines.some((l) => l.slotIndex !== undefined)) {
+    return {
+      slot0: allLines
+        .filter((l) => (l.slotIndex !== undefined ? l.slotIndex === 0 : l.character !== "student"))
+        .map((l) => ({ ...l, slotIndex: 0 })),
+      slot1: allLines
+        .filter((l) => (l.slotIndex !== undefined ? l.slotIndex === 1 : l.character === "student"))
+        .map((l) => ({ ...l, slotIndex: 1 })),
+    };
+  }
+
+  // AI-generated lines have free-form character names (e.g. "Supervisor / Worker A").
+  // Detect the first two unique names; second unique name becomes slot 1.
+  const chars: string[] = [];
+  for (const l of allLines) {
+    const c = (l.character ?? "").trim();
+    if (c && !chars.includes(c)) {
+      chars.push(c);
+      if (chars.length === 2) break;
+    }
+  }
+  if (chars.length < 2) return { slot0: allLines.map((l) => ({ ...l, slotIndex: 0 })), slot1: [] };
+  return {
+    slot0: allLines.filter((l) => l.character !== chars[1]).map((l) => ({ ...l, slotIndex: 0 })),
+    slot1: allLines.filter((l) => l.character === chars[1]).map((l) => ({ ...l, slotIndex: 1 })),
+  };
+}
 
 async function checkAndFinalizeCourse(courseId: string) {
   await db
@@ -65,7 +97,7 @@ export const generateSlideAssets = inngest.createFunction(
     });
 
     const targetSlides = courseSlides.filter(
-      (slide) => slide.type === "audio" || slide.type === "image" || slide.type === "dialogue"
+      (slide) => slide.type === "audio" || slide.type === "dialogue"
     );
 
     if (targetSlides.length === 0) {
@@ -104,41 +136,51 @@ export const generateSlideAssets = inngest.createFunction(
               const [current] = await db.select().from(slides).where(eq(slides.id, slide.id)).limit(1);
               if (current?.assetStatus === "ready") return;
 
-              // 1. Submit HeyGen video generation request
-              const videoId = await step.run(`submit-heygen-video-${slide.id}`, async () => {
-                const lines = content.dialogueLines || [];
-                if (!Array.isArray(lines) || lines.length === 0) {
-                  throw new Error(`Empty dialogue lines for slide ${slide.id}`);
-                }
-                const jobId = await submitDialogueVideo(lines);
+              const lines = content.dialogueLines || [];
+              if (!Array.isArray(lines) || lines.length === 0) {
+                throw new Error(`Empty dialogue lines for slide ${slide.id}`);
+              }
+              const slots = content.slots || [
+                { slotIndex: 0, avatarId: content.heygenAvatarAId || "" },
+                { slotIndex: 1, avatarId: content.heygenAvatarBId || "" },
+              ];
+              const slot0VoiceId = process.env.HEYGEN_INSTRUCTOR_VOICE_ID;
+              const slot1VoiceId = process.env.HEYGEN_STUDENT_VOICE_ID;
+              const { slot0: slot0Lines, slot1: slot1Lines } = splitDialogueLinesBySlot(lines);
 
-                // Save heygenJobId to database content to ensure only the latest job can modify the slide
-                const [slideData] = await db.select().from(slides).where(eq(slides.id, slide.id)).limit(1);
-                const currentContent = (slideData?.content || {}) as Record<string, any>;
-                await db
-                  .update(slides)
-                  .set({
-                    content: {
-                      ...currentContent,
-                      heygenJobId: jobId,
-                    },
+              console.log(`[dialogue init] slide=${slide.id} slot0=${slot0Lines.length} slot1=${slot1Lines.length}`);
+
+              const initStartTs = Date.now();
+
+              if (slot0Lines.length > 0) {
+                const instJobId = await step.run(`submit-heygen-instructor-${slide.id}`, async () => {
+                  const jobId = await submitDialogueVideo(slot0Lines, slots, { 0: slot0VoiceId });
+                  await db.update(slides).set({
+                    content: sql`content || ${JSON.stringify({ heygenInstructorJobId: jobId })}::jsonb`,
                     updatedAt: new Date(),
-                  })
-                  .where(eq(slides.id, slide.id));
+                  }).where(eq(slides.id, slide.id));
+                  return jobId;
+                });
+                await step.sendEvent(`trigger-poll-heygen-instructor-${slide.id}`, {
+                  name: "heygen/poll.status",
+                  data: { jobId: instJobId, slideId: slide.id, courseId, attempts: 1, role: "instructor", submittedAt: initStartTs },
+                });
+              }
 
-                return jobId;
-              });
-
-              // 2. Trigger background polling event
-              await step.sendEvent(`trigger-poll-heygen-${slide.id}`, {
-                name: "heygen/poll.status",
-                data: {
-                  jobId: videoId,
-                  slideId: slide.id,
-                  courseId: courseId,
-                  attempts: 1,
-                },
-              });
+              if (slot1Lines.length > 0) {
+                const studJobId = await step.run(`submit-heygen-student-${slide.id}`, async () => {
+                  const jobId = await submitDialogueVideo(slot1Lines, slots, { 1: slot1VoiceId });
+                  await db.update(slides).set({
+                    content: sql`content || ${JSON.stringify({ heygenStudentJobId: jobId })}::jsonb`,
+                    updatedAt: new Date(),
+                  }).where(eq(slides.id, slide.id));
+                  return jobId;
+                });
+                await step.sendEvent(`trigger-poll-heygen-student-${slide.id}`, {
+                  name: "heygen/poll.status",
+                  data: { jobId: studJobId, slideId: slide.id, courseId, attempts: 1, role: "student", submittedAt: initStartTs },
+                });
+              }
 
             } catch (err: any) {
               console.error(`Asset generation failed for slide ${slide.id}:`, err);
@@ -170,16 +212,6 @@ export const generateSlideAssets = inngest.createFunction(
                   .set({ content: { ...content, url: uploadRes.url }, assetStatus: "ready", updatedAt: new Date() })
                   .where(eq(slides.id, slide.id));
                 return uploadRes.url;
-
-              } else if (slide.type === "image") {
-                const keywords = content.visualKeywords || content.heading || content.title || "";
-                if (!keywords.trim()) throw new Error(`Empty visual keywords for slide ${slide.id}`);
-                const url = await searchPhoto(keywords);
-                await db
-                  .update(slides)
-                  .set({ content: { ...content, url }, assetStatus: "ready", updatedAt: new Date() })
-                  .where(eq(slides.id, slide.id));
-                return url;
               }
             } catch (err) {
               console.error(`Asset generation failed for slide ${slide.id}:`, err);
@@ -223,7 +255,9 @@ export const regenerateSingleSlideAsset = inngest.createFunction(
     });
 
     if (!slide) {
-      throw new Error(`Slide ${slideId} not found`);
+      // Slide was deleted between the route call and Inngest execution — nothing to mark failed
+      console.warn(`[regenerate] Slide ${slideId} not found in DB, skipping`);
+      return { success: false, reason: "slide_not_found" };
     }
 
     // Gate: exit if the slide is already done (e.g. a prior attempt succeeded before the retry fired)
@@ -232,35 +266,99 @@ export const regenerateSingleSlideAsset = inngest.createFunction(
     const content = (slide.content || {}) as Record<string, any>;
 
     // 2. Generate the asset
-    if (assetType === "video") {
+    if (assetType === "video" && slide.type === "dialogue") {
+      try {
+        const allLines: { slotIndex?: number; character?: string; text: string }[] = content.dialogueLines || [];
+        if (!Array.isArray(allLines) || allLines.length === 0) {
+          throw new Error("Empty dialogue lines for regeneration");
+        }
+
+        const slots = content.slots || [
+          { slotIndex: 0, avatarId: content.heygenAvatarAId || "" },
+          { slotIndex: 1, avatarId: content.heygenAvatarBId || "" }
+        ];
+
+        const slot0VoiceId = process.env.HEYGEN_INSTRUCTOR_VOICE_ID;
+        const slot1VoiceId = process.env.HEYGEN_STUDENT_VOICE_ID;
+
+        const { slot0: slot0Lines, slot1: slot1Lines } = splitDialogueLinesBySlot(allLines);
+
+        console.log(`[dialogue regen] slot 0 lines: ${slot0Lines.length}, slot 1 lines: ${slot1Lines.length}`);
+
+        const regenStartTs = Date.now();
+
+        if (slot0Lines.length > 0) {
+          const instJobId = await step.run(`submit-heygen-instructor-${slide.id}`, async () => {
+            const t0 = Date.now();
+            console.log(`[dialogue regen] Submitting instructor job (${slot0Lines.length} lines) at ${new Date().toISOString()}`);
+            const jobId = await submitDialogueVideo(slot0Lines, slots, { 0: slot0VoiceId });
+            console.log(`[dialogue regen] Instructor jobId=${jobId} submitted in ${Date.now() - t0}ms`);
+            await db.update(slides).set({
+              content: sql`content || ${JSON.stringify({ heygenInstructorJobId: jobId })}::jsonb`,
+              updatedAt: new Date(),
+            }).where(eq(slides.id, slide.id));
+            return jobId;
+          });
+          await step.sendEvent(`trigger-poll-instructor-${slide.id}`, {
+            name: "heygen/poll.status",
+            data: { jobId: instJobId, slideId: slide.id, courseId: slide.courseId, attempts: 1, role: "instructor", submittedAt: regenStartTs },
+          });
+        }
+
+        if (slot1Lines.length > 0) {
+          const studJobId = await step.run(`submit-heygen-student-${slide.id}`, async () => {
+            const t0 = Date.now();
+            console.log(`[dialogue regen] Submitting student job (${slot1Lines.length} lines) at ${new Date().toISOString()}`);
+            const jobId = await submitDialogueVideo(slot1Lines, slots, { 1: slot1VoiceId });
+            console.log(`[dialogue regen] Student jobId=${jobId} submitted in ${Date.now() - t0}ms`);
+            await db.update(slides).set({
+              content: sql`content || ${JSON.stringify({ heygenStudentJobId: jobId })}::jsonb`,
+              updatedAt: new Date(),
+            }).where(eq(slides.id, slide.id));
+            return jobId;
+          });
+          await step.sendEvent(`trigger-poll-student-${slide.id}`, {
+            name: "heygen/poll.status",
+            data: { jobId: studJobId, slideId: slide.id, courseId: slide.courseId, attempts: 1, role: "student", submittedAt: regenStartTs },
+          });
+        }
+
+      } catch (error: any) {
+        console.error(`[dialogue regen] Failed for slide ${slideId}:`, error.message);
+        await step.run(`mark-failed-${slideId}`, async () => {
+          await db.update(slides).set({ assetStatus: "failed", updatedAt: new Date() }).where(eq(slides.id, slideId));
+        });
+        throw error;
+      }
+    } else if (assetType === "video") {
       try {
         // 1. Submit HeyGen video generation request
         const videoId = await step.run(`submit-heygen-video-${slide.id}`, async () => {
-          // Dialogue slide: use dialogueLines; single-avatar video slide: use speechText as one line
-          let lines: { character: "instructor" | "student"; text: string }[];
-          if (content.dialogueLines && Array.isArray(content.dialogueLines) && content.dialogueLines.length > 0) {
-            lines = content.dialogueLines;
-          } else if (content.speechText?.trim()) {
-            const character = content.avatarId === "james" ? "student" : "instructor";
-            lines = [{ character, text: content.speechText.trim() }];
-          } else {
-            throw new Error("No dialogue lines or speech text to generate video from");
+          if (!content.speechText?.trim()) {
+            throw new Error("No speech text to generate video from");
           }
-          if (lines.length === 0) {
-            throw new Error("Empty dialogue lines");
+          const role = content.avatarId === ROLE_STUDENT ? ROLE_STUDENT : ROLE_INSTRUCTOR;
+          const avatarId = role === ROLE_STUDENT
+            ? (process.env.HEYGEN_STUDENT_AVATAR_ID ?? "")
+            : (process.env.HEYGEN_INSTRUCTOR_AVATAR_ID ?? "");
+          const voiceId = role === ROLE_STUDENT
+            ? (process.env.HEYGEN_STUDENT_VOICE_ID ?? "")
+            : (process.env.HEYGEN_INSTRUCTOR_VOICE_ID ?? "");
+
+          if (!avatarId || !voiceId) {
+            throw new Error(`HeyGen avatar or voice not configured for role: ${role}`);
           }
-          const jobId = await submitDialogueVideo(lines);
+
+          const params = { avatarId, voiceId, text: content.speechText.trim() };
+          console.log("[submitSingleVideo] params:", JSON.stringify(params, null, 2));
+
+          const jobId = await submitSingleVideo(params);
 
           // Save heygenJobId to database content to ensure only the latest job can modify the slide
-          const [slideData] = await db.select().from(slides).where(eq(slides.id, slide.id)).limit(1);
-          const currentContent = (slideData?.content || {}) as Record<string, any>;
           await db
             .update(slides)
             .set({
-              content: {
-                ...currentContent,
-                heygenJobId: jobId,
-              },
+              content: sql`content || ${JSON.stringify({ heygenJobId: jobId })}::jsonb`,
               updatedAt: new Date(),
             })
             .where(eq(slides.id, slide.id));
@@ -317,24 +415,6 @@ export const regenerateSingleSlideAsset = inngest.createFunction(
                 updatedAt: new Date(),
               })
               .where(eq(slides.id, slideId));
-
-          } else if (assetType === "image") {
-            const keywords = content.visualKeywords || content.heading || content.title || "";
-            if (!keywords.trim()) {
-              throw new Error("Empty visual keywords");
-            }
-            const url = await searchPhoto(keywords);
-            await db
-              .update(slides)
-              .set({
-                content: {
-                  ...content,
-                  url: url,
-                },
-                assetStatus: "ready",
-                updatedAt: new Date(),
-              })
-              .where(eq(slides.id, slideId));
           }
         } catch (error: any) {
           console.error(`Single asset regeneration failed for slide ${slideId}:`, error);
@@ -367,60 +447,68 @@ export const pollHeygenJobStatus = inngest.createFunction(
     retries: 1,
   },
   async ({ event, step }) => {
-    const { jobId, slideId, courseId, attempts } = event.data;
+    const { jobId, slideId, courseId, attempts, role, submittedAt } = event.data;
+    // role: "instructor" | "student" | undefined (legacy single-video path)
 
-    console.log(`[HeyGen Poll] Starting status check for slide ${slideId}, job ${jobId}. Attempt: ${attempts}`);
+    const elapsedSec = submittedAt ? Math.round((Date.now() - submittedAt) / 1000) : null;
+    const elapsedStr = elapsedSec !== null ? ` elapsed=${elapsedSec}s` : "";
+    console.log(`[HeyGen Poll] slide=${slideId} job=${jobId} role=${role ?? "legacy"} attempt=${attempts}${elapsedStr}`);
 
-    // 1. Idempotency check: if slide is already ready or failed, do nothing.
+    // 1. Idempotency: for role-based polls check if this role's URL already exists
     const isDone = await step.run("check-slide-status-gate", async () => {
       const [slide] = await db
-        .select({ assetStatus: slides.assetStatus })
+        .select({ assetStatus: slides.assetStatus, content: slides.content })
         .from(slides)
         .where(eq(slides.id, slideId))
         .limit(1);
-      return slide?.assetStatus === "ready" || slide?.assetStatus === "failed";
+      if (!slide) return true;
+      if (slide.assetStatus === "failed") return true;
+      if (!role) return slide.assetStatus === "ready";
+      const c = (slide.content || {}) as Record<string, any>;
+      return role === "instructor" ? !!c.instructorVideoUrl : !!c.studentVideoUrl;
     });
 
     if (isDone) {
-      console.log(`[HeyGen Poll] Slide ${slideId} is already in a terminal state (ready/failed). Aborting execution.`);
+      console.log(`[HeyGen Poll] Already done for slide ${slideId} role=${role ?? "legacy"}. Aborting.`);
       return { success: true, aborted: true };
     }
 
-    // 2. Latest job validation: check if this jobId matches the latest submitted heygenJobId
+    // 2. Validate this jobId is still the latest for this role
     const isLatest = await step.run("verify-latest-job", async () => {
       const [slide] = await db
         .select({ content: slides.content })
         .from(slides)
         .where(eq(slides.id, slideId))
         .limit(1);
-      const currentContent = (slide?.content || {}) as Record<string, any>;
-      return currentContent.heygenJobId === jobId;
+      const c = (slide?.content || {}) as Record<string, any>;
+      if (role === "instructor") return c.heygenInstructorJobId === jobId;
+      if (role === "student")    return c.heygenStudentJobId    === jobId;
+      return c.heygenJobId === jobId;
     });
 
     if (!isLatest) {
-      console.log(`[HeyGen Poll] Job ID ${jobId} is outdated for slide ${slideId}. Aborting.`);
+      console.log(`[HeyGen Poll] Job ${jobId} is outdated for slide ${slideId} role=${role}. Aborting.`);
       return { success: true, outdated: true };
     }
 
     // 3. Query HeyGen status
-    console.log(`[HeyGen Poll] Querying HeyGen API for job ${jobId}...`);
     const check = await step.run("check-status", async () => {
       return await checkDialogueVideoStatus(jobId);
     });
 
-    console.log(`[HeyGen Poll] HeyGen API status for job ${jobId}: ${check.status}`);
+    const elapsedAfterCheck = submittedAt ? Math.round((Date.now() - submittedAt) / 1000) : null;
+    const elapsedAfterCheckStr = elapsedAfterCheck !== null ? ` total_elapsed=${elapsedAfterCheck}s` : "";
+    console.log(`[HeyGen Poll] job=${jobId} status=${check.status}${elapsedAfterCheckStr}`);
 
     if (check.status === "completed") {
       const videoUrl = check.videoUrl || "";
-      if (!videoUrl) {
-        throw new Error("HeyGen completed, but no video URL returned");
-      }
+      if (!videoUrl) throw new Error("HeyGen completed, but no video URL returned");
 
-      console.log(`[HeyGen Poll] Job ${jobId} completed successfully. Video URL: ${videoUrl}`);
+      const totalSec = submittedAt ? Math.round((Date.now() - submittedAt) / 1000) : null;
+      console.log(`[HeyGen Poll] ✅ job=${jobId} role=${role ?? "legacy"} COMPLETED after ${totalSec !== null ? `${totalSec}s` : "unknown time"}. Starting ImageKit upload.`);
 
-      // Upload to ImageKit
+      // Upload to ImageKit and save to the correct content field
       await step.run("upload-to-imagekit", async () => {
-        // Fetch current content first to preserve it
         const [slide] = await db
           .select({ content: slides.content })
           .from(slides)
@@ -429,24 +517,61 @@ export const pollHeygenJobStatus = inngest.createFunction(
 
         const currentContent = (slide?.content || {}) as Record<string, any>;
 
+        const fileName = role
+          ? `dialogue_${role}_${slideId}.mp4`
+          : `dialogue_${slideId}.mp4`;
+
+        const uploadStart = Date.now();
         const uploadRes = await imagekit.upload({
           file: videoUrl,
-          fileName: `dialogue_${slideId}.mp4`,
+          fileName,
           folder: `/courses/${courseId}/video`,
         });
+        console.log(`[HeyGen Poll] ImageKit upload for role=${role ?? "legacy"} took ${Date.now() - uploadStart}ms → ${uploadRes.url}`);
+
+        let updatedContent: Record<string, any>;
+        let newStatus: "ready" | "generating";
+
+        if (role === "instructor") {
+          const currentSlots: any[] = Array.isArray(currentContent.slots) && currentContent.slots.length >= 2
+            ? currentContent.slots
+            : [
+                { slotIndex: 0, avatarId: currentContent.heygenAvatarAId || "" },
+                { slotIndex: 1, avatarId: currentContent.heygenAvatarBId || "" },
+              ];
+          const updatedSlots = currentSlots.map((s: any) =>
+            s.slotIndex === 0 ? { ...s, videoUrl: uploadRes.url } : s
+          );
+          updatedContent = { ...currentContent, instructorVideoUrl: uploadRes.url, slots: updatedSlots };
+          // ready when student URL exists OR no student job was ever submitted (no student lines)
+          const studDone = !!currentContent.studentVideoUrl || !currentContent.heygenStudentJobId;
+          newStatus = studDone ? "ready" : "generating";
+        } else if (role === "student") {
+          const currentSlots: any[] = Array.isArray(currentContent.slots) && currentContent.slots.length >= 2
+            ? currentContent.slots
+            : [
+                { slotIndex: 0, avatarId: currentContent.heygenAvatarAId || "" },
+                { slotIndex: 1, avatarId: currentContent.heygenAvatarBId || "" },
+              ];
+          const updatedSlots = currentSlots.map((s: any) =>
+            s.slotIndex === 1 ? { ...s, videoUrl: uploadRes.url } : s
+          );
+          updatedContent = { ...currentContent, studentVideoUrl: uploadRes.url, slots: updatedSlots };
+          // ready when instructor URL exists OR no instructor job was ever submitted (no instructor lines)
+          const instDone = !!currentContent.instructorVideoUrl || !currentContent.heygenInstructorJobId;
+          newStatus = instDone ? "ready" : "generating";
+        } else {
+          // legacy path: single combined video
+          updatedContent = { ...currentContent, assetUrl: uploadRes.url, url: uploadRes.url };
+          newStatus = "ready";
+        }
 
         await db
           .update(slides)
-          .set({
-            content: {
-              ...currentContent,
-              assetUrl: uploadRes.url,
-              url: uploadRes.url,
-            },
-            assetStatus: "ready",
-            updatedAt: new Date(),
-          })
+          .set({ content: updatedContent, assetStatus: newStatus, updatedAt: new Date() })
           .where(eq(slides.id, slideId));
+
+        console.log(`[HeyGen Poll] Saved ${role ?? "legacy"} URL. New assetStatus: ${newStatus}`);
       });
 
       // Check and finalize course status
@@ -496,7 +621,7 @@ export const pollHeygenJobStatus = inngest.createFunction(
     // Wait 30 seconds
     await step.sleep("wait-30s", "30s");
 
-    // Send next poll event
+    // Send next poll event (preserve role and submittedAt for timing chain)
     await step.sendEvent("trigger-next-poll", {
       name: "heygen/poll.status",
       data: {
@@ -504,6 +629,8 @@ export const pollHeygenJobStatus = inngest.createFunction(
         slideId,
         courseId,
         attempts: attempts + 1,
+        ...(role ? { role } : {}),
+        ...(submittedAt ? { submittedAt } : {}),
       },
     });
 

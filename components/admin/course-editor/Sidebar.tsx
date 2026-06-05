@@ -10,37 +10,27 @@ import {
   MessageSquare,
   Users,
   BarChart3,
-  Save,
-  Send,
-  Sparkles,
   Loader2,
   Upload,
+  Sparkles,
+  Send,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useCourseEditor } from "./CourseEditorContext";
 
-interface SidebarProps {
-  onAddSlide: (type: "text" | "image" | "video" | "audio" | "quiz" | "dialogue" | "chat" | "poll") => void;
-  onPublishCourse: () => void;
-  publishing: boolean;
-  status: "draft" | "published";
-  onOpenAIDialog: () => void;
-  hasSlides: boolean;
-  saveStatus: "saved" | "saving" | "error" | null;
-  onPPTXUpload?: (event: React.ChangeEvent<HTMLInputElement>) => void;
-  importing?: boolean;
-}
+export default function Sidebar() {
+  const {
+    addSlide,
+    handlePublish,
+    publishing,
+    course,
+    setAiDialogOpen,
+    slidesList,
+    saveStatus,
+    handlePPTXUpload,
+    importing,
+  } = useCourseEditor();
 
-export default function Sidebar({
-  onAddSlide,
-  onPublishCourse,
-  publishing,
-  status,
-  onOpenAIDialog,
-  hasSlides,
-  saveStatus,
-  onPPTXUpload,
-  importing,
-}: SidebarProps) {
   const injectors = [
     { type: "text", label: "Card", icon: FileText, desc: "Standard text & bullets" },
     { type: "quiz", label: "Quiz", icon: HelpCircle, desc: "Interactive evaluation" },
@@ -50,6 +40,9 @@ export default function Sidebar({
     { type: "dialogue", label: "Roleplay", icon: Users, desc: "Foreman vs Worker tree" },
     { type: "poll", label: "Rate", icon: BarChart3, desc: "Feedback rating scale" },
   ] as const;
+
+  const status = course?.status || "draft";
+  const hasSlides = slidesList.length > 0;
 
   return (
     <div className="bg-card border border-border rounded-2xl p-4 shadow-md flex flex-col h-[calc(100vh-140px)] xl:sticky xl:top-[100px] overflow-hidden">
@@ -63,7 +56,7 @@ export default function Sidebar({
         {injectors.map((inj) => (
           <button
             key={inj.type}
-            onClick={() => onAddSlide(inj.type)}
+            onClick={() => addSlide(inj.type)}
             className="w-full text-left flex items-center gap-3 p-2 rounded-xl border border-border bg-background/50 hover:bg-[#C8D400]/5 dark:hover:bg-[#C8D400]/10 hover:border-[#C8D400]/40 transition-all duration-200 group text-foreground cursor-pointer"
           >
             <div className="p-2 rounded-lg bg-muted text-muted-foreground group-hover:bg-[#C8D400]/10 group-hover:text-[#C8D400] transition-colors shrink-0">
@@ -85,7 +78,7 @@ export default function Sidebar({
       <div className="space-y-3 pt-3 border-t border-border shrink-0 mt-auto">
         <div className="flex flex-col gap-2">
           <Button
-            onClick={onOpenAIDialog}
+            onClick={() => setAiDialogOpen(true)}
             variant="outline"
             className="w-full bg-[#C8D400]/10 hover:bg-[#C8D400]/20 text-[#1B2A6B] dark:text-[#C8D400] border border-[#C8D400]/30 font-bold cursor-pointer h-10 px-4 transition-all duration-250 gap-1.5 flex items-center justify-center text-xs rounded-xl"
           >
@@ -93,12 +86,12 @@ export default function Sidebar({
             Generate with AI
           </Button>
 
-          {status === "draft" && onPPTXUpload && (
+          {status === "draft" && (
             <label className="w-full cursor-pointer shrink-0">
               <input
                 type="file"
                 accept=".pptx"
-                onChange={onPPTXUpload}
+                onChange={handlePPTXUpload}
                 disabled={importing}
                 className="hidden"
               />
@@ -138,7 +131,7 @@ export default function Sidebar({
 
         {status === "draft" && (
           <Button
-            onClick={onPublishCourse}
+            onClick={handlePublish}
             disabled={publishing || !hasSlides || saveStatus === "saving"}
             className="w-full bg-[#C8D400] hover:bg-[#B6C200] text-[#1B2A6B] font-extrabold border-0 shadow-lg shadow-[#C8D400]/10 cursor-pointer h-10 transition-transform duration-200 hover:scale-[1.02] gap-1.5 flex items-center justify-center text-xs rounded-xl"
           >

@@ -20,10 +20,10 @@ export async function POST(
 
     // Parse query params to determine if generating audio, image, or video
     const { searchParams } = new URL(req.url);
-    const asset = searchParams.get("asset") as "audio" | "image" | "video";
+    const asset = searchParams.get("asset") as "audio" | "video";
 
-    if (!asset || (asset !== "audio" && asset !== "image" && asset !== "video")) {
-      return new NextResponse("Invalid asset type. Must be 'audio', 'image', or 'video'", { status: 400 });
+    if (!asset || (asset !== "audio" && asset !== "video")) {
+      return new NextResponse("Invalid asset type. Must be 'audio' or 'video'", { status: 400 });
     }
 
     // Verify slide exists
@@ -47,18 +47,24 @@ export async function POST(
       // Ignore empty or invalid JSON bodies
     }
 
-    // Update database content if non-empty script, keywords, dialogue lines, or speechText were passed inline
+    // Update database content if non-empty script, keywords, dialogue lines, speechText, or slots were passed inline
     const hasNewAudioScript = body.audioScript?.trim();
     const hasNewVisualKeywords = body.visualKeywords?.trim();
     const hasNewDialogueLines = body.dialogueLines && Array.isArray(body.dialogueLines);
     const hasNewSpeechText = body.speechText?.trim();
-    if (hasNewAudioScript || hasNewVisualKeywords || hasNewDialogueLines || hasNewSpeechText) {
+    const hasHeygenAvatarAId = typeof body.heygenAvatarAId === "string";
+    const hasHeygenAvatarBId = typeof body.heygenAvatarBId === "string";
+    const hasSlots = body.slots && Array.isArray(body.slots);
+    if (hasNewAudioScript || hasNewVisualKeywords || hasNewDialogueLines || hasNewSpeechText || hasHeygenAvatarAId || hasHeygenAvatarBId || hasSlots) {
       const updatedContent = {
         ...(slide.content as Record<string, any>),
         ...(hasNewAudioScript ? { audioScript: body.audioScript } : {}),
         ...(hasNewVisualKeywords ? { visualKeywords: body.visualKeywords } : {}),
         ...(hasNewDialogueLines ? { dialogueLines: body.dialogueLines } : {}),
         ...(hasNewSpeechText ? { speechText: body.speechText } : {}),
+        ...(hasHeygenAvatarAId ? { heygenAvatarAId: body.heygenAvatarAId } : {}),
+        ...(hasHeygenAvatarBId ? { heygenAvatarBId: body.heygenAvatarBId } : {}),
+        ...(hasSlots ? { slots: body.slots } : {}),
       };
       await db.update(slides).set({ content: updatedContent, updatedAt: new Date() }).where(eq(slides.id, id));
       slide.content = updatedContent;

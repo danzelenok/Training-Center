@@ -62,7 +62,7 @@ export async function POST(
     const slidesToInsert = generatedSlides.map((slide, index) => {
       // Dialogue has text lines but is visual dialogue roleplay, so it is considered a media slide in S4.1 spec
       // "image, audio, dialogue slides show their text fields editable; media area shows 'Asset pending'"
-      const isMedia = (slide.type as string) === "image" || slide.type === "audio" || slide.type === "dialogue";
+      const isMedia = slide.type === "audio" || slide.type === "dialogue";
       return {
         courseId: id,
         order: index + 1,

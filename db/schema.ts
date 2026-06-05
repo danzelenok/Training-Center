@@ -22,7 +22,7 @@ export const slides = pgTable("slides", {
     .references(() => courses.id, { onDelete: "cascade" })
     .notNull(),
   order: integer("order").notNull(),
-  type: text("type").$type<"text" | "image" | "video" | "audio" | "quiz" | "dialogue" | "chat" | "poll">().notNull(),
+  type: text("type").$type<"text" | "video" | "audio" | "quiz" | "dialogue" | "chat" | "poll">().notNull(),
   content: jsonb("content").notNull(),
   language: text("language").default("en").notNull(),
   assetStatus: text("asset_status").$type<"pending" | "generating" | "ready" | "failed">().default("ready").notNull(),
