@@ -1,76 +1,31 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
-import { StoryPlayer } from "@/components/mini-app/story-player";
-import { Slide } from "@/components/admin/course-editor/CardCanvas";
-import React, { Suspense, useEffect, useState } from "react";
-import { X } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { BookOpen, X } from "lucide-react";
 
-function MiniAppPageContent() {
-  const searchParams = useSearchParams();
-  const courseId = searchParams?.get("courseId");
+interface Course {
+  id: string;
+  title: string;
+  description: string | null;
+}
 
-  const [slides, setSlides] = useState<Slide[]>([]);
-  const [themeType, setThemeType] = useState<string | undefined>();
-  const [themeValue, setThemeValue] = useState<string | undefined>();
+export default function MiniAppPage() {
+  const router = useRouter();
+  const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!courseId) {
-      setLoading(false);
-      return;
-    }
-
-    async function fetchSlides() {
-      try {
-        const initData =
-          typeof window !== "undefined"
-            ? (window as any).Telegram?.WebApp?.initData ||
-              (process.env.NODE_ENV === "development" ? "mock-dev-data" : "")
-            : "";
-
-        const res = await fetch(`/api/courses/${courseId}/slides`, {
-          headers: { "Telegram-Init-Data": initData },
-        });
-
-        if (!res.ok) {
-          throw new Error(
-            res.status === 401
-              ? "Unauthorized. Please open this course inside Telegram."
-              : "Failed to load course slides."
-          );
-        }
-
-        const data = await res.json();
-        if (!data.slides?.length) throw new Error("This course contains no slides.");
-        setSlides(data.slides as Slide[]);
-        setThemeType(data.course?.themeType);
-        setThemeValue(data.course?.themeValue);
-      } catch (err: any) {
-        setError(err.message || "An unexpected error occurred.");
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    fetchSlides();
-  }, [courseId]);
-
-  if (!courseId) {
-    return (
-      <main className="flex flex-col items-center justify-center min-h-screen bg-slate-950 text-white p-6">
-        <div className="w-full max-w-md text-center flex flex-col gap-4">
-          <h1 className="text-2xl font-bold tracking-tight bg-gradient-to-r from-sky-400 to-indigo-400 bg-clip-text text-transparent">
-            Invalid Course
-          </h1>
-          <p className="text-sm text-slate-400">
-            Please open this mini-app via a valid course link in Telegram.
-          </p>
-        </div>
-      </main>
-    );
-  }
+    fetch("/api/mini-app/courses")
+      .then((res) => {
+        if (!res.ok) throw new Error("Failed to load courses.");
+        return res.json();
+      })
+      .then((data) => setCourses(data))
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
+  }, []);
 
   if (loading) {
     return (
@@ -87,23 +42,47 @@ function MiniAppPageContent() {
         <div className="p-3 bg-red-950/40 border border-red-500/30 rounded-2xl">
           <X className="h-8 w-8 text-red-500" />
         </div>
-        <h2 className="text-lg font-bold">Failed to Start</h2>
+        <h2 className="text-lg font-bold">Failed to Load</h2>
         <p className="text-xs max-w-xs text-slate-400">{error}</p>
       </div>
     );
   }
 
-  return <StoryPlayer slides={slides} themeType={themeType} themeValue={themeValue} />;
-}
-
-export default function MiniAppPage() {
   return (
-    <Suspense fallback={
-      <div className="flex items-center justify-center min-h-screen bg-black text-slate-400 text-sm">
-        Loading...
-      </div>
-    }>
-      <MiniAppPageContent />
-    </Suspense>
+    <main className="flex-1 overflow-y-auto bg-slate-950 p-4">
+      <h1 className="text-xl font-bold text-white mb-1">Safety Training</h1>
+      <p className="text-sm text-slate-400 mb-5">Choose a course to get started.</p>
+
+      {courses.length === 0 ? (
+        <div className="flex flex-col items-center justify-center gap-3 mt-16 text-center text-slate-500">
+          <BookOpen className="h-10 w-10 opacity-40" />
+          <p className="text-sm">No courses available yet.</p>
+        </div>
+      ) : (
+        <ul className="flex flex-col gap-3">
+          {courses.map((course) => (
+            <li
+              key={course.id}
+              className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col gap-3"
+            >
+              <div className="flex flex-col gap-1">
+                <h2 className="text-base font-semibold text-white leading-snug">{course.title}</h2>
+                {course.description && (
+                  <p className="text-sm text-slate-400 leading-relaxed line-clamp-3">
+                    {course.description}
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={() => router.push(`/mini-app/${course.id}`)}
+                className="w-full bg-sky-500 hover:bg-sky-400 active:bg-sky-600 text-white text-sm font-semibold rounded-xl py-2.5 transition-colors"
+              >
+                Start Learning
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </main>
   );
 }
