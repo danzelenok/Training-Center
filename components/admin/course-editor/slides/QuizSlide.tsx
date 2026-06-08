@@ -12,6 +12,8 @@ interface QuizCardProps {
   cardStyle?: React.CSSProperties;
   onDisableDrag?: () => void;
   onEnableDrag?: () => void;
+  mode?: "edit" | "play";
+  onAnswered?: () => void;
 }
 
 export function QuizCard({
@@ -23,13 +25,19 @@ export function QuizCard({
   cardStyle,
   onDisableDrag,
   onEnableDrag,
+  mode,
+  onAnswered,
 }: QuizCardProps) {
   const content = slide.content || {};
 
   return (
     <Card
       style={cardStyle}
-      className={`rounded-[24px] overflow-hidden flex flex-col px-7 py-4 absolute top-0 left-0 w-[300px] md:w-[330px] lg:w-[350px] h-[530px] md:h-[585px] lg:h-[620px] origin-top-left border border-border/80 shadow-md transition-all duration-300 z-0 ${
+      className={`rounded-[24px] overflow-hidden flex flex-col px-7 py-4 ${
+        mode === "play"
+          ? "relative w-full h-full"
+          : "absolute top-0 left-0 w-[300px] md:w-[330px] lg:w-[350px] h-[530px] md:h-[585px] lg:h-[620px]"
+      } origin-top-left border border-border/80 shadow-md transition-all duration-300 z-0 ${
         !isActive && draggedIdx === null ? "pointer-events-none" : ""
       } ${draggedIdx !== null ? "scale-[0.37] pointer-events-none" : "scale-100"}`}
     >
@@ -42,6 +50,8 @@ export function QuizCard({
         onUpdateContent={(fields) => onUpdateSlideContent(index, fields)}
         onDisableDrag={onDisableDrag}
         onEnableDrag={onEnableDrag}
+        mode={mode}
+        onAnswered={onAnswered}
       />
     </Card>
   );

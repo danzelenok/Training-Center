@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import {
   Crop,
@@ -39,6 +39,8 @@ interface ChatCardProps {
   selectedBubbleIdx?: number | null;
   setSelectedBubbleIdx?: (idx: number | null) => void;
   chatBubblesToolsOpen?: boolean;
+  mode?: "edit" | "play";
+  onCompleted?: () => void;
 }
 
 export function ChatCard({
@@ -53,8 +55,44 @@ export function ChatCard({
   selectedBubbleIdx,
   setSelectedBubbleIdx,
   chatBubblesToolsOpen = false,
+  mode,
+  onCompleted,
 }: ChatCardProps) {
   const content = slide.content || {};
+
+  const [visibleCount, setVisibleCount] = useState(0);
+  const bubblesRef = useRef<any[]>([]);
+
+  useEffect(() => {
+    if (mode !== "play") return;
+    const bubbles = content.chatBubbles || [];
+    bubblesRef.current = bubbles;
+    setVisibleCount(0);
+
+    bubbles.forEach((_: any, i: number) => {
+      setTimeout(() => {
+        setVisibleCount(i + 1);
+
+        try {
+          const ctx = new AudioContext();
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.frequency.value = 880;
+          gain.gain.setValueAtTime(0.15, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.12);
+          osc.start(ctx.currentTime);
+          osc.stop(ctx.currentTime + 0.12);
+        } catch {}
+
+        if (i === bubbles.length - 1) {
+          setTimeout(() => onCompleted?.(), 1500);
+        }
+      }, i * 900);
+    });
+  }, [mode]);
+
   const chatVolume = content.chatVolume ?? 100;
   const belowType = content.belowType || "none";
   const hasBelow = chatVolume < 98;
@@ -67,7 +105,7 @@ export function ChatCard({
     onUpdateSlideContent(index, fields);
   };
 
-  const dragHandle = isActive && belowType === "text" && !isFullBg ? (
+  const dragHandle = isActive && mode !== "play" && belowType === "text" && !isFullBg ? (
     <div
       onMouseDown={(e) => handleChatResizeStart(e, index, chatVolume)}
       onTouchStart={(e) => handleChatResizeStart(e, index, chatVolume)}
@@ -86,7 +124,7 @@ export function ChatCard({
       imageScale={content.imageScale ?? 1.0}
       fullScreenMode={content.fullScreenMode}
       isActive={isActive}
-      showResizeHandle={isActive && belowType === "image"}
+      showResizeHandle={isActive && belowType === "image" && mode !== "play"}
       imageAlign={isImageTop ? "top" : "bottom"}
       borderRadiusClass={isImageTop ? "rounded-none" : "rounded-xl"}
       borderClass={isImageTop ? "border-none" : "border border-border"}
@@ -96,7 +134,35 @@ export function ChatCard({
     />
   );
 
-  const chatBubbles = (
+  const chatBubbles = mode === "play" ? (
+    <div className="flex-1 overflow-y-auto flex flex-col gap-1.5 px-2.5 pt-4 pb-4 scrollbar-none min-h-0">
+      {(content.chatBubbles || []).slice(0, visibleCount).map((bubble: any, bIdx: number) => {
+        const isLeft = bubble.align === "left";
+        return (
+          <div
+            key={bubble.id || bIdx}
+            className={`flex flex-col max-w-[78%] ${isLeft ? "self-start" : "self-end ml-auto"}`}
+            style={{ animation: "bubblePop 0.3s cubic-bezier(0.34,1.56,0.64,1) forwards" }}
+          >
+            {bubble.type === "text" && (
+              <div className={`px-3 py-2 text-[10px] md:text-xs leading-snug rounded-2xl shadow-sm select-none ${
+                isLeft
+                  ? "bg-card text-card-foreground border border-border"
+                  : "bg-primary text-primary-foreground"
+              }`}>
+                {bubble.text}
+              </div>
+            )}
+            {bubble.type === "image" && bubble.url && (
+              <div className={`p-0.5 rounded-2xl overflow-hidden shadow-sm ${isLeft ? "bg-card border border-border" : "bg-primary"}`}>
+                <img src={bubble.url} alt="" className="w-[110px] aspect-video object-cover rounded-xl" />
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  ) : (
     <div className="flex-1 overflow-y-auto flex flex-col gap-1.5 px-2.5 pt-4 pb-4 scrollbar-none min-h-0">
       {(content.chatBubbles || []).map((bubble: any, bIdx: number) => {
         const isLeft = bubble.align === "left";
@@ -174,24 +240,22 @@ export function ChatCard({
   return (
     <Card
       style={cardStyle}
-      className={`rounded-[24px] overflow-hidden flex flex-col px-7 py-4 absolute top-0 left-0 w-[300px] md:w-[330px] lg:w-[350px] h-[530px] md:h-[585px] lg:h-[620px] origin-top-left border border-border/80 shadow-md transition-all duration-300 z-0 relative ${
+      className={`rounded-[24px] overflow-hidden flex flex-col px-7 py-4 ${mode === "play" ? "relative w-full h-full" : "absolute top-0 left-0 w-[300px] md:w-[330px] lg:w-[350px] h-[530px] md:h-[585px] lg:h-[620px]"} origin-top-left border border-border/80 shadow-md transition-all duration-300 z-0 ${
         !isActive && draggedIdx === null ? "pointer-events-none" : ""
       } ${draggedIdx !== null ? "scale-[0.37] pointer-events-none" : "scale-100"}`}
     >
       <style>{`
         @keyframes bubble-select-pop {
-          0% {
-            transform: scale(1);
-          }
-          50% {
-            transform: scale(1.04);
-          }
-          100% {
-            transform: scale(1);
-          }
+          0% { transform: scale(1); }
+          50% { transform: scale(1.04); }
+          100% { transform: scale(1); }
         }
         .animate-bubble-select {
           animation: bubble-select-pop 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+        }
+        @keyframes bubblePop {
+          0% { opacity: 0; transform: scale(0.85) translateY(6px); }
+          100% { opacity: 1; transform: scale(1) translateY(0); }
         }
       `}</style>
       {/* FULL: image as absolute background — direct child of Card for true inset-0 */}

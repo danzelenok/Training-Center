@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { GripVertical, X } from "lucide-react";
 
 interface QuizContainerProps {
@@ -18,6 +18,8 @@ interface QuizContainerProps {
   }) => void;
   onDisableDrag?: () => void;
   onEnableDrag?: () => void;
+  mode?: "edit" | "play";
+  onAnswered?: () => void;
 }
 
 export function QuizContainer({
@@ -29,7 +31,17 @@ export function QuizContainer({
   onUpdateContent,
   onDisableDrag,
   onEnableDrag,
+  mode,
+  onAnswered,
 }: QuizContainerProps) {
+  const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
+  const [answered, setAnswered] = useState(false);
+
+  useEffect(() => {
+    setSelectedIdx(null);
+    setAnswered(false);
+  }, [questionText]);
+
   // Quiz Option Drag and Drop States
   const [draggedOptIdx, setDraggedOptIdx] = useState<number | null>(null);
   const [dragOverOptIdx, setDragOverOptIdx] = useState<number | null>(null);
@@ -104,6 +116,66 @@ export function QuizContainer({
     setDragOverOptIdx(null);
     onEnableDrag?.();
   };
+
+  if (mode === "play") {
+    return (
+      <div className="flex-1 flex flex-col justify-center gap-4 pt-6 pb-4 px-1">
+        <p className="font-sans font-semibold text-base md:text-lg text-foreground leading-relaxed">
+          {questionText}
+        </p>
+
+        <div className="flex flex-col gap-2 w-full">
+          {optionsList.map((option, idx) => {
+            const isSelected = selectedIdx === idx;
+            const isCorrect = correctIdxValue === idx;
+
+            let btnClass = "border-border bg-card text-foreground hover:bg-accent";
+            if (answered) {
+              if (isCorrect) {
+                btnClass = "border-green-500 bg-green-500/15 text-green-700 dark:text-green-400";
+              } else if (isSelected && !isCorrect) {
+                btnClass = "border-red-500 bg-red-500/15 text-red-700 dark:text-red-400";
+              } else {
+                btnClass = "border-border bg-card text-muted-foreground opacity-50";
+              }
+            }
+
+            return (
+              <button
+                key={idx}
+                type="button"
+                disabled={answered}
+                onClick={() => {
+                  if (answered) return;
+                  setSelectedIdx(idx);
+                  setAnswered(true);
+                  onAnswered?.();
+                }}
+                className={`w-full text-left px-4 py-3 rounded-2xl border text-sm font-medium transition-all duration-300 flex items-center gap-3 ${btnClass}`}
+              >
+                {answered && isCorrect && (
+                  <span className="text-green-500 font-bold shrink-0">✓</span>
+                )}
+                {answered && isSelected && !isCorrect && (
+                  <span className="text-red-500 font-bold shrink-0">✗</span>
+                )}
+                {(!answered || (!isCorrect && !isSelected)) && (
+                  <span className="w-4 shrink-0" />
+                )}
+                {option}
+              </button>
+            );
+          })}
+        </div>
+
+        {answered && explanation && (
+          <p className="font-sans font-medium text-base md:text-lg text-foreground leading-relaxed animate-fade-in border-t border-border pt-3.5">
+            {explanation}
+          </p>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div

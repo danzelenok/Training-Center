@@ -21,6 +21,7 @@ interface TextCardProps {
     align: "top" | "bottom",
     currentVolume: number
   ) => void;
+  mode?: "edit" | "play";
 }
 
 export function TextCard({
@@ -31,6 +32,7 @@ export function TextCard({
   draggedIdx,
   cardStyle,
   handleResizeStart,
+  mode,
 }: TextCardProps) {
   const content = slide.content || {};
   const showHeading = content.showHeading !== false;
@@ -96,6 +98,7 @@ export function TextCard({
             onChange={(val) => onUpdateSlideContent(index, { heading: val, title: val })}
             hasBody={showBody}
             hasImage={hasImage}
+            readOnly={mode === "play"}
           />
         </div>
       )}
@@ -107,6 +110,7 @@ export function TextCard({
             onChange={(val) => onUpdateSlideContent(index, { body: val, text: val })}
             hasHeading={showHeading}
             hasImage={hasImage}
+            readOnly={mode === "play"}
           />
         </div>
       )}
@@ -119,7 +123,7 @@ export function TextCard({
       imageScale={imageScale}
       fullScreenMode={fullScreenMode}
       isActive={isActive}
-      showResizeHandle={isActive}
+      showResizeHandle={isActive && mode !== "play"}
       imageAlign={imageAlign as "top" | "bottom" | "full"}
       onResizeStart={(e) => handleResizeStart(e, index, imageAlign as "top" | "bottom", imageVolume)}
       style={{ height: `${imageVolume}%` }}

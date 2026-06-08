@@ -9,6 +9,7 @@ interface SlideHeadingProps {
   hasBody?: boolean;
   hasImage?: boolean;
   placeholder?: string;
+  readOnly?: boolean;
 }
 
 export function SlideHeading({
@@ -18,6 +19,7 @@ export function SlideHeading({
   hasBody = false,
   hasImage = false,
   placeholder = "Enter Slide Title",
+  readOnly = false,
 }: SlideHeadingProps) {
   const len = value.length;
 
@@ -31,6 +33,10 @@ export function SlideHeading({
   } else {
     if (len < 30) className += " text-2xl md:text-3xl";
     else className += " text-xl md:text-2xl";
+  }
+
+  if (readOnly) {
+    return <p className={className}>{value}</p>;
   }
 
   return (

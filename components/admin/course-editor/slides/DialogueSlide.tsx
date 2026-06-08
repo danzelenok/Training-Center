@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Slide } from "../CardCanvas";
 import { SlideBody } from "../SlideBody";
 import { QuizContainer } from "../QuizContainer";
+import { MediaPlayerBar } from "../MediaPlayerBar";
 import { ControlPanel } from "../ControlPanel";
 import { PanelButton, PanelDivider } from "../PanelButton";
 
@@ -43,6 +44,8 @@ interface DialogueCardProps {
   cardStyle?: React.CSSProperties;
   onDisableDrag?: () => void;
   onEnableDrag?: () => void;
+  mode?: "edit" | "play";
+  onCompleted?: () => void;
 }
 
 // 1. Silhouettes & Soundwave Icons
@@ -406,6 +409,14 @@ function DialogueScriptOverlay({
   );
 }
 
+function AutoComplete({ onComplete }: { onComplete?: () => void }) {
+  useEffect(() => {
+    const t = setTimeout(() => onComplete?.(), 1500);
+    return () => clearTimeout(t);
+  }, []);
+  return null;
+}
+
 // 5. DialogueCard Component
 export function DialogueCard({
   slide,
@@ -416,6 +427,8 @@ export function DialogueCard({
   cardStyle,
   onDisableDrag,
   onEnableDrag,
+  mode,
+  onCompleted,
 }: DialogueCardProps) {
   const content = slide.content || {};
   const [chadImage, setChadImage] = useState(CHAD_FALLBACK_IMAGE);
@@ -446,6 +459,74 @@ export function DialogueCard({
 
   const isFailed = slide.assetStatus === "failed";
   const linesList = content.dialogueLines || [];
+
+  const [currentLineIdx, setCurrentLineIdx] = useState(0);
+  const [dialogueFinished, setDialogueFinished] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0.1);
+  const [speed, setSpeed] = useState(1);
+  const videoARef = useRef<HTMLVideoElement | null>(null);
+  const videoBRef = useRef<HTMLVideoElement | null>(null);
+
+  const currentLine = linesList[currentLineIdx];
+  const currentVideoRef = currentLine?.slotIndex === 0 ? videoARef : videoBRef;
+
+  useEffect(() => {
+    if (mode !== "play") return;
+    setCurrentLineIdx(0);
+    setDialogueFinished(false);
+    setTimeout(() => {
+      currentVideoRef.current?.play().catch(() => {});
+      setIsPlaying(true);
+    }, 300);
+  }, [mode]);
+
+  const handleVideoEnded = () => {
+    const nextIdx = currentLineIdx + 1;
+    if (nextIdx < linesList.length) {
+      setCurrentLineIdx(nextIdx);
+      setCurrentTime(0);
+      setDuration(0.1);
+      setTimeout(() => {
+        const nextLine = linesList[nextIdx];
+        const nextRef = nextLine?.slotIndex === 0 ? videoARef : videoBRef;
+        nextRef.current?.play().catch(() => {});
+        setIsPlaying(true);
+      }, 400);
+    } else {
+      setDialogueFinished(true);
+      setIsPlaying(false);
+    }
+  };
+
+  const togglePlay = () => {
+    if (currentVideoRef.current) {
+      if (currentVideoRef.current.paused) {
+        currentVideoRef.current.play().catch(() => {});
+        setIsPlaying(true);
+      } else {
+        currentVideoRef.current.pause();
+        setIsPlaying(false);
+      }
+    }
+  };
+
+  const changeSpeed = () => {
+    const speeds = [1, 1.25, 1.5, 2];
+    const next = speeds[(speeds.indexOf(speed) + 1) % speeds.length];
+    setSpeed(next);
+    if (currentVideoRef.current) currentVideoRef.current.playbackRate = next;
+  };
+
+  const handleScrub = (val: number) => {
+    if (currentVideoRef.current) {
+      currentVideoRef.current.currentTime = val;
+      setCurrentTime(val);
+    }
+  };
+
+  const dialogueBelowType = content.dialogueBelowType;
 
   // Reset local picker state if deactivated
   useEffect(() => {
@@ -504,7 +585,7 @@ export function DialogueCard({
     return (
       <Card
         style={cardStyle}
-        className={`rounded-[24px] overflow-hidden flex flex-col px-7 py-4 absolute top-0 left-0 w-[300px] md:w-[330px] lg:w-[350px] h-[530px] md:h-[585px] lg:h-[620px] origin-top-left border-[0.11px] border-border/80 justify-center items-center text-center p-6 gap-3 z-0 ${
+        className={`rounded-[24px] overflow-hidden flex flex-col px-7 py-4 ${mode === "play" ? "relative w-full h-full" : "absolute top-0 left-0 w-[300px] md:w-[330px] lg:w-[350px] h-[530px] md:h-[585px] lg:h-[620px]"} origin-top-left border-[0.11px] border-border/80 justify-center items-center text-center p-6 gap-3 z-0 ${
           draggedIdx !== null ? "scale-[0.37] pointer-events-none" : "scale-100"
         }`}
       >
@@ -523,6 +604,86 @@ export function DialogueCard({
           >
             Retry Generation
           </button>
+        )}
+      </Card>
+    );
+  }
+
+  if (mode === "play") {
+    return (
+      <Card style={cardStyle} className="rounded-[24px] overflow-hidden flex flex-col relative w-full h-full origin-top-left border border-border/80 shadow-md">
+        <div className="relative flex-1 min-h-0 bg-black">
+          <video
+            ref={videoARef}
+            src={instructorVideoUrl}
+            className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ${
+              !dialogueFinished && currentLine?.slotIndex === 0 ? "opacity-100" : "opacity-0"
+            }`}
+            playsInline
+            onTimeUpdate={(e) => { setCurrentTime(e.currentTarget.currentTime); if (e.currentTarget.duration) setDuration(e.currentTarget.duration); }}
+            onEnded={handleVideoEnded}
+            onPlay={() => setIsPlaying(true)}
+            onPause={() => setIsPlaying(false)}
+          />
+          <video
+            ref={videoBRef}
+            src={studentVideoUrl}
+            className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ${
+              !dialogueFinished && currentLine?.slotIndex === 1 ? "opacity-100" : "opacity-0"
+            }`}
+            playsInline
+            onTimeUpdate={(e) => { setCurrentTime(e.currentTarget.currentTime); if (e.currentTarget.duration) setDuration(e.currentTarget.duration); }}
+            onEnded={handleVideoEnded}
+            onPlay={() => setIsPlaying(true)}
+            onPause={() => setIsPlaying(false)}
+          />
+
+          {!dialogueFinished && (
+            <div className="absolute bottom-14 left-4 z-10">
+              <span className="text-xs font-bold text-white bg-black/50 px-2 py-1 rounded-lg">
+                {currentLine?.slotIndex === 0 ? (labelA || "Instructor") : (labelB || "Worker")}
+              </span>
+            </div>
+          )}
+
+          {!dialogueFinished && (
+            <div className="absolute bottom-0 left-0 right-0 z-20 px-4 pb-3 pt-8 bg-gradient-to-t from-black/80 to-transparent">
+              <MediaPlayerBar
+                isPlaying={isPlaying}
+                currentTime={currentTime}
+                duration={duration}
+                speed={speed}
+                onTogglePlay={togglePlay}
+                onScrub={handleScrub}
+                onChangeSpeed={changeSpeed}
+              />
+            </div>
+          )}
+        </div>
+
+        {dialogueFinished && (
+          <div className="flex-1 flex flex-col min-h-0 overflow-y-auto scrollbar-none px-7 py-4">
+            {dialogueBelowType === "text" && (
+              <p className="font-sans font-medium text-base text-foreground leading-relaxed">
+                {content.belowText || ""}
+              </p>
+            )}
+            {dialogueBelowType === "quiz" && (
+              <QuizContainer
+                questionText={content.belowQuizQuestion || ""}
+                options={content.belowQuizOptions || []}
+                correctIndex={content.belowQuizCorrectIndex ?? 0}
+                explanation={content.belowQuizExplanation || ""}
+                isActive={true}
+                mode="play"
+                onAnswered={onCompleted}
+                onUpdateContent={() => {}}
+              />
+            )}
+            {(!dialogueBelowType || dialogueBelowType === "none") && (
+              <AutoComplete onComplete={onCompleted} />
+            )}
+          </div>
         )}
       </Card>
     );
@@ -564,6 +725,8 @@ export function DialogueCard({
           correctIndex={content.belowQuizCorrectIndex ?? 0}
           explanation={content.belowQuizExplanation || ""}
           isActive={isActive}
+          mode={mode}
+          onAnswered={onCompleted}
           onUpdateContent={(fields) => {
             const updated: any = {};
             if (fields.question !== undefined) updated.belowQuizQuestion = fields.question;

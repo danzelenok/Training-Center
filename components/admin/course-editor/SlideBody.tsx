@@ -9,6 +9,7 @@ interface SlideBodyProps {
   hasHeading?: boolean;
   hasImage?: boolean;
   placeholder?: string;
+  readOnly?: boolean;
 }
 
 export function SlideBody({
@@ -18,6 +19,7 @@ export function SlideBody({
   hasHeading = false,
   hasImage = false,
   placeholder = "Enter description text here...",
+  readOnly = false,
 }: SlideBodyProps) {
   const len = value.length;
 
@@ -31,6 +33,10 @@ export function SlideBody({
   } else {
     if (len < 80) className += " text-lg md:text-xl";
     else className += " text-base md:text-lg";
+  }
+
+  if (readOnly) {
+    return <p className={className}>{value}</p>;
   }
 
   return (

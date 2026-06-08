@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { Slide } from "../CardCanvas";
+import { MediaPlayerBar } from "../MediaPlayerBar";
 import { ControlPanel } from "../ControlPanel";
 import { PanelButton } from "../PanelButton";
 
@@ -32,6 +33,8 @@ interface AudioCardProps {
   setAudioTranscriptToolsOpen: (val: boolean) => void;
   audioToolsOpen: boolean;
   setAudioToolsOpen: (val: boolean) => void;
+  mode?: "edit" | "play";
+  onCompleted?: () => void;
 }
 
 export function AudioCard({
@@ -46,6 +49,8 @@ export function AudioCard({
   setAudioTranscriptToolsOpen,
   audioToolsOpen,
   setAudioToolsOpen,
+  mode,
+  onCompleted,
 }: AudioCardProps) {
   const content = slide.content || {};
   const audioMode = content.audioMode;
@@ -241,7 +246,7 @@ export function AudioCard({
     return (
       <Card
         style={cardStyle}
-        className={`rounded-[24px] overflow-hidden flex flex-col px-7 py-4 absolute top-0 left-0 w-[300px] md:w-[330px] lg:w-[350px] h-[530px] md:h-[585px] lg:h-[620px] origin-top-left border border-border/80 shadow-md justify-center items-center text-center p-6 gap-3 z-0 ${
+        className={`rounded-[24px] overflow-hidden flex flex-col px-7 py-4 ${mode === "play" ? "relative w-full h-full" : "absolute top-0 left-0 w-[300px] md:w-[330px] lg:w-[350px] h-[530px] md:h-[585px] lg:h-[620px]"} origin-top-left border border-border/80 shadow-md justify-center items-center text-center p-6 gap-3 z-0 ${
           draggedIdx !== null ? "scale-[0.37] pointer-events-none" : "scale-100"
         }`}
       >
@@ -259,7 +264,7 @@ export function AudioCard({
     return (
       <Card
         style={cardStyle}
-        className={`rounded-[24px] overflow-hidden flex flex-col px-7 py-4 absolute top-0 left-0 w-[300px] md:w-[330px] lg:w-[350px] h-[530px] md:h-[585px] lg:h-[620px] origin-top-left border border-border/80 shadow-md justify-center items-center text-center p-6 gap-3 z-0 ${
+        className={`rounded-[24px] overflow-hidden flex flex-col px-7 py-4 ${mode === "play" ? "relative w-full h-full" : "absolute top-0 left-0 w-[300px] md:w-[330px] lg:w-[350px] h-[530px] md:h-[585px] lg:h-[620px]"} origin-top-left border border-border/80 shadow-md justify-center items-center text-center p-6 gap-3 z-0 ${
           draggedIdx !== null ? "scale-[0.37] pointer-events-none" : "scale-100"
         }`}
       >
@@ -352,72 +357,22 @@ export function AudioCard({
           )}
 
           <div className="w-full shrink-0 px-0.5 mt-auto mb-6">
-            <div className="w-full bg-[#030b35]/95 border border-white/10 rounded-2xl p-2.5 flex items-center justify-between gap-3 shadow-2xl backdrop-blur-md text-white no-swipe">
-              <button
-                type="button"
-                onClick={togglePlay}
-                className="h-8 w-8 rounded-lg border border-white/90 flex items-center justify-center bg-transparent transition-all hover:scale-105 active:scale-95 cursor-pointer shrink-0"
-              >
-                {isPlaying ? (
-                  <Pause className="h-4.5 w-4.5 fill-white text-white shrink-0" />
-                ) : (
-                  <Play className="h-4.5 w-4.5 fill-white text-white shrink-0 translate-x-[1px]" />
-                )}
-              </button>
-
-              <div className="flex-1 flex items-center min-w-0">
-                <input
-                  type="range"
-                  min="0"
-                  max={duration}
-                  step="0.05"
-                  value={currentTime}
-                  onChange={(e) => handleScrub(parseFloat(e.target.value))}
-                  className="w-full h-[3.5px] rounded-lg appearance-none cursor-pointer accent-white bg-white/20 hover:accent-primary transition-colors"
-                  style={{
-                    background: `linear-gradient(to right, #ffffff 0%, #ffffff ${percent}%, rgba(255,255,255,0.2) ${percent}%, rgba(255,255,255,0.2) 100%)`,
-                  }}
-                />
-              </div>
-
-              <div className="flex items-center gap-2.5 shrink-0 pl-1 select-none">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAudioTranscriptToolsOpen(!audioTranscriptToolsOpen);
-                    setAudioToolsOpen(false);
-                  }}
-                  className={`h-8 w-8 rounded-lg flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
-                    audioTranscriptToolsOpen ? "text-primary bg-white/10" : "text-white/70 hover:text-white"
-                  }`}
-                  title="Toggle Transcript"
-                >
-                  <FileText className="h-4.5 w-4.5" />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setIsCCActive(!isCCActive)}
-                  className={`h-8 w-8 border rounded-lg flex items-center justify-center text-[9px] font-black tracking-tighter transition-all cursor-pointer shrink-0 ${
-                    isCCActive
-                      ? "border-primary text-primary bg-primary/10 font-extrabold shadow-sm shadow-primary/25"
-                      : "border-white/20 text-white/70 hover:text-white"
-                  }`}
-                  title="Toggle Captions"
-                >
-                  cc
-                </button>
-
-                <button
-                  type="button"
-                  onClick={changeSpeed}
-                  className="text-[10px] font-black text-white hover:text-primary px-1 h-8 flex items-center justify-center min-w-[28px] cursor-pointer transition-colors shrink-0"
-                  title="Playback Speed"
-                >
-                  {speed}x
-                </button>
-              </div>
-            </div>
+            <MediaPlayerBar
+              isPlaying={isPlaying}
+              currentTime={currentTime}
+              duration={duration}
+              speed={speed}
+              onTogglePlay={togglePlay}
+              onScrub={handleScrub}
+              onChangeSpeed={changeSpeed}
+              isCCActive={isCCActive}
+              onToggleCC={() => setIsCCActive(!isCCActive)}
+              transcriptOpen={audioTranscriptToolsOpen}
+              onToggleTranscript={() => {
+                setAudioTranscriptToolsOpen(!audioTranscriptToolsOpen);
+                setAudioToolsOpen(false);
+              }}
+            />
           </div>
         </div>
       );
@@ -701,7 +656,7 @@ export function AudioCard({
   return (
     <Card
       style={cardStyle}
-      className={`rounded-[24px] overflow-hidden flex flex-col px-7 py-4 absolute top-0 left-0 w-[300px] md:w-[330px] lg:w-[350px] h-[530px] md:h-[585px] lg:h-[620px] origin-top-left border border-border/80 shadow-md transition-all duration-300 z-0 ${
+      className={`rounded-[24px] overflow-hidden flex flex-col px-7 py-4 ${mode === "play" ? "relative w-full h-full" : "absolute top-0 left-0 w-[300px] md:w-[330px] lg:w-[350px] h-[530px] md:h-[585px] lg:h-[620px]"} origin-top-left border border-border/80 shadow-md transition-all duration-300 z-0 ${
         !isActive && draggedIdx === null ? "pointer-events-none" : ""
       } ${draggedIdx !== null ? "scale-[0.37] pointer-events-none" : "scale-100"}`}
     >

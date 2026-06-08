@@ -1,14 +1,16 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
+import React, { use, useEffect, useState } from "react";
+import { X } from "lucide-react";
 import { StoryPlayer } from "@/components/mini-app/story-player";
 import { Slide } from "@/components/admin/course-editor/CardCanvas";
-import React, { Suspense, useEffect, useState } from "react";
-import { X } from "lucide-react";
 
-function MiniAppPageContent() {
-  const searchParams = useSearchParams();
-  const courseId = searchParams?.get("courseId");
+interface PageProps {
+  params: Promise<{ courseId: string }>;
+}
+
+export default function MiniAppCoursePage({ params }: PageProps) {
+  const { courseId } = use(params);
 
   const [slides, setSlides] = useState<Slide[]>([]);
   const [themeType, setThemeType] = useState<string | undefined>();
@@ -17,11 +19,6 @@ function MiniAppPageContent() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!courseId) {
-      setLoading(false);
-      return;
-    }
-
     async function fetchSlides() {
       try {
         const initData =
@@ -94,16 +91,4 @@ function MiniAppPageContent() {
   }
 
   return <StoryPlayer slides={slides} themeType={themeType} themeValue={themeValue} />;
-}
-
-export default function MiniAppPage() {
-  return (
-    <Suspense fallback={
-      <div className="flex items-center justify-center min-h-screen bg-black text-slate-400 text-sm">
-        Loading...
-      </div>
-    }>
-      <MiniAppPageContent />
-    </Suspense>
-  );
 }

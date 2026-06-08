@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import {
   AlertTriangle,
@@ -16,6 +16,7 @@ import {
 import { toast } from "sonner";
 import { AVATAR_ROLES, ROLE_INSTRUCTOR } from "@/lib/avatar-roles";
 import { Slide } from "../CardCanvas";
+import { MediaPlayerBar } from "../MediaPlayerBar";
 import { ControlPanel } from "../ControlPanel";
 import { PanelButton } from "../PanelButton";
 
@@ -29,6 +30,8 @@ interface VideoCardProps {
   cardStyle?: React.CSSProperties;
   isVideoConfigOpen: boolean;
   setIsVideoConfigOpen: (val: boolean) => void;
+  mode?: "edit" | "play";
+  onCompleted?: () => void;
 }
 
 export function VideoCard({
@@ -41,6 +44,8 @@ export function VideoCard({
   cardStyle,
   isVideoConfigOpen,
   setIsVideoConfigOpen,
+  mode,
+  onCompleted,
 }: VideoCardProps) {
   const content = slide.content || {};
   const videoMode = content.videoMode;
@@ -54,6 +59,41 @@ export function VideoCard({
   const isFailed = slide.assetStatus === "failed";
 
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isCCActive, setIsCCActive] = useState(false);
+  const [transcriptOpen, setTranscriptOpen] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0.1);
+  const [speed, setSpeed] = useState(1);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  useEffect(() => {
+    if (mode === "play" && videoRef.current && content.url) {
+      videoRef.current.play().catch(() => {});
+      setIsPlaying(true);
+    }
+  }, [mode, content.url]);
+
+  const percent = (currentTime / duration) * 100;
+  const formatTime = (secs: number) => {
+    const m = Math.floor(secs / 60);
+    const s = Math.floor(secs % 60);
+    return `${m}:${s < 10 ? "0" : ""}${s}`;
+  };
+  const togglePlay = () => {
+    if (videoRef.current) {
+      if (videoRef.current.paused) { videoRef.current.play().catch(() => {}); setIsPlaying(true); }
+      else { videoRef.current.pause(); setIsPlaying(false); }
+    }
+  };
+  const changeSpeed = () => {
+    const speeds = [1, 1.25, 1.5, 2];
+    const next = speeds[(speeds.indexOf(speed) + 1) % speeds.length];
+    setSpeed(next);
+    if (videoRef.current) videoRef.current.playbackRate = next;
+  };
+  const handleScrub = (val: number) => {
+    if (videoRef.current) { videoRef.current.currentTime = val; setCurrentTime(val); }
+  };
 
   const handleRegenerateVideo = async () => {
     if (!slide.id) return;
@@ -136,6 +176,59 @@ export function VideoCard({
   const renderCardBody = () => {
     // Mode 1: Already has a video URL (uploaded or generated)
     if (content.url) {
+      if (mode === "play") {
+        return (
+          <div className="absolute inset-0 z-10 overflow-hidden rounded-[24px]">
+            <video
+              ref={(node) => {
+                videoRef.current = node;
+                if (node) node.playbackRate = speed;
+              }}
+              src={content.url}
+              className="w-full h-full object-cover"
+              playsInline
+              onTimeUpdate={(e) => {
+                const el = e.currentTarget;
+                setCurrentTime(el.currentTime);
+                if (el.duration && el.duration !== duration) setDuration(el.duration);
+              }}
+              onPlay={() => setIsPlaying(true)}
+              onPause={() => setIsPlaying(false)}
+              onEnded={() => { setIsPlaying(false); onCompleted?.(); }}
+            />
+            {isCCActive && captions && (
+              <div className="absolute bottom-16 inset-x-6 flex justify-center text-center pointer-events-none z-10 animate-fade-in">
+                <div className="max-w-[90%] bg-black/85 border border-white/10 px-3.5 py-2 rounded-xl shadow-lg backdrop-blur-md">
+                  <p className="text-[10px] text-white leading-normal font-sans font-medium">{captions}</p>
+                </div>
+              </div>
+            )}
+            {transcriptOpen && content.speechText && (
+              <div className="absolute bottom-16 inset-x-6 flex justify-center text-center pointer-events-none z-10 animate-fade-in">
+                <div className="max-w-[90%] bg-black/85 border border-white/10 px-3.5 py-2 rounded-xl shadow-lg backdrop-blur-md">
+                  <p className="text-[10px] text-white leading-normal font-sans font-medium">{content.speechText}</p>
+                </div>
+              </div>
+            )}
+            <div className="absolute bottom-0 left-0 right-0 z-20 px-4 pb-4 pt-8 bg-gradient-to-t from-black/80 to-transparent">
+              <MediaPlayerBar
+                isPlaying={isPlaying}
+                currentTime={currentTime}
+                duration={duration}
+                speed={speed}
+                onTogglePlay={togglePlay}
+                onScrub={handleScrub}
+                onChangeSpeed={changeSpeed}
+                isCCActive={isCCActive}
+                onToggleCC={() => setIsCCActive(!isCCActive)}
+                transcriptOpen={transcriptOpen}
+                onToggleTranscript={() => setTranscriptOpen(!transcriptOpen)}
+              />
+            </div>
+          </div>
+        );
+      }
+
       return (
         <div className="absolute inset-0 z-10 overflow-hidden rounded-[24px] pointer-events-auto select-none">
           <div
@@ -339,7 +432,11 @@ export function VideoCard({
   return (
     <Card
       style={cardStyle}
-      className={`rounded-[24px] overflow-hidden flex flex-col px-7 py-4 absolute top-0 left-0 w-[300px] md:w-[330px] lg:w-[350px] h-[530px] md:h-[585px] lg:h-[620px] origin-top-left border-[0.11px] border-border/80 transition-all duration-300 z-0 ${
+      className={`rounded-[24px] overflow-hidden flex flex-col px-7 py-4 ${
+        mode === "play"
+          ? "relative w-full h-full"
+          : "absolute top-0 left-0 w-[300px] md:w-[330px] lg:w-[350px] h-[530px] md:h-[585px] lg:h-[620px]"
+      } origin-top-left border-[0.11px] border-border/80 transition-all duration-300 z-0 ${
         !isActive && draggedIdx === null ? "pointer-events-none" : ""
       } ${draggedIdx !== null ? "scale-[0.37] pointer-events-none" : "scale-100"}`}
     >
