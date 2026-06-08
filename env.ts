@@ -18,6 +18,7 @@ export const env = createEnv({
     HEYGEN_API_KEY: z.string().optional(),
     HEYGEN_INSTRUCTOR_AVATAR_ID: z.string().optional(),
     HEYGEN_STUDENT_AVATAR_ID: z.string().optional(),
+    MINI_APP_URL: z.string().url().optional(),
   },
   client: {
     NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: z.string().min(1),
@@ -51,5 +52,6 @@ export const env = createEnv({
     NEXT_PUBLIC_IMAGEKIT_URL_ENDPOINT: process.env.NEXT_PUBLIC_IMAGEKIT_URL_ENDPOINT,
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
     NEXT_PUBLIC_MINI_APP_URL: process.env.NEXT_PUBLIC_MINI_APP_URL,
+    MINI_APP_URL: process.env.MINI_APP_URL,
   },
 });

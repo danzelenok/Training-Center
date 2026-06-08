@@ -43,10 +43,9 @@ export async function sendCourseAnnouncement(courseId: string, courseTitle: stri
   }
 
   const miniAppBaseUrl =
+    env.MINI_APP_URL ||
     process.env.NEXT_PUBLIC_MINI_APP_URL ||
-    env.NEXT_PUBLIC_MINI_APP_URL ||
-    process.env.NEXT_PUBLIC_APP_URL ||
-    env.NEXT_PUBLIC_APP_URL;
+    process.env.NEXT_PUBLIC_APP_URL;
 
   if (!miniAppBaseUrl) {
     throw new Error("Neither NEXT_PUBLIC_MINI_APP_URL nor NEXT_PUBLIC_APP_URL is configured.");
