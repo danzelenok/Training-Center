@@ -58,8 +58,7 @@ export async function sendCourseAnnouncement(courseId: string, courseTitle: stri
     `📚 *Course Title:* ${courseTitle}\n\n` +
     `Stay safe, stay compliant! Tap the button below to start this interactive micro-learning module directly within Telegram.`;
 
-  console.log("courseUrl:", courseUrl);
-  const keyboard = new InlineKeyboard().url("📖 Start Learning", courseUrl);
+  const keyboard = new InlineKeyboard().webApp("📖 Start Learning", courseUrl);
 
   const message = await bot.api.sendMessage(groupId, messageText, {
     parse_mode: "Markdown",
