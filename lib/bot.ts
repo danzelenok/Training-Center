@@ -1,4 +1,4 @@
-import { Bot, InlineKeyboard } from "grammy";
+import { Bot } from "grammy";
 import { env } from "@/env";
 
 // Retrieve the token from environmental variables.
@@ -58,11 +58,18 @@ export async function sendCourseAnnouncement(courseId: string, courseTitle: stri
     `📚 *Course Title:* ${courseTitle}\n\n` +
     `Stay safe, stay compliant! Tap the button below to start this interactive micro-learning module directly within Telegram.`;
 
-  const keyboard = new InlineKeyboard().webApp("📖 Start Learning", courseUrl);
-
   const message = await bot.api.sendMessage(groupId, messageText, {
     parse_mode: "Markdown",
-    reply_markup: keyboard,
+    reply_markup: {
+      inline_keyboard: [
+        [
+          {
+            text: "📖 Start Learning",
+            web_app: { url: courseUrl },
+          },
+        ],
+      ],
+    },
   });
 
   return message.message_id;
