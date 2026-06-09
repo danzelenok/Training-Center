@@ -9,11 +9,11 @@ export default function MiniAppLayout({
   children: React.ReactNode;
 }) {
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const tg = (window as any).Telegram?.WebApp;
-      if (tg) {
-        tg.ready();
-        tg.expand();
+    const tg = (window as any).Telegram?.WebApp;
+    if (tg) {
+      tg.ready();
+      if (tg.requestFullscreen) {
+        tg.requestFullscreen();
       }
     }
   }, []);
