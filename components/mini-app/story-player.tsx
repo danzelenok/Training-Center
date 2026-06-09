@@ -96,40 +96,43 @@ export function StoryPlayer({ slides, themeType, themeValue }: StoryPlayerProps)
   const SlideCard = slide ? slideRegistry[slide.type]?.Card : null;
 
   return (
-    <div
-      onClick={handleTap}
-      className="relative flex flex-col items-center justify-center h-full w-full bg-slate-950 select-none cursor-pointer overflow-hidden"
-    >
-      {/* Progress bar */}
-      <div className="absolute top-0 inset-x-0 pt-3 px-4 z-50 pointer-events-none">
-        <div className="flex gap-1 w-full">
-          {slides.map((_, idx) => (
-            <div key={idx} className="h-[3px] flex-1 rounded-full overflow-hidden bg-white/30">
-              <div
-                className={`h-full bg-white transition-all duration-300 ${idx <= currentIndex ? "w-full" : "w-0"}`}
-              />
-            </div>
-          ))}
+    <div className="flex flex-col items-center justify-center h-full w-full bg-slate-950 select-none overflow-hidden">
+      {/* Phone viewport: full-screen on mobile, fixed card size on desktop */}
+      <div
+        onClick={handleTap}
+        className="relative flex flex-col flex-1 w-full cursor-pointer overflow-hidden md:flex-none md:w-[350px] md:h-[620px] md:rounded-[24px] md:shadow-2xl"
+      >
+        {/* Progress bar */}
+        <div className="absolute top-0 inset-x-0 pt-3 px-4 z-50 pointer-events-none">
+          <div className="flex gap-1 w-full">
+            {slides.map((_, idx) => (
+              <div key={idx} className="h-[3px] flex-1 rounded-full overflow-hidden bg-white/30">
+                <div
+                  className={`h-full bg-white transition-all duration-300 ${idx <= currentIndex ? "w-full" : "w-0"}`}
+                />
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
 
-      {/* Slide card */}
-      {SlideCard && (
-        <div className="w-[300px] md:w-[330px] lg:w-[350px] h-[530px] md:h-[585px] lg:h-[620px] rounded-[24px] overflow-hidden">
-          <SlideCard
-            slide={slide}
-            index={currentIndex}
-            isActive={true}
-            onUpdateSlideContent={() => {}}
-            onOpenMediaPicker={() => {}}
-            draggedIdx={null}
-            cardStyle={cardStyle}
-            mode="play"
-            onAnswered={() => setQuizAnswered(true)}
-            onCompleted={() => setQuizAnswered(true)}
-          />
-        </div>
-      )}
+        {/* Slide card */}
+        {SlideCard && (
+          <div className="flex-1 w-full overflow-hidden">
+            <SlideCard
+              slide={slide}
+              index={currentIndex}
+              isActive={true}
+              onUpdateSlideContent={() => {}}
+              onOpenMediaPicker={() => {}}
+              draggedIdx={null}
+              cardStyle={cardStyle}
+              mode="play"
+              onAnswered={() => setQuizAnswered(true)}
+              onCompleted={() => setQuizAnswered(true)}
+            />
+          </div>
+        )}
+      </div>
     </div>
   );
 }

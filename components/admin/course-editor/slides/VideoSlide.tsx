@@ -121,7 +121,7 @@ export function VideoCard({
     return (
       <Card
         style={cardStyle}
-        className={`rounded-[24px] overflow-hidden flex flex-col px-7 py-4 absolute top-0 left-0 w-[300px] md:w-[330px] lg:w-[350px] h-[530px] md:h-[585px] lg:h-[620px] origin-top-left border-[0.11px] border-border/80 justify-center items-center text-center p-6 gap-3 z-0 ${
+        className={`rounded-[24px] overflow-hidden flex flex-col px-7 py-4 ${mode === "play" ? "relative w-full h-full" : "absolute top-0 left-0 w-[300px] md:w-[330px] lg:w-[350px] h-[530px] md:h-[585px] lg:h-[620px]"} origin-top-left border-[0.11px] border-border/80 justify-center items-center text-center p-6 gap-3 z-0 ${
           draggedIdx !== null ? "scale-[0.37] pointer-events-none" : "scale-100"
         }`}
       >
@@ -138,7 +138,7 @@ export function VideoCard({
     return (
       <Card
         style={cardStyle}
-        className={`rounded-[24px] overflow-hidden flex flex-col px-7 py-4 absolute top-0 left-0 w-[300px] md:w-[330px] lg:w-[350px] h-[530px] md:h-[585px] lg:h-[620px] origin-top-left border-[0.11px] border-border/80 justify-center items-center text-center p-6 gap-3 z-0 ${
+        className={`rounded-[24px] overflow-hidden flex flex-col px-7 py-4 ${mode === "play" ? "relative w-full h-full" : "absolute top-0 left-0 w-[300px] md:w-[330px] lg:w-[350px] h-[530px] md:h-[585px] lg:h-[620px]"} origin-top-left border-[0.11px] border-border/80 justify-center items-center text-center p-6 gap-3 z-0 ${
           draggedIdx !== null ? "scale-[0.37] pointer-events-none" : "scale-100"
         }`}
       >
@@ -185,7 +185,7 @@ export function VideoCard({
                 if (node) node.playbackRate = speed;
               }}
               src={content.url}
-              className="w-full h-full object-cover"
+              className="w-full h-full object-cover pointer-events-none"
               playsInline
               onTimeUpdate={(e) => {
                 const el = e.currentTarget;

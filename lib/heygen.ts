@@ -69,7 +69,14 @@ export async function submitDialogueVideo(
     if (customVoiceIds[slotIdx] !== undefined) {
       voiceId = customVoiceIds[slotIdx] || "";
     } else {
-      if (slotIdx === 0) {
+      const slotAvatarId = slotsArray.find((s) => s.slotIndex === slotIdx)?.avatarId || "";
+      const instAvatarId = process.env.HEYGEN_INSTRUCTOR_AVATAR_ID || "";
+      const studAvatarId = process.env.HEYGEN_STUDENT_AVATAR_ID || "";
+      if (slotAvatarId && slotAvatarId === instAvatarId) {
+        voiceId = process.env.HEYGEN_INSTRUCTOR_VOICE_ID || "";
+      } else if (slotAvatarId && slotAvatarId === studAvatarId) {
+        voiceId = process.env.HEYGEN_STUDENT_VOICE_ID || "";
+      } else if (slotIdx === 0) {
         voiceId = process.env.HEYGEN_INSTRUCTOR_VOICE_ID || "";
       } else {
         voiceId = process.env.HEYGEN_STUDENT_VOICE_ID || "";

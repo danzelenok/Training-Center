@@ -1,7 +1,7 @@
 import { Bot } from "grammy";
 import { env } from "@/env";
 
-// Retrieve the token from environmental variables.
+// Retrieve the token from environmental variables
 const token = process.env.BOT_TOKEN || env.TELEGRAM_BOT_TOKEN;
 
 if (!token) {

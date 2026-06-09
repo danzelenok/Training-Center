@@ -10,6 +10,7 @@ interface PollCardProps {
   onUpdateSlideContent: (idx: number, updatedFields: any) => void;
   draggedIdx: number | null;
   cardStyle?: React.CSSProperties;
+  mode?: "edit" | "play";
 }
 
 export function PollCard({
@@ -19,6 +20,7 @@ export function PollCard({
   onUpdateSlideContent,
   draggedIdx,
   cardStyle,
+  mode,
 }: PollCardProps) {
   const content = slide.content || {};
 
@@ -31,7 +33,7 @@ export function PollCard({
     return (
       <Card
         style={cardStyle}
-        className={`rounded-[24px] overflow-hidden flex flex-col px-7 py-4 absolute top-0 left-0 w-[300px] md:w-[330px] lg:w-[350px] h-[530px] md:h-[585px] lg:h-[620px] origin-top-left border-[0.11px] border-border/80 transition-all duration-300 z-0 ${
+        className={`rounded-[24px] overflow-hidden flex flex-col px-7 py-4 ${mode === "play" ? "relative w-full h-full" : "absolute top-0 left-0 w-[300px] md:w-[330px] lg:w-[350px] h-[530px] md:h-[585px] lg:h-[620px]"} origin-top-left border-[0.11px] border-border/80 transition-all duration-300 z-0 ${
           !isActive && draggedIdx === null ? "pointer-events-none" : ""
         } ${draggedIdx !== null ? "scale-[0.37] pointer-events-none" : "scale-100"}`}
       >
@@ -116,7 +118,7 @@ export function PollCard({
   return (
     <Card
       style={cardStyle}
-      className={`rounded-[24px] overflow-hidden flex flex-col px-7 py-4 absolute top-0 left-0 w-[300px] md:w-[330px] lg:w-[350px] h-[530px] md:h-[585px] lg:h-[620px] origin-top-left border-[0.11px] border-border/80 transition-all duration-300 z-0 ${
+      className={`rounded-[24px] overflow-hidden flex flex-col px-7 py-4 ${mode === "play" ? "relative w-full h-full" : "absolute top-0 left-0 w-[300px] md:w-[330px] lg:w-[350px] h-[530px] md:h-[585px] lg:h-[620px]"} origin-top-left border-[0.11px] border-border/80 transition-all duration-300 z-0 ${
         !isActive && draggedIdx === null ? "pointer-events-none" : ""
       } ${draggedIdx !== null ? "scale-[0.37] pointer-events-none" : "scale-100"}`}
     >

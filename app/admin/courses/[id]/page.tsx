@@ -13,6 +13,7 @@ import {
   Upload,
   Image as ImageIcon,
   Sparkles,
+  Eye,
 } from "lucide-react";
 import { toast, Toaster } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -52,6 +53,9 @@ export default function CourseEditorPage() {
 }
 
 function CourseEditorContent() {
+  const params = useParams();
+  const id = params?.id as string;
+
   const {
     course,
     slidesList,
@@ -104,6 +108,11 @@ function CourseEditorContent() {
     handlePPTXUpload,
     setSlidesList,
   } = useCourseEditor();
+
+  const handlePreview = async () => {
+    await handleSaveCourse();
+    window.open(`/mini-app/${id}`, "_blank");
+  };
 
   if (loading) {
     return (
@@ -164,6 +173,14 @@ function CourseEditorContent() {
 
         {/* TOP RIGHT HEADER CONTROLS — STYLE COURSE */}
         <div className="flex items-center gap-2 animate-fade-in shrink-0">
+          <Button
+            variant="outline"
+            className="bg-card hover:bg-muted text-foreground border border-border font-bold cursor-pointer h-9 px-3.5 transition-all duration-200 gap-1.5 rounded-xl text-xs"
+            onClick={handlePreview}
+          >
+            <Eye className="h-3.5 w-3.5" />
+            Preview
+          </Button>
           <Dialog open={styleDialogOpen} onOpenChange={setStyleDialogOpen}>
             <DialogTrigger asChild>
               <Button

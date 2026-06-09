@@ -8,6 +8,17 @@ import { searchPhoto } from "./pexels";
 import { imagekit } from "./imagekit";
 import { submitDialogueVideo, submitSingleVideo, checkDialogueVideoStatus } from "./heygen";
 
+// Returns the voice ID for a slot based on the avatar assigned to it, not the slot position.
+function getVoiceIdForSlot(slots: { slotIndex: number; avatarId: string }[], slotIdx: number): string | undefined {
+  const avatarId = slots.find((s) => s.slotIndex === slotIdx)?.avatarId || "";
+  const instructorAvatarId = process.env.HEYGEN_INSTRUCTOR_AVATAR_ID || "";
+  const studentAvatarId = process.env.HEYGEN_STUDENT_AVATAR_ID || "";
+  if (avatarId && avatarId === instructorAvatarId) return process.env.HEYGEN_INSTRUCTOR_VOICE_ID;
+  if (avatarId && avatarId === studentAvatarId) return process.env.HEYGEN_STUDENT_VOICE_ID;
+  // Fallback to slot-position defaults if avatar ID is unknown
+  return slotIdx === 0 ? process.env.HEYGEN_INSTRUCTOR_VOICE_ID : process.env.HEYGEN_STUDENT_VOICE_ID;
+}
+
 // Splits dialogue lines between slot 0 (instructor) and slot 1 (student).
 // Priority: explicit slotIndex field → "instructor"/"student" character string → first two unique character names in order.
 function splitDialogueLinesBySlot(allLines: any[]): { slot0: any[]; slot1: any[] } {
@@ -144,8 +155,8 @@ export const generateSlideAssets = inngest.createFunction(
                 { slotIndex: 0, avatarId: content.heygenAvatarAId || "" },
                 { slotIndex: 1, avatarId: content.heygenAvatarBId || "" },
               ];
-              const slot0VoiceId = process.env.HEYGEN_INSTRUCTOR_VOICE_ID;
-              const slot1VoiceId = process.env.HEYGEN_STUDENT_VOICE_ID;
+              const slot0VoiceId = getVoiceIdForSlot(slots, 0);
+              const slot1VoiceId = getVoiceIdForSlot(slots, 1);
               const { slot0: slot0Lines, slot1: slot1Lines } = splitDialogueLinesBySlot(lines);
 
               console.log(`[dialogue init] slide=${slide.id} slot0=${slot0Lines.length} slot1=${slot1Lines.length}`);
@@ -278,8 +289,8 @@ export const regenerateSingleSlideAsset = inngest.createFunction(
           { slotIndex: 1, avatarId: content.heygenAvatarBId || "" }
         ];
 
-        const slot0VoiceId = process.env.HEYGEN_INSTRUCTOR_VOICE_ID;
-        const slot1VoiceId = process.env.HEYGEN_STUDENT_VOICE_ID;
+        const slot0VoiceId = getVoiceIdForSlot(slots, 0);
+        const slot1VoiceId = getVoiceIdForSlot(slots, 1);
 
         const { slot0: slot0Lines, slot1: slot1Lines } = splitDialogueLinesBySlot(allLines);
 

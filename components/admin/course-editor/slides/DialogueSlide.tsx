@@ -1,11 +1,10 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import { Card } from "@/components/ui/card";
 import { AlertTriangle, GripVertical, Loader2, Play, X, Sparkles, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { Slide } from "../CardCanvas";
 import { SlideBody } from "../SlideBody";
 import { QuizContainer } from "../QuizContainer";
-import { MediaPlayerBar } from "../MediaPlayerBar";
 import { ControlPanel } from "../ControlPanel";
 import { PanelButton, PanelDivider } from "../PanelButton";
 
@@ -409,14 +408,6 @@ function DialogueScriptOverlay({
   );
 }
 
-function AutoComplete({ onComplete }: { onComplete?: () => void }) {
-  useEffect(() => {
-    const t = setTimeout(() => onComplete?.(), 1500);
-    return () => clearTimeout(t);
-  }, []);
-  return null;
-}
-
 // 5. DialogueCard Component
 export function DialogueCard({
   slide,
@@ -455,78 +446,62 @@ export function DialogueCard({
   const isInstructorLoading = !instructorVideoUrl && (slide.assetStatus === "generating" || slide.assetStatus === "pending");
   const isStudentLoading = !studentVideoUrl && (slide.assetStatus === "generating" || slide.assetStatus === "pending");
 
-  const [avatarPickerOpen, setAvatarPickerOpen] = useState<{ side: "A" | "B" } | null>(null);
-
-  const isFailed = slide.assetStatus === "failed";
   const linesList = content.dialogueLines || [];
 
-  const [currentLineIdx, setCurrentLineIdx] = useState(0);
-  const [dialogueFinished, setDialogueFinished] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0.1);
-  const [speed, setSpeed] = useState(1);
-  const videoARef = useRef<HTMLVideoElement | null>(null);
-  const videoBRef = useRef<HTMLVideoElement | null>(null);
+  const [avatarPickerOpen, setAvatarPickerOpen] = useState<{ side: "A" | "B" } | null>(null);
+  const [activePlayer, setActivePlayer] = useState<"instructor" | "student" | null>(null);
+  const [dialogueCompleted, setDialogueCompleted] = useState(false);
+  const instructorVideoRef = useRef<HTMLVideoElement>(null);
+  const studentVideoRef = useRef<HTMLVideoElement>(null);
+  const secondVideoPlayedRef = useRef(false);
 
-  const currentLine = linesList[currentLineIdx];
-  const currentVideoRef = currentLine?.slotIndex === 0 ? videoARef : videoBRef;
+  const firstSpeaker = useMemo(() => {
+    if (linesList.length === 0) return "instructor";
+    const first = linesList[0];
+    return (first.slotIndex === 1 || first.character === "student") ? "student" : "instructor";
+  }, [linesList]);
 
   useEffect(() => {
     if (mode !== "play") return;
-    setCurrentLineIdx(0);
-    setDialogueFinished(false);
-    setTimeout(() => {
-      currentVideoRef.current?.play().catch(() => {});
-      setIsPlaying(true);
-    }, 300);
-  }, [mode]);
+    if (!instructorVideoUrl && !studentVideoUrl) return;
 
-  const handleVideoEnded = () => {
-    const nextIdx = currentLineIdx + 1;
-    if (nextIdx < linesList.length) {
-      setCurrentLineIdx(nextIdx);
-      setCurrentTime(0);
-      setDuration(0.1);
-      setTimeout(() => {
-        const nextLine = linesList[nextIdx];
-        const nextRef = nextLine?.slotIndex === 0 ? videoARef : videoBRef;
-        nextRef.current?.play().catch(() => {});
-        setIsPlaying(true);
-      }, 400);
+    const startWith = (instructorVideoUrl && firstSpeaker === "instructor") ? "instructor"
+      : (studentVideoUrl && firstSpeaker === "student") ? "student"
+      : instructorVideoUrl ? "instructor" : "student";
+
+    secondVideoPlayedRef.current = false;
+    setDialogueCompleted(false);
+    setActivePlayer(startWith);
+    const ref = startWith === "instructor" ? instructorVideoRef : studentVideoRef;
+    if (ref.current) {
+      ref.current.currentTime = 0;
+      ref.current.play().catch(() => {});
+    }
+  }, [mode, instructorVideoUrl, studentVideoUrl, firstSpeaker]);
+
+  const handleVideoEnded = (who: "instructor" | "student") => {
+    if (secondVideoPlayedRef.current) {
+      setActivePlayer(null);
+      setDialogueCompleted(true);
+      return;
+    }
+
+    const other = who === "instructor" ? "student" : "instructor";
+    const otherUrl = other === "instructor" ? instructorVideoUrl : studentVideoUrl;
+    const otherRef = other === "instructor" ? instructorVideoRef : studentVideoRef;
+
+    if (otherUrl && otherRef.current) {
+      secondVideoPlayedRef.current = true;
+      setActivePlayer(other);
+      otherRef.current.currentTime = 0;
+      otherRef.current.play().catch(() => {});
     } else {
-      setDialogueFinished(true);
-      setIsPlaying(false);
+      setActivePlayer(null);
+      setDialogueCompleted(true);
     }
   };
 
-  const togglePlay = () => {
-    if (currentVideoRef.current) {
-      if (currentVideoRef.current.paused) {
-        currentVideoRef.current.play().catch(() => {});
-        setIsPlaying(true);
-      } else {
-        currentVideoRef.current.pause();
-        setIsPlaying(false);
-      }
-    }
-  };
-
-  const changeSpeed = () => {
-    const speeds = [1, 1.25, 1.5, 2];
-    const next = speeds[(speeds.indexOf(speed) + 1) % speeds.length];
-    setSpeed(next);
-    if (currentVideoRef.current) currentVideoRef.current.playbackRate = next;
-  };
-
-  const handleScrub = (val: number) => {
-    if (currentVideoRef.current) {
-      currentVideoRef.current.currentTime = val;
-      setCurrentTime(val);
-    }
-  };
-
-  const dialogueBelowType = content.dialogueBelowType;
+  const isFailed = slide.assetStatus === "failed";
 
   // Reset local picker state if deactivated
   useEffect(() => {
@@ -609,86 +584,6 @@ export function DialogueCard({
     );
   }
 
-  if (mode === "play") {
-    return (
-      <Card style={cardStyle} className="rounded-[24px] overflow-hidden flex flex-col relative w-full h-full origin-top-left border border-border/80 shadow-md">
-        <div className="relative flex-1 min-h-0 bg-black">
-          <video
-            ref={videoARef}
-            src={instructorVideoUrl}
-            className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ${
-              !dialogueFinished && currentLine?.slotIndex === 0 ? "opacity-100" : "opacity-0"
-            }`}
-            playsInline
-            onTimeUpdate={(e) => { setCurrentTime(e.currentTarget.currentTime); if (e.currentTarget.duration) setDuration(e.currentTarget.duration); }}
-            onEnded={handleVideoEnded}
-            onPlay={() => setIsPlaying(true)}
-            onPause={() => setIsPlaying(false)}
-          />
-          <video
-            ref={videoBRef}
-            src={studentVideoUrl}
-            className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ${
-              !dialogueFinished && currentLine?.slotIndex === 1 ? "opacity-100" : "opacity-0"
-            }`}
-            playsInline
-            onTimeUpdate={(e) => { setCurrentTime(e.currentTarget.currentTime); if (e.currentTarget.duration) setDuration(e.currentTarget.duration); }}
-            onEnded={handleVideoEnded}
-            onPlay={() => setIsPlaying(true)}
-            onPause={() => setIsPlaying(false)}
-          />
-
-          {!dialogueFinished && (
-            <div className="absolute bottom-14 left-4 z-10">
-              <span className="text-xs font-bold text-white bg-black/50 px-2 py-1 rounded-lg">
-                {currentLine?.slotIndex === 0 ? (labelA || "Instructor") : (labelB || "Worker")}
-              </span>
-            </div>
-          )}
-
-          {!dialogueFinished && (
-            <div className="absolute bottom-0 left-0 right-0 z-20 px-4 pb-3 pt-8 bg-gradient-to-t from-black/80 to-transparent">
-              <MediaPlayerBar
-                isPlaying={isPlaying}
-                currentTime={currentTime}
-                duration={duration}
-                speed={speed}
-                onTogglePlay={togglePlay}
-                onScrub={handleScrub}
-                onChangeSpeed={changeSpeed}
-              />
-            </div>
-          )}
-        </div>
-
-        {dialogueFinished && (
-          <div className="flex-1 flex flex-col min-h-0 overflow-y-auto scrollbar-none px-7 py-4">
-            {dialogueBelowType === "text" && (
-              <p className="font-sans font-medium text-base text-foreground leading-relaxed">
-                {content.belowText || ""}
-              </p>
-            )}
-            {dialogueBelowType === "quiz" && (
-              <QuizContainer
-                questionText={content.belowQuizQuestion || ""}
-                options={content.belowQuizOptions || []}
-                correctIndex={content.belowQuizCorrectIndex ?? 0}
-                explanation={content.belowQuizExplanation || ""}
-                isActive={true}
-                mode="play"
-                onAnswered={onCompleted}
-                onUpdateContent={() => {}}
-              />
-            )}
-            {(!dialogueBelowType || dialogueBelowType === "none") && (
-              <AutoComplete onComplete={onCompleted} />
-            )}
-          </div>
-        )}
-      </Card>
-    );
-  }
-
   const renderContentContainer = () => {
     if (!content.dialogueBelowType || content.dialogueBelowType === "none") {
       return (
@@ -748,7 +643,7 @@ export function DialogueCard({
   return (
     <Card
       style={cardStyle}
-      className={`rounded-[24px] overflow-hidden flex flex-col px-7 py-4 absolute top-0 left-0 w-[300px] md:w-[330px] lg:w-[350px] h-[530px] md:h-[585px] lg:h-[620px] origin-top-left border-[0.11px] border-border/80 transition-all duration-300 z-0 ${
+      className={`rounded-[24px] overflow-hidden flex flex-col px-7 py-4 ${mode === "play" ? "relative w-full h-full" : "absolute top-0 left-0 w-[300px] md:w-[330px] lg:w-[350px] h-[530px] md:h-[585px] lg:h-[620px]"} origin-top-left border-[0.11px] border-border/80 transition-all duration-300 z-0 ${
         !isActive && draggedIdx === null ? "pointer-events-none" : ""
       } ${draggedIdx !== null ? "scale-[0.37] pointer-events-none" : "scale-100"}`}
     >
@@ -775,14 +670,15 @@ export function DialogueCard({
                   : "bg-muted text-muted-foreground/45"
               } ${isActive ? "cursor-pointer" : "cursor-default"} ${
                 isPickerOpenA ? "ring-2 ring-offset-2 ring-primary/60 scale-105" : isActive ? "hover:scale-105 hover:shadow-xl" : ""
-              }`}
+              } ${mode === "play" && activePlayer !== null && activePlayer !== "instructor" ? "opacity-40" : ""}`}
             >
               {instructorVideoUrl ? (
                 <div className="w-full h-full relative">
                   <video
+                    ref={instructorVideoRef}
                     src={instructorVideoUrl}
                     playsInline
-                    preload="metadata"
+                    preload={mode === "play" ? "auto" : "metadata"}
                     className="w-full h-full object-cover"
                     style={
                       typeA === "instructor"
@@ -791,10 +687,13 @@ export function DialogueCard({
                         ? { transform: "scale(2.1) translateY(-5%)", transformOrigin: "center 15%" }
                         : undefined
                     }
+                    onEnded={mode === "play" ? () => handleVideoEnded("instructor") : undefined}
                   />
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/20">
-                    <Play className="h-6 w-6 text-white drop-shadow" />
-                  </div>
+                  {mode !== "play" && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                      <Play className="h-6 w-6 text-white drop-shadow" />
+                    </div>
+                  )}
                 </div>
               ) : isInstructorLoading ? (
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -837,14 +736,15 @@ export function DialogueCard({
                   : "bg-muted text-muted-foreground/45"
               } ${isActive ? "cursor-pointer" : "cursor-default"} ${
                 isPickerOpenB ? "ring-2 ring-offset-2 ring-blue-500/60 scale-105" : isActive ? "hover:scale-105 hover:shadow-xl" : ""
-              }`}
+              } ${mode === "play" && activePlayer !== null && activePlayer !== "student" ? "opacity-40" : ""}`}
             >
               {studentVideoUrl ? (
                 <div className="w-full h-full relative">
                   <video
+                    ref={studentVideoRef}
                     src={studentVideoUrl}
                     playsInline
-                    preload="metadata"
+                    preload={mode === "play" ? "auto" : "metadata"}
                     className="w-full h-full object-cover"
                     style={
                       typeB === "instructor"
@@ -853,10 +753,13 @@ export function DialogueCard({
                         ? { transform: "scale(2.1) translateY(-5%)", transformOrigin: "center 15%" }
                         : undefined
                     }
+                    onEnded={mode === "play" ? () => handleVideoEnded("student") : undefined}
                   />
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/20">
-                    <Play className="h-6 w-6 text-white drop-shadow" />
-                  </div>
+                  {mode !== "play" && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                      <Play className="h-6 w-6 text-white drop-shadow" />
+                    </div>
+                  )}
                 </div>
               ) : isStudentLoading ? (
                 <Loader2 className="h-8 w-8 animate-spin text-blue-400" />
@@ -902,7 +805,13 @@ export function DialogueCard({
         )}
 
         {/* Main Card Content Container (Text Content or Quiz Content) */}
-        <div className="flex-1 flex flex-col min-h-0 overflow-y-auto scrollbar-none pb-4 px-[16px]">
+        <div className={`flex-1 flex flex-col min-h-0 overflow-y-auto scrollbar-none pb-4 px-[16px] ${
+          mode === "play" && !dialogueCompleted && (instructorVideoUrl || studentVideoUrl)
+            ? "opacity-0 pointer-events-none"
+            : dialogueCompleted
+            ? "animate-in fade-in slide-in-from-bottom-4 duration-500"
+            : ""
+        }`}>
           {renderContentContainer()}
         </div>
 

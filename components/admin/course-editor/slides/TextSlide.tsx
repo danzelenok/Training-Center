@@ -133,7 +133,7 @@ export function TextCard({
   return (
     <Card
       style={cardStyle}
-      className={`rounded-[24px] overflow-hidden flex flex-col px-7 py-4 absolute top-0 left-0 w-[300px] md:w-[330px] lg:w-[350px] h-[530px] md:h-[585px] lg:h-[620px] origin-top-left select-none border border-border/80 shadow-md transition-all duration-300 z-0 relative ${
+      className={`rounded-[24px] overflow-hidden flex flex-col px-7 py-4 ${mode === "play" ? "relative w-full h-full" : "absolute top-0 left-0 w-[300px] md:w-[330px] lg:w-[350px] h-[530px] md:h-[585px] lg:h-[620px]"} origin-top-left select-none border border-border/80 shadow-md transition-all duration-300 z-0 relative ${
         !isActive && draggedIdx === null ? "pointer-events-none" : ""
       } ${draggedIdx !== null ? "scale-[0.37] pointer-events-none" : "scale-100"}`}
     >
