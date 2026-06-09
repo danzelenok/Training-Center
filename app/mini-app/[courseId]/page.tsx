@@ -90,5 +90,9 @@ export default function MiniAppCoursePage({ params }: PageProps) {
     );
   }
 
-  return <StoryPlayer slides={slides} themeType={themeType} themeValue={themeValue} />;
+  return (
+    <main className="w-full min-h-screen bg-black">
+      <StoryPlayer slides={slides} themeType={themeType} themeValue={themeValue} />
+    </main>
+  );
 }

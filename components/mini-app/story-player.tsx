@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Award, Sparkles, RotateCcw } from "lucide-react";
 import { Slide } from "@/components/admin/course-editor/CardCanvas";
 import { slideRegistry } from "@/components/admin/course-editor/SlideFactory";
@@ -12,6 +12,17 @@ interface StoryPlayerProps {
 }
 
 export function StoryPlayer({ slides, themeType, themeValue }: StoryPlayerProps) {
+  const [safeTop, setSafeTop] = useState(0);
+  const [safeBottom, setSafeBottom] = useState(0);
+
+  useEffect(() => {
+    const tg = (window as any).Telegram?.WebApp;
+    if (tg) {
+      setSafeTop(tg.safeAreaInset?.top ?? 0);
+      setSafeBottom(tg.contentSafeAreaInset?.bottom ?? 0);
+    }
+  }, []);
+
   const getCardBgStyle = (): React.CSSProperties => {
     if (themeType === "preset") {
       return { backgroundImage: themeValue };
@@ -71,9 +82,18 @@ export function StoryPlayer({ slides, themeType, themeValue }: StoryPlayerProps)
     }
   };
 
+  const safeAreaStyle: React.CSSProperties = {
+    height: `calc(100dvh - ${safeTop}px - ${safeBottom}px)`,
+    marginTop: `${safeTop}px`,
+    marginBottom: `${safeBottom}px`,
+  };
+
   if (completed) {
     return (
-      <div className="flex flex-col h-full w-full items-center justify-center bg-slate-950 text-white gap-6 p-8 text-center">
+      <div
+        className="flex flex-col w-full items-center justify-center bg-slate-950 text-white gap-6 p-8 text-center select-none overflow-hidden"
+        style={safeAreaStyle}
+      >
         <div className="h-24 w-24 rounded-full bg-gradient-to-tr from-[#C8D400] to-sky-400 flex items-center justify-center shadow-2xl relative">
           <Award className="h-12 w-12 text-[#1B2A6B]" />
           <Sparkles className="absolute -top-1 -right-1 h-6 w-6 text-yellow-300 animate-pulse" />
@@ -96,11 +116,13 @@ export function StoryPlayer({ slides, themeType, themeValue }: StoryPlayerProps)
   const SlideCard = slide ? slideRegistry[slide.type]?.Card : null;
 
   return (
-    <div className="flex flex-col items-center justify-center h-full w-full bg-slate-950 select-none overflow-hidden">
-      {/* Phone viewport: full-screen on mobile, fixed card size on desktop */}
+    <div
+      className="w-full flex flex-col bg-slate-950 select-none overflow-hidden"
+      style={safeAreaStyle}
+    >
       <div
         onClick={handleTap}
-        className="relative flex flex-col flex-1 w-full cursor-pointer overflow-hidden md:flex-none md:w-[350px] md:h-[620px] md:rounded-[24px] md:shadow-2xl"
+        className="relative flex flex-col flex-1 w-full cursor-pointer overflow-hidden md:flex-none md:w-[350px] md:h-[620px] md:rounded-[24px] md:shadow-2xl md:mx-auto"
       >
         {/* Progress bar */}
         <div className="absolute top-0 inset-x-0 pt-3 px-4 z-50 pointer-events-none">
