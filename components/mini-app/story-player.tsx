@@ -1,9 +1,12 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Award, Sparkles, RotateCcw } from "lucide-react";
 import { Slide } from "@/components/admin/course-editor/CardCanvas";
 import { slideRegistry } from "@/components/admin/course-editor/SlideFactory";
+
+const CARD_WIDTH = 350;
+const CARD_HEIGHT = 620;
 
 interface StoryPlayerProps {
   slides: Slide[];
@@ -14,6 +17,8 @@ interface StoryPlayerProps {
 export function StoryPlayer({ slides, themeType, themeValue }: StoryPlayerProps) {
   const [safeTop, setSafeTop] = useState(0);
   const [safeBottom, setSafeBottom] = useState(0);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
 
   useEffect(() => {
     const tg = (window as any).Telegram?.WebApp;
@@ -21,6 +26,18 @@ export function StoryPlayer({ slides, themeType, themeValue }: StoryPlayerProps)
       setSafeTop(tg.safeAreaInset?.top ?? 0);
       setSafeBottom(tg.contentSafeAreaInset?.bottom ?? 0);
     }
+  }, []);
+
+  useEffect(() => {
+    const updateScale = () => {
+      if (!containerRef.current) return;
+      const availW = containerRef.current.offsetWidth;
+      const availH = containerRef.current.offsetHeight;
+      setScale(Math.min(availW / CARD_WIDTH, availH / CARD_HEIGHT));
+    };
+    updateScale();
+    window.addEventListener("resize", updateScale);
+    return () => window.removeEventListener("resize", updateScale);
   }, []);
 
   const getCardBgStyle = (): React.CSSProperties => {
@@ -70,7 +87,7 @@ export function StoryPlayer({ slides, themeType, themeValue }: StoryPlayerProps)
     const isRight = (e.clientX - rect.left) / rect.width >= 0.5;
 
     const isQuizGated =
-      (slide?.type === "quiz") ||
+      slide?.type === "quiz" ||
       (slide?.type === "dialogue" && slide?.content?.dialogueBelowType === "quiz");
 
     if (isRight) {
@@ -83,9 +100,10 @@ export function StoryPlayer({ slides, themeType, themeValue }: StoryPlayerProps)
   };
 
   const safeAreaStyle: React.CSSProperties = {
-    height: `calc(100dvh - ${safeTop}px - ${safeBottom}px)`,
+    height: `calc(100dvh - ${safeTop - 5}px - ${safeBottom + (safeTop - 5)}px)`,
     marginTop: `${safeTop - 5}px`,
-    marginBottom: `${safeBottom}px`,
+    marginBottom: `${safeBottom + (safeTop - 5)}px`,
+    borderRadius: 12,
   };
 
   if (completed) {
@@ -120,26 +138,37 @@ export function StoryPlayer({ slides, themeType, themeValue }: StoryPlayerProps)
       className="w-full flex flex-col bg-slate-950 select-none overflow-hidden"
       style={safeAreaStyle}
     >
-      <div
-        onClick={handleTap}
-        className="relative flex flex-col flex-1 w-full cursor-pointer overflow-hidden md:flex-none md:w-[350px] md:h-[620px] md:rounded-[24px] md:shadow-2xl md:mx-auto"
-      >
-        {/* Progress bar */}
-        <div className="absolute top-0 inset-x-0 pt-[5px] px-4 z-50 pointer-events-none">
-          <div className="flex gap-1 w-full">
-            {slides.map((_, idx) => (
-              <div key={idx} className="h-[3px] flex-1 rounded-full overflow-hidden bg-white/30">
-                <div
-                  className={`h-full bg-white transition-all duration-300 ${idx <= currentIndex ? "w-full" : "w-0"}`}
-                />
-              </div>
-            ))}
-          </div>
+      {/* Progress bar — above the scaled card, not scaled */}
+      <div className="px-4 pt-[5px] pb-2 shrink-0">
+        <div className="flex gap-1 w-full">
+          {slides.map((_, idx) => (
+            <div key={idx} className="h-[3px] flex-1 rounded-full overflow-hidden bg-white/30">
+              <div
+                className={`h-full bg-white transition-all duration-300 ${idx <= currentIndex ? "w-full" : "w-0"}`}
+              />
+            </div>
+          ))}
         </div>
+      </div>
 
-        {/* Slide card */}
-        {SlideCard && (
-          <div className="flex-1 w-full overflow-hidden">
+      {/* Scale container — fills remaining space and centers the card */}
+      <div
+        ref={containerRef}
+        className="flex-1 w-full flex items-center justify-center overflow-hidden cursor-pointer"
+        onClick={handleTap}
+      >
+        {/* Card at native editor size (350×620), scaled uniformly to fit */}
+        <div
+          style={{
+            width: CARD_WIDTH,
+            height: CARD_HEIGHT,
+            transform: `scale(${scale})`,
+            transformOrigin: "center center",
+            position: "relative",
+            flexShrink: 0,
+          }}
+        >
+          {SlideCard && (
             <SlideCard
               slide={slide}
               index={currentIndex}
@@ -152,8 +181,8 @@ export function StoryPlayer({ slides, themeType, themeValue }: StoryPlayerProps)
               onAnswered={() => setQuizAnswered(true)}
               onCompleted={() => setQuizAnswered(true)}
             />
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );
