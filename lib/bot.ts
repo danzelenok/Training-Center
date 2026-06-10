@@ -65,7 +65,7 @@ export async function sendCourseAnnouncement(courseId: string, courseTitle: stri
         [
           {
             text: "📖 Start Learning",
-            web_app: { url: courseUrl },
+            url: `https://t.me/CoolCatTraining_bot/CoolCatTraining?startapp=${courseId}`,
           },
         ],
       ],
@@ -73,6 +73,20 @@ export async function sendCourseAnnouncement(courseId: string, courseTitle: stri
   });
 
   return message.message_id;
+}
+
+/**
+ * Deletes a previously sent course announcement from the Telegram group.
+ * Silently ignores errors (e.g. message already deleted or too old).
+ */
+export async function deleteTelegramMessage(messageId: string | number | bigint, groupId: string | number | bigint): Promise<void> {
+  try {
+    const chatId = typeof groupId === "bigint" ? groupId.toString() : groupId;
+    const msgId = typeof messageId === "bigint" ? Number(messageId) : Number(messageId);
+    await bot.api.deleteMessage(chatId, msgId);
+  } catch (err: any) {
+    console.warn("Could not delete Telegram message (may already be deleted):", err?.message);
+  }
 }
 
 /**

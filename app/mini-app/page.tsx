@@ -19,7 +19,13 @@ export default function MiniAppPage() {
 
   useEffect(() => {
     const tg = (window as any).Telegram?.WebApp;
-    if (tg) setSafeTop(tg.safeAreaInset?.top ?? 0);
+    if (tg) {
+      setSafeTop(tg.safeAreaInset?.top ?? 0);
+      const startParam = tg.initDataUnsafe?.start_param;
+      if (startParam) {
+        router.replace(`/mini-app/${startParam}`);
+      }
+    }
   }, []);
 
   useEffect(() => {

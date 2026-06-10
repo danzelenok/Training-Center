@@ -10,6 +10,8 @@ import {
   ExternalLink,
   Sparkles,
   Send,
+  RotateCcw,
+  XCircle,
   Loader2,
   BookOpen,
   Calendar,
@@ -60,6 +62,8 @@ export default function CoursesPage() {
   // Actions states
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [publishingId, setPublishingId] = useState<string | null>(null);
+  const [revokingId, setRevokingId] = useState<string | null>(null);
+  const [resendingId, setResendingId] = useState<string | null>(null);
 
   // Fetch Courses
   const fetchCourses = async () => {
@@ -133,6 +137,43 @@ export default function CoursesPage() {
       toast.error(err.message || "Publishing failed", { id: toastId });
     } finally {
       setPublishingId(null);
+    }
+  };
+
+  // Revoke Course (delete Telegram message, reset to draft)
+  const handleRevokeCourse = async (id: string) => {
+    if (!confirm("Отозвать курс? Сообщение в Telegram будет удалено, курс вернётся в статус черновика.")) {
+      return;
+    }
+    setRevokingId(id);
+    const toastId = toast.loading("Отзываем курс...");
+    try {
+      const res = await fetch(`/api/courses/${id}/publish`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to revoke course");
+      toast.success("Курс отозван. Сообщение удалено из Telegram.", { id: toastId });
+      fetchCourses();
+    } catch (err: any) {
+      toast.error(err.message || "Ошибка при отзыве курса", { id: toastId });
+    } finally {
+      setRevokingId(null);
+    }
+  };
+
+  // Resend Course (send new Telegram announcement)
+  const handleResendCourse = async (id: string) => {
+    setResendingId(id);
+    const toastId = toast.loading("Повторная отправка в Telegram...");
+    try {
+      const res = await fetch(`/api/courses/${id}/publish`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to resend course");
+      toast.success("Курс повторно отправлен в Telegram!", { id: toastId });
+      fetchCourses();
+    } catch (err: any) {
+      toast.error(err.message || "Ошибка при повторной отправке", { id: toastId });
+    } finally {
+      setResendingId(null);
     }
   };
 
@@ -344,6 +385,42 @@ export default function CoursesPage() {
                               <>
                                 <Send className="h-3.5 w-3.5 mr-1" /> Broadcast
                               </>
+                            )}
+                          </Button>
+                        )}
+
+                        {/* Resend Button (Only for published courses) */}
+                        {course.status === "published" && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={resendingId === course.id || revokingId === course.id}
+                            onClick={() => handleResendCourse(course.id)}
+                            title="Отправить повторно в Telegram"
+                            className="h-9 w-9 p-0 text-muted-foreground hover:bg-[#C8D400]/10 hover:text-[#C8D400] rounded-lg cursor-pointer"
+                          >
+                            {resendingId === course.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <RotateCcw className="h-4 w-4" />
+                            )}
+                          </Button>
+                        )}
+
+                        {/* Revoke Button (Only for published courses) */}
+                        {course.status === "published" && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={revokingId === course.id || resendingId === course.id}
+                            onClick={() => handleRevokeCourse(course.id)}
+                            title="Отозвать курс из Telegram"
+                            className="h-9 w-9 p-0 text-muted-foreground hover:bg-orange-500/10 hover:text-orange-400 rounded-lg cursor-pointer"
+                          >
+                            {revokingId === course.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin text-orange-500" />
+                            ) : (
+                              <XCircle className="h-4 w-4" />
                             )}
                           </Button>
                         )}
