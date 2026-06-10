@@ -151,16 +151,13 @@ export function QuizContainer({
                   setAnswered(true);
                   onAnswered?.(idx === correctIdxValue);
                 }}
-                className={`w-full text-left px-4 py-3 rounded-2xl border text-sm font-medium transition-all duration-300 flex items-center gap-3 ${btnClass}`}
+                className={`w-full text-left px-4 py-3 rounded-2xl border text-sm font-medium transition-all duration-300 relative ${btnClass}`}
               >
                 {answered && isCorrect && (
-                  <span className="text-green-500 font-bold shrink-0">✓</span>
+                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-green-500 font-bold">✓</span>
                 )}
                 {answered && isSelected && !isCorrect && (
-                  <span className="text-red-500 font-bold shrink-0">✗</span>
-                )}
-                {(!answered || (!isCorrect && !isSelected)) && (
-                  <span className="w-4 shrink-0" />
+                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-red-500 font-bold">✗</span>
                 )}
                 {option}
               </button>

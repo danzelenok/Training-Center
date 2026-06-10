@@ -466,8 +466,6 @@ export function VideoToolbar({
   index,
   onUpdateSlideContent,
   onOpenMediaPicker,
-  isVideoConfigOpen,
-  setIsVideoConfigOpen,
   videoToolsOpen,
   setVideoToolsOpen,
   captionsToolsOpen,
@@ -475,136 +473,13 @@ export function VideoToolbar({
 }: VideoToolbarProps) {
   const content = slide.content || {};
   const videoMode = content.videoMode;
-  const speechText = content.speechText || "";
   const captions = content.captions || "";
-  const avatarId = content.avatarId;
   const forceCompletion = content.forceCompletion === true;
   const [isGeneratingCaptions, setIsGeneratingCaptions] = useState(false);
-  const [chadImage, setChadImage] = useState(CHAD_FALLBACK_IMAGE);
-  const [florinImage, setFlorinImage] = useState(FLORIN_FALLBACK_IMAGE);
-
-  useEffect(() => {
-    fetchAvatarsList().then((list) => {
-      const chad = list.find((a: any) => a.name.toLowerCase() === "chad");
-      const florin = list.find((a: any) => a.name.toLowerCase() === "florin");
-      if (chad?.preview_image_url) setChadImage(chad.preview_image_url);
-      if (florin?.preview_image_url) setFlorinImage(florin.preview_image_url);
-    });
-  }, []);
 
   const updateContent = (fields: any) => onUpdateSlideContent(index, fields);
 
-  const handleRegenerateVideo = async () => {
-    if (!slide.id) return;
-    onUpdateSlideContent(index, {}, { assetStatus: "generating" });
-    setIsVideoConfigOpen(false);
-    try {
-      const res = await fetch(`/api/slides/${slide.id}/regenerate?asset=video`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ speechText }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || `Server error ${res.status}`);
-      }
-      toast.success("HeyGen video generation triggered in background.");
-    } catch (err: any) {
-      onUpdateSlideContent(index, {}, { assetStatus: "failed" });
-      toast.error("Failed to generate video: " + err.message);
-    }
-  };
-
-  // If no video URL exists and we are in generate mode, render config AI panel
-  if (videoMode === "generate" && !content.url) {
-    if (!isVideoConfigOpen) return null;
-    return (
-      <div className="flex flex-col items-center gap-2 w-full z-20 mb-2 mt-[-16px] animate-fade-in no-swipe">
-        <div className="border border-border rounded-2xl px-3 py-2.5 shadow-2xl flex flex-col gap-2.5 z-50 w-full max-w-xs backdrop-blur-md bg-popover text-popover-foreground">
-          <div className="flex flex-col gap-1.5 text-left">
-            <p className="text-[10px] font-medium text-muted-foreground">Select Role</p>
-            <div className="flex gap-1.5">
-              <button
-                type="button"
-                onClick={() => updateContent({ avatarId: "instructor" })}
-                className={`flex-1 flex flex-col items-center gap-0.5 py-1.5 rounded-xl border-2 transition-all cursor-pointer no-swipe ${
-                  avatarId === "instructor"
-                    ? "border-primary bg-primary/10"
-                    : "border-border bg-muted"
-                }`}
-              >
-                <div className="w-8 h-8 rounded-full border border-primary bg-[#E2E5E9] overflow-hidden">
-                  <img src={chadImage} className="w-full h-full object-cover" style={{ transform: "scale(2.1) translateY(5%)", transformOrigin: "center 15%" }} alt="Chad" />
-                </div>
-                <span className="text-[9px] font-medium">Instructor</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => updateContent({ avatarId: "student" })}
-                className={`flex-1 flex flex-col items-center gap-0.5 py-1.5 rounded-xl border-2 transition-all cursor-pointer no-swipe ${
-                  avatarId === "student"
-                    ? "border-blue-500 bg-blue-500/10"
-                    : "border-border bg-muted"
-                }`}
-              >
-                <div className="w-8 h-8 rounded-full border border-blue-500 bg-[#E2E5E9] overflow-hidden">
-                  <img src={florinImage} className="w-full h-full object-cover" style={{ transform: "scale(2.1) translateY(-5%)", transformOrigin: "center 15%" }} alt="Florin" />
-                </div>
-                <span className="text-[9px] font-medium">Student</span>
-              </button>
-            </div>
-          </div>
-
-          <div className="flex gap-1.5 text-left">
-            <div className="flex-1 flex flex-col gap-1">
-              <p className="text-[10px] font-medium text-muted-foreground">
-                Speech
-              </p>
-              <textarea
-                value={speechText}
-                onChange={(e) => {
-                  const newSpeech = e.target.value;
-                  const fields: any = { speechText: newSpeech };
-                  if (!captions || captions === speechText) {
-                    fields.captions = newSpeech;
-                  }
-                  updateContent(fields);
-                }}
-                placeholder="Avatar speech script..."
-                rows={2}
-                className="w-full rounded-xl border border-border bg-card text-foreground px-2 py-1.5 text-[9px] leading-relaxed resize-none focus:outline-none focus:ring-1 focus:ring-primary transition-colors placeholder-muted-foreground/25"
-              />
-            </div>
-            <div className="flex-1 flex flex-col gap-1">
-              <p className="text-[10px] font-medium text-muted-foreground">
-                Captions
-              </p>
-              <textarea
-                value={captions}
-                onChange={(e) => updateContent({ captions: e.target.value })}
-                placeholder="Edit captions..."
-                rows={2}
-                className="w-full rounded-xl border border-border bg-card text-foreground px-2 py-1.5 text-[9px] leading-relaxed resize-none focus:outline-none focus:ring-1 focus:ring-primary transition-colors placeholder-muted-foreground/25"
-              />
-            </div>
-          </div>
-
-          <button
-            type="button"
-            disabled={!speechText.trim()}
-            onClick={handleRegenerateVideo}
-            className={`w-full py-2.5 rounded-xl border flex items-center justify-center gap-1.5 text-xs font-bold transition-all cursor-pointer no-swipe mt-0.5 ${
-              !speechText.trim()
-                ? "opacity-40 cursor-not-allowed border-blue-600/20 bg-blue-600/5 text-blue-600"
-                : "border-blue-600 bg-blue-600 text-white hover:bg-blue-700"
-            }`}
-          >
-            <Sparkles className="h-3.5 w-3.5" /> Generate Video
-          </button>
-        </div>
-      </div>
-    );
-  }
+  if (videoMode === "generate" && !content.url) return null;
 
   // If video exists, render tools
   if (content.url) {
