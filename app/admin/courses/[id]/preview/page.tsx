@@ -60,8 +60,10 @@ export default function CoursePreviewPage({ params }: PageProps) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black text-white overflow-hidden flex flex-col select-none font-sans z-50">
-      <StoryPlayer slides={slides} themeType={themeType} themeValue={themeValue} />
+    <div className="fixed inset-0 bg-slate-950 flex items-center justify-center">
+      <div className="relative h-full w-full max-w-[420px] overflow-hidden">
+        <StoryPlayer slides={slides} themeType={themeType} themeValue={themeValue} />
+      </div>
     </div>
   );
 }
