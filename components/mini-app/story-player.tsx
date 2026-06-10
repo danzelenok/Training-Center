@@ -84,7 +84,7 @@ export function StoryPlayer({ slides, themeType, themeValue }: StoryPlayerProps)
 
   const safeAreaStyle: React.CSSProperties = {
     height: `calc(100dvh - ${safeTop}px - ${safeBottom}px)`,
-    marginTop: `${safeTop}px`,
+    marginTop: `${safeTop - 8}px`,
     marginBottom: `${safeBottom}px`,
   };
 
@@ -125,7 +125,7 @@ export function StoryPlayer({ slides, themeType, themeValue }: StoryPlayerProps)
         className="relative flex flex-col flex-1 w-full cursor-pointer overflow-hidden md:flex-none md:w-[350px] md:h-[620px] md:rounded-[24px] md:shadow-2xl md:mx-auto"
       >
         {/* Progress bar */}
-        <div className="absolute top-0 inset-x-0 pt-3 px-4 z-50 pointer-events-none">
+        <div className="absolute top-0 inset-x-0 pt-[2px] px-4 z-50 pointer-events-none">
           <div className="flex gap-1 w-full">
             {slides.map((_, idx) => (
               <div key={idx} className="h-[3px] flex-1 rounded-full overflow-hidden bg-white/30">
