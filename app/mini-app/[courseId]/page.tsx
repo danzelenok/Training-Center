@@ -21,17 +21,15 @@ export default function MiniAppCoursePage({ params }: PageProps) {
   useEffect(() => {
     async function fetchSlides() {
       try {
-        const isPreview = new URLSearchParams(window.location.search).get("preview") === "true";
+        const initData =
+          typeof window !== "undefined"
+            ? (window as any).Telegram?.WebApp?.initData ||
+              (process.env.NODE_ENV === "development" ? "mock-dev-data" : "")
+            : "";
 
-        const headers: Record<string, string> = isPreview
-          ? { "x-preview-mode": "true" }
-          : {
-              "Telegram-Init-Data":
-                (window as any).Telegram?.WebApp?.initData ||
-                (process.env.NODE_ENV === "development" ? "mock-dev-data" : ""),
-            };
-
-        const res = await fetch(`/api/courses/${courseId}/slides`, { headers });
+        const res = await fetch(`/api/courses/${courseId}/slides`, {
+          headers: { "Telegram-Init-Data": initData },
+        });
 
         if (!res.ok) {
           throw new Error(

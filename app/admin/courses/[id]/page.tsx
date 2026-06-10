@@ -111,7 +111,7 @@ function CourseEditorContent() {
 
   const handlePreview = async () => {
     await handleSaveCourse();
-    window.open(`/mini-app/${id}?preview=true`, "_blank");
+    window.open(`/mini-app/${id}`, "_blank");
   };
 
   if (loading) {
