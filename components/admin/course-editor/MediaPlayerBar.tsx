@@ -64,30 +64,6 @@ export function MediaPlayerBar({
       <div className="flex items-center gap-2.5 shrink-0 pl-1 select-none">
         <button
           type="button"
-          onClick={onToggleTranscript}
-          className={`h-8 w-8 rounded-lg flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
-            transcriptOpen ? "text-primary bg-white/10" : "text-white/70 hover:text-white"
-          }`}
-          title="Toggle Transcript"
-        >
-          <FileText className="h-4.5 w-4.5" />
-        </button>
-
-        <button
-          type="button"
-          onClick={onToggleCC}
-          className={`h-8 w-8 border rounded-lg flex items-center justify-center text-[9px] font-black tracking-tighter transition-all cursor-pointer shrink-0 ${
-            isCCActive
-              ? "border-primary text-primary bg-primary/10 font-extrabold shadow-sm shadow-primary/25"
-              : "border-white/20 text-white/70 hover:text-white"
-          }`}
-          title="Toggle Captions"
-        >
-          cc
-        </button>
-
-        <button
-          type="button"
           onClick={onChangeSpeed}
           className="text-[10px] font-black text-white hover:text-primary px-1 h-8 flex items-center justify-center min-w-[28px] cursor-pointer transition-colors shrink-0"
           title="Playback Speed"

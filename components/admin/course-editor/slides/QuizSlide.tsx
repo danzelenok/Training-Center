@@ -13,7 +13,7 @@ interface QuizCardProps {
   onDisableDrag?: () => void;
   onEnableDrag?: () => void;
   mode?: "edit" | "play";
-  onAnswered?: () => void;
+  onAnswered?: (isCorrect: boolean) => void;
 }
 
 export function QuizCard({

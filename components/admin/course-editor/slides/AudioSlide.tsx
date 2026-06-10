@@ -100,6 +100,13 @@ export function AudioCard({
     }
   }, [isActive]);
 
+  useEffect(() => {
+    if (mode === "play" && audioRef.current && content.url) {
+      audioRef.current.play().catch(() => {});
+      setIsPlaying(true);
+    }
+  }, [mode, content.url]);
+
   const handleRegenerateAudio = async (overrideScript?: string) => {
     if (!slide.id) return;
     onUpdateSlideContent(index, {}, { assetStatus: "generating" });

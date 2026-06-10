@@ -15,6 +15,7 @@ export default function MiniAppCoursePage({ params }: PageProps) {
   const [slides, setSlides] = useState<Slide[]>([]);
   const [themeType, setThemeType] = useState<string | undefined>();
   const [themeValue, setThemeValue] = useState<string | undefined>();
+  const [initData, setInitData] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -26,6 +27,7 @@ export default function MiniAppCoursePage({ params }: PageProps) {
             ? (window as any).Telegram?.WebApp?.initData ||
               (process.env.NODE_ENV === "development" ? "mock-dev-data" : "")
             : "";
+        setInitData(initData);
 
         const res = await fetch(`/api/courses/${courseId}/slides`, {
           headers: { "Telegram-Init-Data": initData },
@@ -92,7 +94,7 @@ export default function MiniAppCoursePage({ params }: PageProps) {
 
   return (
     <main className="w-full min-h-screen bg-black">
-      <StoryPlayer slides={slides} themeType={themeType} themeValue={themeValue} />
+      <StoryPlayer slides={slides} courseId={courseId} initData={initData} themeType={themeType} themeValue={themeValue} />
     </main>
   );
 }

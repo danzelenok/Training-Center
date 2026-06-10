@@ -16,19 +16,27 @@ export default function MiniAppPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [safeTop, setSafeTop] = useState(0);
+  // null = not checked yet, string = redirecting, false = no redirect
+  const [startParam, setStartParam] = useState<string | false | null>(null);
 
   useEffect(() => {
     const tg = (window as any).Telegram?.WebApp;
     if (tg) {
       setSafeTop(tg.safeAreaInset?.top ?? 0);
-      const startParam = tg.initDataUnsafe?.start_param;
-      if (startParam) {
-        router.replace(`/mini-app/${startParam}`);
+      const param = tg.initDataUnsafe?.start_param;
+      if (param) {
+        setStartParam(param);
+        router.replace(`/mini-app/${param}`);
+        return;
       }
     }
+    setStartParam(false);
   }, []);
 
   useEffect(() => {
+    // Don't fetch the list if we're still checking or actively redirecting
+    if (startParam !== false) return;
+
     fetch("/api/mini-app/courses")
       .then((res) => {
         if (!res.ok) throw new Error("Failed to load courses.");
@@ -37,7 +45,7 @@ export default function MiniAppPage() {
       .then((data) => setCourses(data))
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
-  }, []);
+  }, [startParam]);
 
   if (loading) {
     return (

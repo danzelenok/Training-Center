@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import { Award, Sparkles, RotateCcw } from "lucide-react";
 import { Slide } from "@/components/admin/course-editor/CardCanvas";
 import { slideRegistry } from "@/components/admin/course-editor/SlideFactory";
@@ -10,15 +10,24 @@ const CARD_HEIGHT = 620;
 
 interface StoryPlayerProps {
   slides: Slide[];
+  courseId?: string;
+  initData?: string;
   themeType?: string;
   themeValue?: string;
 }
 
-export function StoryPlayer({ slides, themeType, themeValue }: StoryPlayerProps) {
+export function StoryPlayer({ slides, courseId, initData, themeType, themeValue }: StoryPlayerProps) {
   const [safeTop, setSafeTop] = useState(0);
   const [safeBottom, setSafeBottom] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
+
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [completed, setCompleted] = useState(false);
+  const [quizAnswered, setQuizAnswered] = useState(false);
+  const [quizCorrect, setQuizCorrect] = useState(0);
+  const [quizTotal, setQuizTotal] = useState(0);
+  const [progressLoaded, setProgressLoaded] = useState(false);
 
   useEffect(() => {
     const tg = (window as any).Telegram?.WebApp;
@@ -40,6 +49,47 @@ export function StoryPlayer({ slides, themeType, themeValue }: StoryPlayerProps)
     return () => window.removeEventListener("resize", updateScale);
   }, []);
 
+  // Load saved progress on mount
+  useEffect(() => {
+    if (!courseId || !initData) {
+      setProgressLoaded(true);
+      return;
+    }
+
+    fetch(`/api/progress?courseId=${courseId}`, {
+      headers: { "Telegram-Init-Data": initData },
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && data.status !== "completed") {
+          setCurrentIndex(Math.min(data.currentSlideIndex ?? 0, slides.length - 1));
+        }
+      })
+      .catch(() => {})
+      .finally(() => setProgressLoaded(true));
+  }, [courseId, initData, slides.length]);
+
+  const saveProgress = useCallback(
+    (slideIndex: number, status: "in_progress" | "completed", correct: number, total: number) => {
+      if (!courseId || !initData) return;
+      const quizScore = total > 0 ? Math.round((correct / total) * 100) : null;
+      fetch("/api/progress", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Telegram-Init-Data": initData,
+        },
+        body: JSON.stringify({
+          courseId,
+          currentSlideIndex: slideIndex,
+          status,
+          quizScore,
+        }),
+      }).catch(() => {});
+    },
+    [courseId, initData]
+  );
+
   const getCardBgStyle = (): React.CSSProperties => {
     if (themeType === "preset") {
       return { backgroundImage: themeValue };
@@ -55,19 +105,27 @@ export function StoryPlayer({ slides, themeType, themeValue }: StoryPlayerProps)
     return { backgroundImage: "linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)" };
   };
 
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [completed, setCompleted] = useState(false);
-  const [quizAnswered, setQuizAnswered] = useState(false);
-
   const slide = slides[currentIndex];
 
   const goNext = () => {
     if (currentIndex < slides.length - 1) {
-      setCurrentIndex((i) => i + 1);
+      const nextIndex = currentIndex + 1;
+      setCurrentIndex(nextIndex);
       setQuizAnswered(false);
+      saveProgress(nextIndex, "in_progress", quizCorrect, quizTotal);
     } else {
       setCompleted(true);
+      saveProgress(currentIndex, "completed", quizCorrect, quizTotal);
     }
+  };
+
+  const handleQuizAnswered = (isCorrect: boolean) => {
+    const newCorrect = isCorrect ? quizCorrect + 1 : quizCorrect;
+    const newTotal = quizTotal + 1;
+    setQuizCorrect(newCorrect);
+    setQuizTotal(newTotal);
+    setQuizAnswered(true);
+    saveProgress(currentIndex, "in_progress", newCorrect, newTotal);
   };
 
   const handleTap = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -94,7 +152,8 @@ export function StoryPlayer({ slides, themeType, themeValue }: StoryPlayerProps)
       if (isQuizGated && !quizAnswered) return;
       goNext();
     } else if (currentIndex > 0) {
-      setCurrentIndex((i) => i - 1);
+      const prevIndex = currentIndex - 1;
+      setCurrentIndex(prevIndex);
       setQuizAnswered(false);
     }
   };
@@ -105,6 +164,17 @@ export function StoryPlayer({ slides, themeType, themeValue }: StoryPlayerProps)
     marginBottom: `${safeBottom + (safeTop - 5)}px`,
     borderRadius: 12,
   };
+
+  if (!progressLoaded) {
+    return (
+      <div
+        className="flex flex-col w-full items-center justify-center bg-slate-950 text-slate-400 gap-3"
+        style={safeAreaStyle}
+      >
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white" />
+      </div>
+    );
+  }
 
   if (completed) {
     return (
@@ -119,9 +189,20 @@ export function StoryPlayer({ slides, themeType, themeValue }: StoryPlayerProps)
         <div className="space-y-2">
           <h1 className="text-2xl font-black uppercase tracking-tight">Course Completed!</h1>
           <p className="text-sm text-slate-400">You've reviewed all slides.</p>
+          {quizTotal > 0 && (
+            <p className="text-lg font-bold text-[#C8D400]">
+              Quiz Score: {Math.round((quizCorrect / quizTotal) * 100)}%
+            </p>
+          )}
         </div>
         <button
-          onClick={() => { setCompleted(false); setCurrentIndex(0); }}
+          onClick={() => {
+            setCompleted(false);
+            setCurrentIndex(0);
+            setQuizCorrect(0);
+            setQuizTotal(0);
+            saveProgress(0, "in_progress", 0, 0);
+          }}
           className="flex items-center gap-2 px-6 py-3 bg-slate-900 border border-slate-800 text-slate-300 rounded-2xl text-xs font-bold uppercase tracking-wider"
         >
           <RotateCcw className="h-4 w-4" /> Restart
@@ -138,7 +219,7 @@ export function StoryPlayer({ slides, themeType, themeValue }: StoryPlayerProps)
       className="w-full flex flex-col bg-slate-950 select-none overflow-hidden"
       style={safeAreaStyle}
     >
-      {/* Progress bar — above the scaled card, not scaled */}
+      {/* Progress bar */}
       <div className="px-4 pt-[5px] pb-2 shrink-0">
         <div className="flex gap-1 w-full">
           {slides.map((_, idx) => (
@@ -151,13 +232,12 @@ export function StoryPlayer({ slides, themeType, themeValue }: StoryPlayerProps)
         </div>
       </div>
 
-      {/* Scale container — fills remaining space and centers the card */}
+      {/* Scale container */}
       <div
         ref={containerRef}
         className="flex-1 w-full flex items-center justify-center overflow-hidden cursor-pointer"
         onClick={handleTap}
       >
-        {/* Card at native editor size (350×620), scaled uniformly to fit */}
         <div
           style={{
             width: CARD_WIDTH,
@@ -179,7 +259,7 @@ export function StoryPlayer({ slides, themeType, themeValue }: StoryPlayerProps)
               draggedIdx={null}
               cardStyle={cardStyle}
               mode="play"
-              onAnswered={() => setQuizAnswered(true)}
+              onAnswered={handleQuizAnswered}
               onCompleted={() => setQuizAnswered(true)}
             />
           )}

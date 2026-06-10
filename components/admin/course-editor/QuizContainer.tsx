@@ -19,7 +19,7 @@ interface QuizContainerProps {
   onDisableDrag?: () => void;
   onEnableDrag?: () => void;
   mode?: "edit" | "play";
-  onAnswered?: () => void;
+  onAnswered?: (isCorrect: boolean) => void;
 }
 
 export function QuizContainer({
@@ -149,7 +149,7 @@ export function QuizContainer({
                   if (answered) return;
                   setSelectedIdx(idx);
                   setAnswered(true);
-                  onAnswered?.();
+                  onAnswered?.(idx === correctIdxValue);
                 }}
                 className={`w-full text-left px-4 py-3 rounded-2xl border text-sm font-medium transition-all duration-300 flex items-center gap-3 ${btnClass}`}
               >

@@ -121,11 +121,8 @@ export default function CoursesPage() {
     setPublishingId(id);
     const toastId = toast.loading("Publishing course & broadcasting to Telegram...");
     try {
-      const res = await fetch(`/app/api/courses/${id}/publish`, {
+      const res = await fetch(`/api/courses/${id}/publish`, {
         method: "POST",
-      }).catch(async () => {
-        // Fallback check: in standard Next.js routing, sometimes /api/... handles it direct. Let's try /api/courses/[id]/publish if local fails.
-        return fetch(`/api/courses/${id}/publish`, { method: "POST" });
       });
 
       const data = await res.json();
