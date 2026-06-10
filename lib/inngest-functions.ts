@@ -64,7 +64,6 @@ async function checkAndFinalizeCourse(courseId: string) {
           SELECT 1 FROM ${slides}
           WHERE ${slides.courseId} = ${courseId}
             AND ${slides.language} = 'en'
-            AND ${slides.type} IN ('audio', 'image', 'dialogue', 'video')
             AND ${slides.assetStatus} IN ('generating', 'pending')
         )`
       )
@@ -107,9 +106,11 @@ export const generateSlideAssets = inngest.createFunction(
         );
     });
 
-    const targetSlides = courseSlides.filter(
-      (slide) => slide.type === "audio" || slide.type === "dialogue"
-    );
+    const targetSlides = courseSlides.filter((slide) => {
+      if (slide.type === "audio" || slide.type === "dialogue" || slide.type === "video") return true;
+      if (slide.type === "text" && (slide.content as any)?.visualKeywords) return true;
+      return false;
+    });
 
     if (targetSlides.length === 0) {
       await step.run("finalize-course-status-empty", async () => {
@@ -141,7 +142,45 @@ export const generateSlideAssets = inngest.createFunction(
     await Promise.all(
       targetSlides.map((slide) => {
         const content = (slide.content || {}) as Record<string, any>;
-        if (slide.type === "dialogue") {
+        if (slide.type === "video") {
+          return (async () => {
+            try {
+              const [current] = await db.select().from(slides).where(eq(slides.id, slide.id)).limit(1);
+              if (current?.assetStatus === "ready" || current?.assetStatus === "generating") return;
+
+              if (!content.speechText?.trim()) throw new Error(`Empty speechText for video slide ${slide.id}`);
+              const role = content.avatarId === ROLE_STUDENT ? ROLE_STUDENT : ROLE_INSTRUCTOR;
+              const avatarId = role === ROLE_STUDENT
+                ? (process.env.HEYGEN_STUDENT_AVATAR_ID ?? "")
+                : (process.env.HEYGEN_INSTRUCTOR_AVATAR_ID ?? "");
+              const voiceId = role === ROLE_STUDENT
+                ? (process.env.HEYGEN_STUDENT_VOICE_ID ?? "")
+                : (process.env.HEYGEN_INSTRUCTOR_VOICE_ID ?? "");
+              if (!avatarId || !voiceId) throw new Error(`HeyGen not configured for role: ${role}`);
+
+              const jobId = await step.run(`submit-heygen-video-${slide.id}`, async () => {
+                const id = await submitSingleVideo({ avatarId, voiceId, text: content.speechText.trim() });
+                await db.update(slides).set({
+                  content: sql`content || ${JSON.stringify({ heygenJobId: id })}::jsonb`,
+                  assetStatus: "generating",
+                  updatedAt: new Date(),
+                }).where(eq(slides.id, slide.id));
+                return id;
+              });
+
+              await step.sendEvent(`trigger-poll-heygen-video-${slide.id}`, {
+                name: "heygen/poll.status",
+                data: { jobId, slideId: slide.id, courseId, attempts: 1 },
+              });
+
+            } catch (err: any) {
+              console.error(`Video asset generation failed for slide ${slide.id}:`, err);
+              await step.run(`mark-failed-video-${slide.id}`, async () => {
+                await db.update(slides).set({ assetStatus: "failed", updatedAt: new Date() }).where(eq(slides.id, slide.id));
+              });
+            }
+          })();
+        } else if (slide.type === "dialogue") {
           return (async () => {
             try {
               const [current] = await db.select().from(slides).where(eq(slides.id, slide.id)).limit(1);
@@ -224,6 +263,17 @@ export const generateSlideAssets = inngest.createFunction(
                   .where(eq(slides.id, slide.id));
                 return uploadRes.url;
               }
+
+              if (slide.type === "text" && content.visualKeywords) {
+                const imageUrl = await searchPhoto(content.visualKeywords);
+                await db
+                  .update(slides)
+                  .set({ content: { ...content, imageUrl }, assetStatus: "ready", updatedAt: new Date() })
+                  .where(eq(slides.id, slide.id));
+                return imageUrl;
+              }
+
+
             } catch (err) {
               console.error(`Asset generation failed for slide ${slide.id}:`, err);
               await db

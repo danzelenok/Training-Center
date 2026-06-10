@@ -20,6 +20,7 @@ import { Slide } from "../CardCanvas";
 import { MediaPlayerBar } from "../MediaPlayerBar";
 import { ControlPanel } from "../ControlPanel";
 import { PanelButton } from "../PanelButton";
+import { SlideTypeSelector } from "./SlideTypeSelector";
 
 interface AudioCardProps {
   slide: Slide;
@@ -388,77 +389,26 @@ export function AudioCard({
     // Mode B: Selector Choice
     if (!audioMode) {
       return (
-        <div className="flex-1 flex flex-col justify-center items-stretch gap-6 px-1 pt-6 pb-4 w-full z-10">
-          <div className="flex flex-col items-center text-center gap-1.5 mb-1 shrink-0">
-            <div className="p-3 rounded-2xl bg-primary/10 border border-primary/25 text-primary">
-              <Music className="h-7 w-7" />
-            </div>
-            <h3 className="text-base md:text-lg font-bold tracking-tight text-foreground">Add Audio Block</h3>
-            <p className="text-xs max-w-[220px] leading-normal text-muted-foreground">
-              Upload an audio file, generate with AI text-to-speech, or record with your microphone.
-            </p>
-          </div>
-
-          <div className="flex flex-col gap-3 w-full shrink-0">
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                updateContent({ audioMode: "upload" });
-                onOpenMediaPicker();
-              }}
-              className="flex items-center gap-4 p-4 rounded-2xl border border-border bg-card hover:border-primary/60 hover:bg-accent text-card-foreground shadow-sm hover:shadow-md transition-all cursor-pointer text-left no-swipe"
-            >
-              <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-500 shrink-0">
-                <Upload className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wider">Upload Audio</p>
-                <p className="text-[10px] text-muted-foreground mt-0.5 leading-normal">
-                  Import an MP3, WAV, or OGG file from your device
-                </p>
-              </div>
-            </button>
-
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                updateContent({ audioMode: "generate", voiceId: "anna" });
-              }}
-              className="flex items-center gap-4 p-4 rounded-2xl border border-border bg-card hover:border-primary/60 hover:bg-accent text-card-foreground shadow-sm hover:shadow-md transition-all cursor-pointer text-left no-swipe"
-            >
-              <div className="p-2.5 rounded-xl bg-purple-500/10 text-purple-500 shrink-0">
-                <Sparkles className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wider">Generate with AI</p>
-                <p className="text-[10px] text-muted-foreground mt-0.5 leading-normal">
-                  Convert text script to AI voice narration automatically
-                </p>
-              </div>
-            </button>
-
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                updateContent({ audioMode: "record" });
-              }}
-              className="flex items-center gap-4 p-4 rounded-2xl border border-border bg-card hover:border-primary/60 hover:bg-accent text-card-foreground shadow-sm hover:shadow-md transition-all cursor-pointer text-left no-swipe"
-            >
-              <div className="p-2.5 rounded-xl bg-red-500/10 text-red-500 shrink-0">
-                <Mic className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wider">Record Mic</p>
-                <p className="text-[10px] text-muted-foreground mt-0.5 leading-normal">
-                  Record voice comments directly using your system microphone
-                </p>
-              </div>
-            </button>
-          </div>
-        </div>
+        <SlideTypeSelector
+          headerIcon={<Music className="h-7 w-7" />}
+          title="Add Audio Block"
+          description="Upload an audio file, generate with AI, or record with your microphone."
+          options={[
+            { value: "upload", label: "Upload Audio", icon: <Upload className="h-5 w-5" />, iconBg: "bg-blue-500/10 text-blue-500" },
+            { value: "generate", label: "Generate with AI", icon: <Sparkles className="h-5 w-5" />, iconBg: "bg-purple-500/10 text-purple-500" },
+            { value: "record", label: "Record Mic", icon: <Mic className="h-5 w-5" />, iconBg: "bg-red-500/10 text-red-500" },
+          ]}
+          onSelect={(value) => {
+            if (value === "upload") {
+              updateContent({ audioMode: "upload" });
+              onOpenMediaPicker();
+            } else if (value === "generate") {
+              updateContent({ audioMode: "generate", voiceId: "anna" });
+            } else {
+              updateContent({ audioMode: "record" });
+            }
+          }}
+        />
       );
     }
 

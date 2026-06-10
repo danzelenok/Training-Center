@@ -60,16 +60,18 @@ export async function POST(
 
     // 2. Prepare slide inserts
     const slidesToInsert = generatedSlides.map((slide, index) => {
-      // Dialogue has text lines but is visual dialogue roleplay, so it is considered a media slide in S4.1 spec
-      // "image, audio, dialogue slides show their text fields editable; media area shows 'Asset pending'"
-      const isMedia = slide.type === "audio" || slide.type === "dialogue";
+      const needsAsset =
+        slide.type === "audio" ||
+        slide.type === "dialogue" ||
+        slide.type === "video" ||
+        (slide.type === "text" && !!(slide.content as any).visualKeywords);
       return {
         courseId: id,
         order: index + 1,
         type: slide.type,
         content: slide.content,
         language: "en",
-        assetStatus: (isMedia ? "pending" : "ready") as "pending" | "ready",
+        assetStatus: (needsAsset ? "pending" : "ready") as "pending" | "ready",
       };
     });
 

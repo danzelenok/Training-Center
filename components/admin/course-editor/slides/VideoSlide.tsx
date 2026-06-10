@@ -8,7 +8,6 @@ import {
   MessageSquare,
   Pause,
   Play,
-  SlidersHorizontal,
   Sparkles,
   Trash2,
   Upload,
@@ -19,6 +18,7 @@ import { Slide } from "../CardCanvas";
 import { MediaPlayerBar } from "../MediaPlayerBar";
 import { ControlPanel } from "../ControlPanel";
 import { PanelButton } from "../PanelButton";
+import { SlideTypeSelector } from "./SlideTypeSelector";
 
 interface VideoCardProps {
   slide: Slide;
@@ -42,7 +42,6 @@ export function VideoCard({
   onOpenMediaPicker,
   draggedIdx,
   cardStyle,
-  isVideoConfigOpen,
   setIsVideoConfigOpen,
   mode,
   onCompleted,
@@ -52,8 +51,6 @@ export function VideoCard({
   const avatarId = content.avatarId;
   const speechText = content.speechText || "";
   const captions = content.captions || "";
-
-  const selectedAvatar = AVATAR_ROLES.find((av) => av.id === avatarId) || AVATAR_ROLES[0];
 
   const isGenerating = slide.assetStatus === "pending" || slide.assetStatus === "generating";
   const isFailed = slide.assetStatus === "failed";
@@ -111,6 +108,27 @@ export function VideoCard({
       toast.success("HeyGen video generation triggered in background.");
     } catch (err: any) {
       toast.error("Failed to regenerate video: " + err.message);
+      onUpdateSlideContent(index, {}, { assetStatus: "failed" });
+    }
+  };
+
+  const handleGenerateVideo = async () => {
+    if (!slide.id) return;
+    onUpdateSlideContent(index, {}, { assetStatus: "generating" });
+    setIsVideoConfigOpen(false);
+    try {
+      const res = await fetch(`/api/slides/${slide.id}/regenerate?asset=video`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ speechText }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `Server error ${res.status}`);
+      }
+      toast.success("HeyGen video generation triggered in background.");
+    } catch (err: any) {
+      toast.error("Failed to generate video: " + err.message);
       onUpdateSlideContent(index, {}, { assetStatus: "failed" });
     }
   };
@@ -279,59 +297,24 @@ export function VideoCard({
     // Mode 2: No videoMode selected yet (Upload vs Generate selector)
     if (!videoMode) {
       return (
-        <div className="flex-1 flex flex-col justify-center items-stretch gap-6 px-1 pt-6 pb-4 w-full z-10">
-          <div className="flex flex-col items-center text-center gap-1.5 mb-1 shrink-0">
-            <div className="p-3 rounded-2xl bg-primary/10 border border-primary/20 text-primary">
-              <Film className="h-7 w-7" />
-            </div>
-            <h3 className="text-base md:text-lg font-bold tracking-tight text-foreground">Add Video Block</h3>
-            <p className="text-xs max-w-[200px] leading-normal text-muted-foreground">
-              Upload your own recording or generate an avatar speaking your script.
-            </p>
-          </div>
-
-          <div className="flex flex-col gap-3 w-full shrink-0">
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                updateContent({ videoMode: "upload" });
-                onOpenMediaPicker();
-              }}
-              className="flex items-center gap-4 p-4 rounded-2xl border border-border bg-card hover:border-primary/60 hover:bg-accent text-card-foreground shadow-sm hover:shadow-md transition-all cursor-pointer text-left no-swipe"
-            >
-              <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-500 shrink-0">
-                <Upload className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wider">Upload Video</p>
-                <p className="text-[10px] text-muted-foreground mt-0.5 leading-normal">
-                  Import an MP4, WebM, or MOV file from your device
-                </p>
-              </div>
-            </button>
-
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                updateContent({ videoMode: "generate", avatarId: ROLE_INSTRUCTOR });
-                setIsVideoConfigOpen(true);
-              }}
-              className="flex items-center gap-4 p-4 rounded-2xl border border-border bg-card hover:border-primary/60 hover:bg-accent text-card-foreground shadow-sm hover:shadow-md transition-all cursor-pointer text-left no-swipe"
-            >
-              <div className="p-2.5 rounded-xl bg-purple-500/10 text-purple-500 shrink-0">
-                <Sparkles className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wider">Generate with AI</p>
-                <p className="text-[10px] text-muted-foreground mt-0.5 leading-normal">
-                  Create an interactive HeyGen talking avatar speech
-                </p>
-              </div>
-            </button>
-          </div>
-        </div>
+        <SlideTypeSelector
+          headerIcon={<Film className="h-7 w-7" />}
+          title="Add Video Block"
+          description="Upload your own recording or generate an avatar speaking your script."
+          options={[
+            { value: "upload", label: "Upload Video", icon: <Upload className="h-5 w-5" />, iconBg: "bg-blue-500/10 text-blue-500" },
+            { value: "generate", label: "Generate with AI", icon: <Sparkles className="h-5 w-5" />, iconBg: "bg-purple-500/10 text-purple-500" },
+          ]}
+          onSelect={(value) => {
+            if (value === "upload") {
+              updateContent({ videoMode: "upload" });
+              onOpenMediaPicker();
+            } else {
+              updateContent({ videoMode: "generate", avatarId: ROLE_INSTRUCTOR });
+              setIsVideoConfigOpen(true);
+            }
+          }}
+        />
       );
     }
 
@@ -364,66 +347,67 @@ export function VideoCard({
 
     // Mode 4: Generate mode selected, but no URL yet
     return (
-      <div className="flex-1 flex flex-col justify-between py-1 min-h-0 gap-3">
-        <div className="w-full aspect-video rounded-2xl overflow-hidden shrink-0 relative border border-border flex flex-col items-center justify-center bg-neutral-950 shadow-inner group">
-          <div className="absolute top-3 left-3 flex items-center gap-1.5 bg-black/45 px-2 py-0.5 rounded-full backdrop-blur-xs select-none">
-            <span className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse" />
-            <span className="text-[7px] font-black uppercase text-red-500 tracking-wider">AI Live Draft</span>
-          </div>
-
-          <div className="absolute top-3 right-3 flex items-center gap-1 bg-black/45 px-2 py-0.5 rounded-full backdrop-blur-xs select-none">
-            <span className="text-[7.5px] font-bold text-white/80 uppercase tracking-widest">HeyGen</span>
-          </div>
-
-          <div className="flex flex-col items-center gap-2">
-            <div className="h-16 w-16 rounded-full bg-gradient-to-tr from-primary/20 to-purple-500/20 border border-white/20 flex items-center justify-center shadow-lg">
-              <span className="text-3xl leading-none select-none">{selectedAvatar.emoji}</span>
-            </div>
-            <span className="text-[10px] font-black text-white/90 uppercase tracking-wider bg-white/10 px-2 py-0.5 rounded-md backdrop-blur-xs">
-              {selectedAvatar.name}
-            </span>
-          </div>
-
-          <div className="absolute bottom-2.5 inset-x-4 flex justify-center text-center">
-            <div className="max-w-[85%] bg-black/70 border border-white/10 px-3 py-1.5 rounded-xl shadow-lg backdrop-blur-md">
-              <p className="text-[9.5px] text-white leading-normal font-sans font-medium">
-                {captions || (speechText ? `"${speechText}"` : "Add speech script to auto-generate captions...")}
-              </p>
-            </div>
+      <div className="flex-1 flex flex-col py-2 min-h-0 gap-3">
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[8.5px] font-bold uppercase tracking-wider text-muted-foreground select-none">
+            Select Avatar
+          </span>
+          <div className="flex gap-2">
+            {AVATAR_ROLES.map((av) => (
+              <button
+                key={av.id}
+                type="button"
+                onClick={() => updateContent({ avatarId: av.id })}
+                className={`flex-1 flex flex-col items-center gap-1.5 py-3 rounded-2xl border-2 transition-all cursor-pointer no-swipe ${
+                  avatarId === av.id
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border bg-muted text-muted-foreground hover:bg-accent/20"
+                }`}
+              >
+                <span className="text-3xl leading-none select-none">{av.emoji}</span>
+                <span className="text-[8px] font-black uppercase tracking-wider">{av.name}</span>
+              </button>
+            ))}
           </div>
         </div>
 
-        <div className="w-full flex flex-col gap-2">
-          <div className="text-left">
-            <span className="text-[8.5px] font-bold uppercase tracking-wider select-none text-muted-foreground">
-              Speech script preview
-            </span>
-            <p className="text-xs mt-1 italic line-clamp-2 min-h-[32px] text-foreground">
-              {speechText ? `"${speechText}"` : "No speech script entered yet."}
-            </p>
-          </div>
+        <div className="flex flex-col gap-1.5 flex-1 min-h-0">
+          <span className="text-[8.5px] font-bold uppercase tracking-wider text-muted-foreground select-none">
+            Speech Script
+          </span>
+          <textarea
+            value={speechText}
+            onChange={(e) => {
+              const newSpeech = e.target.value;
+              const fields: any = { speechText: newSpeech };
+              if (!captions || captions === speechText) fields.captions = newSpeech;
+              updateContent(fields);
+            }}
+            placeholder="Enter what the avatar should say..."
+            className="flex-1 w-full rounded-xl border border-border bg-muted text-foreground px-3 py-2 text-xs leading-relaxed resize-none focus:outline-none focus:ring-1 focus:ring-primary transition-colors placeholder-muted-foreground/40"
+          />
+        </div>
 
-          <div className="flex gap-2 w-full mt-1.5">
-            <button
-              type="button"
-              onClick={() => updateContent({ videoMode: undefined, avatarId: undefined, speechText: undefined, captions: undefined })}
-              className="flex-1 py-2.5 rounded-xl border border-border bg-card text-muted-foreground hover:text-foreground flex items-center justify-center gap-1.5 text-xs font-bold transition-all cursor-pointer no-swipe"
-            >
-              <ArrowLeft className="h-3.5 w-3.5" /> Change Source
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsVideoConfigOpen(!isVideoConfigOpen)}
-              className={`flex-1 py-2.5 rounded-xl border flex items-center justify-center gap-1.5 text-xs font-bold transition-all cursor-pointer no-swipe ${
-                isVideoConfigOpen
-                  ? "bg-primary/20 border-primary text-primary"
-                  : "border-primary bg-primary text-primary-foreground hover:bg-primary/95"
-              }`}
-            >
-              <SlidersHorizontal className="h-3.5 w-3.5" />
-              {isVideoConfigOpen ? "Close AI Editor" : "Configure AI"}
-            </button>
-          </div>
+        <div className="flex gap-2 w-full">
+          <button
+            type="button"
+            onClick={() => updateContent({ videoMode: undefined, avatarId: undefined, speechText: undefined, captions: undefined })}
+            className="flex-1 py-2.5 rounded-xl border border-border bg-card text-muted-foreground hover:text-foreground flex items-center justify-center gap-1.5 text-xs font-bold transition-all cursor-pointer no-swipe"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" /> Change Source
+          </button>
+          <button
+            type="button"
+            disabled={!speechText.trim()}
+            onClick={handleGenerateVideo}
+            className={`flex-1 py-2.5 rounded-xl border flex items-center justify-center gap-1.5 text-xs font-bold transition-all cursor-pointer no-swipe ${
+              !speechText.trim()
+                ? "opacity-40 cursor-not-allowed border-primary/20 bg-primary/5 text-primary"
+                : "border-primary bg-primary text-primary-foreground hover:bg-primary/95"
+            }`}
+          >
+            <Sparkles className="h-3.5 w-3.5" /> Generate Video
+          </button>
         </div>
       </div>
     );
