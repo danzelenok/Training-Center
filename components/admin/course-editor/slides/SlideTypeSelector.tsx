@@ -22,6 +22,8 @@ export function SlideTypeSelector({
   options,
   onSelect,
 }: SlideTypeSelectorProps) {
+  const compact = options.length >= 3;
+
   return (
     <div className="flex-1 flex flex-col justify-center items-center gap-4 px-4 py-8 text-center select-none">
       <div className="flex flex-col items-center gap-1.5 mb-1">
@@ -31,7 +33,7 @@ export function SlideTypeSelector({
         <h3 className="text-base md:text-lg font-bold tracking-tight text-foreground">{title}</h3>
         <p className="text-xs max-w-[200px] leading-normal text-muted-foreground">{description}</p>
       </div>
-      <div className="flex gap-3.5 w-full max-w-[280px]">
+      <div className={`flex w-full ${compact ? "gap-2" : "gap-3.5 max-w-[280px]"}`}>
         {options.map((option) => (
           <button
             key={option.value}
@@ -40,12 +42,12 @@ export function SlideTypeSelector({
               e.stopPropagation();
               onSelect(option.value);
             }}
-            className="flex-1 flex flex-col items-center gap-2 p-4 rounded-2xl border border-border bg-card hover:bg-accent/40 hover:border-primary/50 text-card-foreground shadow-sm hover:shadow-md transition-all cursor-pointer no-swipe"
+            className={`flex-1 flex flex-col items-center rounded-2xl border border-border bg-card hover:bg-accent/40 hover:border-primary/50 text-card-foreground shadow-sm hover:shadow-md transition-all cursor-pointer no-swipe ${compact ? "gap-1.5 p-3" : "gap-2 p-4"}`}
           >
-            <div className={`p-2.5 rounded-xl ${option.iconBg ?? "bg-primary/10 text-primary"}`}>
+            <div className={`rounded-xl ${compact ? "p-2" : "p-2.5"} ${option.iconBg ?? "bg-primary/10 text-primary"}`}>
               {option.icon}
             </div>
-            <span className="text-[11px] font-black uppercase tracking-wider">{option.label}</span>
+            <span className={`font-black uppercase tracking-wider whitespace-nowrap ${compact ? "text-[9.5px]" : "text-[11px]"}`}>{option.label}</span>
           </button>
         ))}
       </div>

@@ -394,9 +394,9 @@ export function AudioCard({
           title="Add Audio Block"
           description="Upload an audio file, generate with AI, or record with your microphone."
           options={[
-            { value: "upload", label: "Upload Audio", icon: <Upload className="h-5 w-5" />, iconBg: "bg-blue-500/10 text-blue-500" },
-            { value: "generate", label: "Generate with AI", icon: <Sparkles className="h-5 w-5" />, iconBg: "bg-purple-500/10 text-purple-500" },
-            { value: "record", label: "Record Mic", icon: <Mic className="h-5 w-5" />, iconBg: "bg-red-500/10 text-red-500" },
+            { value: "upload", label: "Upload", icon: <Upload className="h-5 w-5" />, iconBg: "bg-blue-500/10 text-blue-500" },
+            { value: "generate", label: "AI Voice", icon: <Sparkles className="h-5 w-5" />, iconBg: "bg-purple-500/10 text-purple-500" },
+            { value: "record", label: "Record", icon: <Mic className="h-5 w-5" />, iconBg: "bg-red-500/10 text-red-500" },
           ]}
           onSelect={(value) => {
             if (value === "upload") {
