@@ -83,10 +83,9 @@ export function StoryPlayer({ slides, themeType, themeValue }: StoryPlayerProps)
   };
 
   const safeAreaStyle: React.CSSProperties = {
-    height: `calc(100dvh - ${safeTop + 8}px - ${safeBottom + 8}px)`,
-    marginTop: `${safeTop + 8}px`,
-    marginBottom: `${safeBottom + 8}px`,
-    borderRadius: "12px",
+    height: `calc(100dvh - ${safeTop}px - ${safeBottom}px)`,
+    marginTop: `${safeTop}px`,
+    marginBottom: `${safeBottom}px`,
   };
 
   if (completed) {
@@ -118,7 +117,7 @@ export function StoryPlayer({ slides, themeType, themeValue }: StoryPlayerProps)
 
   return (
     <div
-      className="w-full flex flex-col bg-slate-900 select-none overflow-hidden"
+      className="w-full flex flex-col bg-slate-950 select-none overflow-hidden"
       style={safeAreaStyle}
     >
       <div
