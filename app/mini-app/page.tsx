@@ -2,12 +2,39 @@
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { BookOpen, X } from "lucide-react";
+import { BookOpen, CheckCircle2, Clock, X } from "lucide-react";
+
+
+type ProgressStatus = "not_started" | "in_progress" | "completed";
 
 interface Course {
   id: string;
   title: string;
   description: string | null;
+  progressStatus: ProgressStatus;
+  currentSlideIndex: number;
+}
+
+function StatusBadge({ status }: { status: ProgressStatus }) {
+  if (status === "completed") {
+    return (
+      <span className="flex items-center gap-1 text-[11px] font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-2.5 py-0.5">
+        <CheckCircle2 className="h-3 w-3" /> Completed
+      </span>
+    );
+  }
+  if (status === "in_progress") {
+    return (
+      <span className="flex items-center gap-1 text-[11px] font-semibold text-yellow-400 bg-yellow-500/10 border border-yellow-500/20 rounded-full px-2.5 py-0.5">
+        <Clock className="h-3 w-3" /> In Progress
+      </span>
+    );
+  }
+  return (
+    <span className="text-[11px] font-bold text-sky-400 bg-sky-500/10 border border-sky-500/30 rounded-full px-2.5 py-0.5 uppercase tracking-wide">
+      New
+    </span>
+  );
 }
 
 export default function MiniAppPage() {
@@ -15,29 +42,14 @@ export default function MiniAppPage() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [safeTop, setSafeTop] = useState(0);
-  // null = not checked yet, string = redirecting, false = no redirect
-  const [startParam, setStartParam] = useState<string | false | null>(null);
-
   useEffect(() => {
-    const tg = (window as any).Telegram?.WebApp;
-    if (tg) {
-      setSafeTop(tg.safeAreaInset?.top ?? 0);
-      const param = tg.initDataUnsafe?.start_param;
-      if (param) {
-        setStartParam(param);
-        router.replace(`/mini-app/${param}`);
-        return;
-      }
-    }
-    setStartParam(false);
-  }, []);
+    const initData =
+      (window as any).Telegram?.WebApp?.initData ||
+      (process.env.NODE_ENV === "development" ? "mock-dev-data" : "");
 
-  useEffect(() => {
-    // Don't fetch the list if we're still checking or actively redirecting
-    if (startParam !== false) return;
-
-    fetch("/api/mini-app/courses")
+    fetch("/api/mini-app/courses", {
+      headers: initData ? { "Telegram-Init-Data": initData } : {},
+    })
       .then((res) => {
         if (!res.ok) throw new Error("Failed to load courses.");
         return res.json();
@@ -45,7 +57,11 @@ export default function MiniAppPage() {
       .then((data) => setCourses(data))
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
-  }, [startParam]);
+  }, []);
+
+  const safeTopStyle = {
+    paddingTop: `calc(var(--tg-safe-area-inset-top, 0px) + var(--tg-content-safe-area-inset-top, 0px) + 16px)`,
+  };
 
   if (loading) {
     return (
@@ -69,9 +85,9 @@ export default function MiniAppPage() {
   }
 
   return (
-    <main className="flex-1 overflow-y-auto bg-slate-950 p-4" style={{ paddingTop: `calc(var(--tg-safe-area-inset-top, 0px) + var(--tg-content-safe-area-inset-top, 0px) + 16px)` }}>
+    <main className="flex-1 overflow-y-auto bg-slate-950 px-4 pb-8" style={safeTopStyle}>
       <h1 className="text-xl font-bold text-white mb-1">Safety Training</h1>
-      <p className="text-sm text-slate-400 mb-5">Choose a course to get started.</p>
+      <p className="text-sm text-slate-400 mb-5">Your assigned courses.</p>
 
       {courses.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-3 mt-16 text-center text-slate-500">
@@ -80,27 +96,50 @@ export default function MiniAppPage() {
         </div>
       ) : (
         <ul className="flex flex-col gap-3">
-          {courses.map((course) => (
-            <li
-              key={course.id}
-              className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col gap-3"
-            >
-              <div className="flex flex-col gap-1">
-                <h2 className="text-base font-semibold text-white leading-snug">{course.title}</h2>
-                {course.description && (
-                  <p className="text-sm text-slate-400 leading-relaxed line-clamp-3">
-                    {course.description}
-                  </p>
-                )}
-              </div>
-              <button
-                onClick={() => router.push(`/mini-app/${course.id}`)}
-                className="w-full bg-sky-500 hover:bg-sky-400 active:bg-sky-600 text-white text-sm font-semibold rounded-xl py-2.5 transition-colors"
+          {courses.map((course) => {
+            const isCompleted = course.progressStatus === "completed";
+            const isInProgress = course.progressStatus === "in_progress";
+
+            return (
+              <li
+                key={course.id}
+                className={`border rounded-2xl p-4 flex flex-col gap-3 transition-colors ${
+                  isCompleted
+                    ? "bg-emerald-950/20 border-emerald-800/40"
+                    : isInProgress
+                    ? "bg-slate-900 border-yellow-700/30"
+                    : "bg-slate-900 border-sky-800/40"
+                }`}
               >
-                Start Learning
-              </button>
-            </li>
-          ))}
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex items-start justify-between gap-2">
+                    <h2 className="text-base font-semibold text-white leading-snug flex-1">
+                      {course.title}
+                    </h2>
+                    <StatusBadge status={course.progressStatus} />
+                  </div>
+                  {course.description && (
+                    <p className="text-sm text-slate-400 leading-relaxed line-clamp-3">
+                      {course.description}
+                    </p>
+                  )}
+                </div>
+
+                <button
+                  onClick={() => router.push(`/mini-app/${course.id}`)}
+                  className={`w-full text-sm font-semibold rounded-xl py-2.5 transition-colors ${
+                    isCompleted
+                      ? "bg-slate-700 hover:bg-slate-600 active:bg-slate-800 text-slate-200"
+                      : isInProgress
+                      ? "bg-yellow-500 hover:bg-yellow-400 active:bg-yellow-600 text-slate-950"
+                      : "bg-sky-500 hover:bg-sky-400 active:bg-sky-600 text-white"
+                  }`}
+                >
+                  {isCompleted ? "Review Again" : isInProgress ? "Continue" : "Start Learning"}
+                </button>
+              </li>
+            );
+          })}
         </ul>
       )}
     </main>

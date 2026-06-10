@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useEffect, useRef, useState, useCallback } from "react";
-import { Award, Sparkles, RotateCcw } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Award, Sparkles, RotateCcw, BookOpen } from "lucide-react";
 import { Slide } from "@/components/admin/course-editor/CardCanvas";
 import { slideRegistry } from "@/components/admin/course-editor/SlideFactory";
 
@@ -21,6 +22,8 @@ export function StoryPlayer({ slides, courseId, initData, themeType, themeValue 
   const [safeBottom, setSafeBottom] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
+
+  const router = useRouter();
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [completed, setCompleted] = useState(false);
@@ -195,18 +198,27 @@ export function StoryPlayer({ slides, courseId, initData, themeType, themeValue 
             </p>
           )}
         </div>
-        <button
-          onClick={() => {
-            setCompleted(false);
-            setCurrentIndex(0);
-            setQuizCorrect(0);
-            setQuizTotal(0);
-            saveProgress(0, "in_progress", 0, 0);
-          }}
-          className="flex items-center gap-2 px-6 py-3 bg-slate-900 border border-slate-800 text-slate-300 rounded-2xl text-xs font-bold uppercase tracking-wider"
-        >
-          <RotateCcw className="h-4 w-4" /> Restart
-        </button>
+
+        <div className="flex flex-col gap-3 w-full max-w-xs">
+          <button
+            onClick={() => router.push("/mini-app")}
+            className="flex items-center justify-center gap-2 w-full px-6 py-3.5 bg-[#C8D400] text-[#1B2A6B] rounded-2xl text-sm font-bold"
+          >
+            <BookOpen className="h-4 w-4" /> View All Courses
+          </button>
+          <button
+            onClick={() => {
+              setCompleted(false);
+              setCurrentIndex(0);
+              setQuizCorrect(0);
+              setQuizTotal(0);
+              saveProgress(0, "in_progress", 0, 0);
+            }}
+            className="flex items-center justify-center gap-2 w-full px-6 py-3 bg-slate-900 border border-slate-800 text-slate-300 rounded-2xl text-xs font-bold uppercase tracking-wider"
+          >
+            <RotateCcw className="h-4 w-4" /> Restart
+          </button>
+        </div>
       </div>
     );
   }

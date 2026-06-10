@@ -125,8 +125,14 @@ export default function CoursesPage() {
         method: "POST",
       });
 
+      if (!res.ok) {
+        const ct = res.headers.get("content-type") || "";
+        const msg = ct.includes("application/json")
+          ? (await res.json()).error
+          : `Server error ${res.status}`;
+        throw new Error(msg || "Failed to publish course");
+      }
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to publish course");
 
       toast.success("Course published and Telegram alert broadcasted!", { id: toastId });
       fetchCourses();
@@ -139,19 +145,24 @@ export default function CoursesPage() {
 
   // Revoke Course (delete Telegram message, reset to draft)
   const handleRevokeCourse = async (id: string) => {
-    if (!confirm("Отозвать курс? Сообщение в Telegram будет удалено, курс вернётся в статус черновика.")) {
+    if (!confirm("Revoke this course? The Telegram message will be deleted and the course will return to draft.")) {
       return;
     }
     setRevokingId(id);
-    const toastId = toast.loading("Отзываем курс...");
+    const toastId = toast.loading("Revoking course...");
     try {
       const res = await fetch(`/api/courses/${id}/publish`, { method: "DELETE" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to revoke course");
-      toast.success("Курс отозван. Сообщение удалено из Telegram.", { id: toastId });
+      if (!res.ok) {
+        const ct = res.headers.get("content-type") || "";
+        const msg = ct.includes("application/json")
+          ? (await res.json()).error
+          : `Server error ${res.status}`;
+        throw new Error(msg || "Failed to revoke course");
+      }
+      toast.success("Course revoked. Telegram message deleted.", { id: toastId });
       fetchCourses();
     } catch (err: any) {
-      toast.error(err.message || "Ошибка при отзыве курса", { id: toastId });
+      toast.error(err.message || "Failed to revoke course", { id: toastId });
     } finally {
       setRevokingId(null);
     }
@@ -160,15 +171,21 @@ export default function CoursesPage() {
   // Resend Course (send new Telegram announcement)
   const handleResendCourse = async (id: string) => {
     setResendingId(id);
-    const toastId = toast.loading("Повторная отправка в Telegram...");
+    const toastId = toast.loading("Resending to Telegram...");
     try {
       const res = await fetch(`/api/courses/${id}/publish`, { method: "POST" });
+      if (!res.ok) {
+        const ct = res.headers.get("content-type") || "";
+        const msg = ct.includes("application/json")
+          ? (await res.json()).error
+          : `Server error ${res.status}`;
+        throw new Error(msg || "Failed to resend course");
+      }
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to resend course");
-      toast.success("Курс повторно отправлен в Telegram!", { id: toastId });
+      toast.success("Course resent to Telegram!", { id: toastId });
       fetchCourses();
     } catch (err: any) {
-      toast.error(err.message || "Ошибка при повторной отправке", { id: toastId });
+      toast.error(err.message || "Failed to resend course", { id: toastId });
     } finally {
       setResendingId(null);
     }
@@ -393,7 +410,7 @@ export default function CoursesPage() {
                             size="sm"
                             disabled={resendingId === course.id || revokingId === course.id}
                             onClick={() => handleResendCourse(course.id)}
-                            title="Отправить повторно в Telegram"
+                            title="Resend to Telegram"
                             className="h-9 w-9 p-0 text-muted-foreground hover:bg-[#C8D400]/10 hover:text-[#C8D400] rounded-lg cursor-pointer"
                           >
                             {resendingId === course.id ? (
@@ -411,7 +428,7 @@ export default function CoursesPage() {
                             size="sm"
                             disabled={revokingId === course.id || resendingId === course.id}
                             onClick={() => handleRevokeCourse(course.id)}
-                            title="Отозвать курс из Telegram"
+                            title="Revoke course from Telegram"
                             className="h-9 w-9 p-0 text-muted-foreground hover:bg-orange-500/10 hover:text-orange-400 rounded-lg cursor-pointer"
                           >
                             {revokingId === course.id ? (
