@@ -13,7 +13,8 @@ import {
   Upload,
 } from "lucide-react";
 import { toast } from "sonner";
-import { AVATAR_ROLES, ROLE_INSTRUCTOR } from "@/lib/avatar-roles";
+import { ROLE_INSTRUCTOR } from "@/lib/avatar-roles";
+import { fetchAvatarsList, CHAD_FALLBACK_IMAGE, FLORIN_FALLBACK_IMAGE } from "../AvatarSelector";
 import { Slide } from "../CardCanvas";
 import { MediaPlayerBar } from "../MediaPlayerBar";
 import { ControlPanel } from "../ControlPanel";
@@ -61,7 +62,18 @@ export function VideoCard({
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0.1);
   const [speed, setSpeed] = useState(1);
+  const [chadImage, setChadImage] = useState(CHAD_FALLBACK_IMAGE);
+  const [florinImage, setFlorinImage] = useState(FLORIN_FALLBACK_IMAGE);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  useEffect(() => {
+    fetchAvatarsList().then((list) => {
+      const chad = list.find((a: any) => a.name.toLowerCase() === "chad");
+      const florin = list.find((a: any) => a.name.toLowerCase() === "florin");
+      if (chad?.preview_image_url) setChadImage(chad.preview_image_url);
+      if (florin?.preview_image_url) setFlorinImage(florin.preview_image_url);
+    });
+  }, []);
 
   useEffect(() => {
     if (mode === "play" && videoRef.current && content.url) {
@@ -70,12 +82,6 @@ export function VideoCard({
     }
   }, [mode, content.url]);
 
-  const percent = (currentTime / duration) * 100;
-  const formatTime = (secs: number) => {
-    const m = Math.floor(secs / 60);
-    const s = Math.floor(secs % 60);
-    return `${m}:${s < 10 ? "0" : ""}${s}`;
-  };
   const togglePlay = () => {
     if (videoRef.current) {
       if (videoRef.current.paused) { videoRef.current.play().catch(() => {}); setIsPlaying(true); }
@@ -163,7 +169,7 @@ export function VideoCard({
         <div className="p-3 bg-destructive/10 text-destructive rounded-full border border-destructive/20">
           <AlertTriangle className="h-8 w-8 text-destructive animate-bounce" />
         </div>
-        <h3 className="text-base font-bold text-destructive font-sans">Video Generation Failed</h3>
+        <h3 className="text-base font-bold text-destructive">Video Generation Failed</h3>
         <p className="text-xs max-w-[200px] leading-normal text-muted-foreground">
           We encountered an error while calling the HeyGen API.
         </p>
@@ -172,7 +178,7 @@ export function VideoCard({
             <button
               type="button"
               onClick={handleRegenerateVideo}
-              className="mt-2 text-xs font-bold bg-primary hover:bg-primary/90 text-primary-foreground py-2 px-5 rounded-xl shadow-md transition-all active:scale-95 cursor-pointer no-swipe font-sans"
+              className="mt-2 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white py-2 px-5 rounded-xl shadow-md transition-all active:scale-95 cursor-pointer no-swipe"
             >
               Retry Generation
             </button>
@@ -180,7 +186,7 @@ export function VideoCard({
             <button
               type="button"
               onClick={() => setIsVideoConfigOpen(true)}
-              className="mt-2 text-xs font-bold bg-primary hover:bg-primary/90 text-primary-foreground py-2 px-5 rounded-xl shadow-md transition-all active:scale-95 cursor-pointer no-swipe font-sans"
+              className="mt-2 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white py-2 px-5 rounded-xl shadow-md transition-all active:scale-95 cursor-pointer no-swipe"
             >
               Configure Avatar
             </button>
@@ -217,14 +223,14 @@ export function VideoCard({
             {isCCActive && captions && (
               <div className="absolute bottom-16 inset-x-6 flex justify-center text-center pointer-events-none z-10 animate-fade-in">
                 <div className="max-w-[90%] bg-black/85 border border-white/10 px-3.5 py-2 rounded-xl shadow-lg backdrop-blur-md">
-                  <p className="text-[10px] text-white leading-normal font-sans font-medium">{captions}</p>
+                  <p className="text-[10px] text-white leading-normal font-medium">{captions}</p>
                 </div>
               </div>
             )}
             {transcriptOpen && content.speechText && (
               <div className="absolute bottom-16 inset-x-6 flex justify-center text-center pointer-events-none z-10 animate-fade-in">
                 <div className="max-w-[90%] bg-black/85 border border-white/10 px-3.5 py-2 rounded-xl shadow-lg backdrop-blur-md">
-                  <p className="text-[10px] text-white leading-normal font-sans font-medium">{content.speechText}</p>
+                  <p className="text-[10px] text-white leading-normal font-medium">{content.speechText}</p>
                 </div>
               </div>
             )}
@@ -285,7 +291,7 @@ export function VideoCard({
             {captions && (
               <div className="absolute bottom-8 inset-x-6 flex justify-center text-center pointer-events-none z-10 animate-fade-in">
                 <div className="max-w-[90%] bg-black/75 border border-white/10 px-3 py-1.5 rounded-xl shadow-lg backdrop-blur-md">
-                  <p className="text-[10px] text-white leading-normal font-sans font-medium">{captions}</p>
+                  <p className="text-[10px] text-white leading-normal font-medium">{captions}</p>
                 </div>
               </div>
             )}
@@ -349,30 +355,43 @@ export function VideoCard({
     return (
       <div className="flex-1 flex flex-col py-2 min-h-0 gap-3">
         <div className="flex flex-col gap-1.5">
-          <span className="text-[8.5px] font-bold uppercase tracking-wider text-muted-foreground select-none">
+          <span className="text-[10px] font-medium text-muted-foreground select-none">
             Select Avatar
           </span>
           <div className="flex gap-2">
-            {AVATAR_ROLES.map((av) => (
-              <button
-                key={av.id}
-                type="button"
-                onClick={() => updateContent({ avatarId: av.id })}
-                className={`flex-1 flex flex-col items-center gap-1.5 py-3 rounded-2xl border-2 transition-all cursor-pointer no-swipe ${
-                  avatarId === av.id
-                    ? "border-primary bg-primary/10 text-primary"
-                    : "border-border bg-muted text-muted-foreground hover:bg-accent/20"
-                }`}
-              >
-                <span className="text-3xl leading-none select-none">{av.emoji}</span>
-                <span className="text-[8px] font-black uppercase tracking-wider">{av.name}</span>
-              </button>
-            ))}
+            <button
+              type="button"
+              onClick={() => updateContent({ avatarId: "instructor" })}
+              className={`flex-1 flex flex-col items-center gap-1.5 p-2 rounded-xl border-2 transition-all cursor-pointer no-swipe ${
+                avatarId === "instructor"
+                  ? "border-primary bg-primary/10"
+                  : "border-border bg-muted hover:bg-accent/20"
+              }`}
+            >
+              <div className="w-11 h-11 rounded-full border-2 border-primary bg-[#E2E5E9] overflow-hidden">
+                <img src={chadImage} className="w-full h-full object-cover" style={{ transform: "scale(2.1) translateY(5%)", transformOrigin: "center 15%" }} alt="Chad" />
+              </div>
+              <span className="text-[10px] font-medium">Instructor</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => updateContent({ avatarId: "student" })}
+              className={`flex-1 flex flex-col items-center gap-1.5 p-2 rounded-xl border-2 transition-all cursor-pointer no-swipe ${
+                avatarId === "student"
+                  ? "border-blue-500 bg-blue-500/10"
+                  : "border-border bg-muted hover:bg-accent/20"
+              }`}
+            >
+              <div className="w-11 h-11 rounded-full border-2 border-blue-500 bg-[#E2E5E9] overflow-hidden">
+                <img src={florinImage} className="w-full h-full object-cover" style={{ transform: "scale(2.1) translateY(-5%)", transformOrigin: "center 15%" }} alt="Florin" />
+              </div>
+              <span className="text-[10px] font-medium">Student</span>
+            </button>
           </div>
         </div>
 
         <div className="flex flex-col gap-1.5 flex-1 min-h-0">
-          <span className="text-[8.5px] font-bold uppercase tracking-wider text-muted-foreground select-none">
+          <span className="text-[10px] font-medium text-muted-foreground select-none">
             Speech Script
           </span>
           <textarea
@@ -402,8 +421,8 @@ export function VideoCard({
             onClick={handleGenerateVideo}
             className={`flex-1 py-2.5 rounded-xl border flex items-center justify-center gap-1.5 text-xs font-bold transition-all cursor-pointer no-swipe ${
               !speechText.trim()
-                ? "opacity-40 cursor-not-allowed border-primary/20 bg-primary/5 text-primary"
-                : "border-primary bg-primary text-primary-foreground hover:bg-primary/95"
+                ? "opacity-40 cursor-not-allowed border-blue-600/20 bg-blue-600/5 text-blue-600"
+                : "border-blue-600 bg-blue-600 text-white hover:bg-blue-700"
             }`}
           >
             <Sparkles className="h-3.5 w-3.5" /> Generate Video
@@ -461,6 +480,17 @@ export function VideoToolbar({
   const avatarId = content.avatarId;
   const forceCompletion = content.forceCompletion === true;
   const [isGeneratingCaptions, setIsGeneratingCaptions] = useState(false);
+  const [chadImage, setChadImage] = useState(CHAD_FALLBACK_IMAGE);
+  const [florinImage, setFlorinImage] = useState(FLORIN_FALLBACK_IMAGE);
+
+  useEffect(() => {
+    fetchAvatarsList().then((list) => {
+      const chad = list.find((a: any) => a.name.toLowerCase() === "chad");
+      const florin = list.find((a: any) => a.name.toLowerCase() === "florin");
+      if (chad?.preview_image_url) setChadImage(chad.preview_image_url);
+      if (florin?.preview_image_url) setFlorinImage(florin.preview_image_url);
+    });
+  }, []);
 
   const updateContent = (fields: any) => onUpdateSlideContent(index, fields);
 
@@ -492,29 +522,42 @@ export function VideoToolbar({
       <div className="flex flex-col items-center gap-2 w-full z-20 mb-2 mt-[-16px] animate-fade-in no-swipe">
         <div className="border border-border rounded-2xl px-3 py-2.5 shadow-2xl flex flex-col gap-2.5 z-50 w-full max-w-xs backdrop-blur-md bg-popover text-popover-foreground">
           <div className="flex flex-col gap-1.5 text-left">
-            <p className="text-[7px] font-black uppercase tracking-wider text-muted-foreground">Select Role</p>
+            <p className="text-[10px] font-medium text-muted-foreground">Select Role</p>
             <div className="flex gap-1.5">
-              {AVATAR_ROLES.map((av) => (
-                <button
-                  key={av.id}
-                  type="button"
-                  onClick={() => updateContent({ avatarId: av.id })}
-                  className={`flex-1 flex flex-col items-center gap-0.5 py-1.5 rounded-xl border transition-all cursor-pointer text-[6.5px] font-black uppercase ${
-                    avatarId === av.id
-                      ? "border-primary bg-primary/10 text-primary"
-                      : "border-border bg-muted text-muted-foreground"
-                  }`}
-                >
-                  <span className="text-base leading-none">{av.emoji}</span>
-                  {av.name}
-                </button>
-              ))}
+              <button
+                type="button"
+                onClick={() => updateContent({ avatarId: "instructor" })}
+                className={`flex-1 flex flex-col items-center gap-0.5 py-1.5 rounded-xl border-2 transition-all cursor-pointer no-swipe ${
+                  avatarId === "instructor"
+                    ? "border-primary bg-primary/10"
+                    : "border-border bg-muted"
+                }`}
+              >
+                <div className="w-8 h-8 rounded-full border border-primary bg-[#E2E5E9] overflow-hidden">
+                  <img src={chadImage} className="w-full h-full object-cover" style={{ transform: "scale(2.1) translateY(5%)", transformOrigin: "center 15%" }} alt="Chad" />
+                </div>
+                <span className="text-[9px] font-medium">Instructor</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => updateContent({ avatarId: "student" })}
+                className={`flex-1 flex flex-col items-center gap-0.5 py-1.5 rounded-xl border-2 transition-all cursor-pointer no-swipe ${
+                  avatarId === "student"
+                    ? "border-blue-500 bg-blue-500/10"
+                    : "border-border bg-muted"
+                }`}
+              >
+                <div className="w-8 h-8 rounded-full border border-blue-500 bg-[#E2E5E9] overflow-hidden">
+                  <img src={florinImage} className="w-full h-full object-cover" style={{ transform: "scale(2.1) translateY(-5%)", transformOrigin: "center 15%" }} alt="Florin" />
+                </div>
+                <span className="text-[9px] font-medium">Student</span>
+              </button>
             </div>
           </div>
 
           <div className="flex gap-1.5 text-left">
             <div className="flex-1 flex flex-col gap-1">
-              <p className="text-[7px] font-black uppercase tracking-wider text-muted-foreground">
+              <p className="text-[10px] font-medium text-muted-foreground">
                 Speech
               </p>
               <textarea
@@ -533,7 +576,7 @@ export function VideoToolbar({
               />
             </div>
             <div className="flex-1 flex flex-col gap-1">
-              <p className="text-[7px] font-black uppercase tracking-wider text-muted-foreground">
+              <p className="text-[10px] font-medium text-muted-foreground">
                 Captions
               </p>
               <textarea
@@ -552,8 +595,8 @@ export function VideoToolbar({
             onClick={handleRegenerateVideo}
             className={`w-full py-2.5 rounded-xl border flex items-center justify-center gap-1.5 text-xs font-bold transition-all cursor-pointer no-swipe mt-0.5 ${
               !speechText.trim()
-                ? "opacity-40 cursor-not-allowed border-primary/20 bg-primary/5 text-primary"
-                : "border-primary bg-primary text-primary-foreground hover:bg-primary/95"
+                ? "opacity-40 cursor-not-allowed border-blue-600/20 bg-blue-600/5 text-blue-600"
+                : "border-blue-600 bg-blue-600 text-white hover:bg-blue-700"
             }`}
           >
             <Sparkles className="h-3.5 w-3.5" /> Generate Video
@@ -571,7 +614,7 @@ export function VideoToolbar({
           videoToolsOpen ? (
             <div className="w-full max-w-xs border rounded-2xl p-3 shadow-2xl z-20 gap-3 mt-1.5 animate-slide-up flex flex-col no-swipe backdrop-blur-md bg-popover text-popover-foreground border-border">
               <div className="flex items-center gap-2 justify-between w-full">
-                <div className="flex items-center gap-2 px-2 py-1 rounded-xl border bg-muted border-border text-[9px] font-black uppercase tracking-wider">
+                <div className="flex items-center gap-2 px-2 py-1 rounded-xl border bg-muted border-border text-[10px] font-medium">
                   <span className="mr-2.5">Force Completion</span>
                   <button
                     type="button"
@@ -622,7 +665,7 @@ export function VideoToolbar({
                     toast.success("AI automatic subtitles generated successfully!");
                   }, 1200);
                 }}
-                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-border bg-card hover:bg-accent text-card-foreground transition-all cursor-pointer text-[8px] font-black uppercase shrink-0"
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-border bg-card hover:bg-accent text-card-foreground transition-all cursor-pointer text-xs font-semibold shrink-0"
               >
                 {isGeneratingCaptions ? (
                   <><Loader2 className="h-3 w-3 animate-spin" /> Gen...</>
