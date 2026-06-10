@@ -50,7 +50,7 @@ export function StoryPlayer({ slides, courseId, initData, themeType, themeValue 
     updateScale();
     window.addEventListener("resize", updateScale);
     return () => window.removeEventListener("resize", updateScale);
-  }, []);
+  }, [progressLoaded]);
 
   // Load saved progress on mount
   useEffect(() => {
