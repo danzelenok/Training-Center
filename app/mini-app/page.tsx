@@ -15,6 +15,15 @@ export default function MiniAppPage() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [safeTop, setSafeTop] = useState(0);
+
+  useEffect(() => {
+    const tg = (window as any).Telegram?.WebApp;
+    if (tg) {
+      tg.ready();
+      setSafeTop(tg.safeAreaInset?.top ?? 0);
+    }
+  }, []);
 
   useEffect(() => {
     fetch("/api/mini-app/courses")
@@ -49,7 +58,7 @@ export default function MiniAppPage() {
   }
 
   return (
-    <main className="flex-1 overflow-y-auto bg-slate-950 p-4">
+    <main className="flex-1 overflow-y-auto bg-slate-950 p-4" style={{ paddingTop: safeTop + 16 }}>
       <h1 className="text-xl font-bold text-white mb-1">Safety Training</h1>
       <p className="text-sm text-slate-400 mb-5">Choose a course to get started.</p>
 
