@@ -55,7 +55,7 @@ export default function MiniAppPage() {
   }
 
   return (
-    <main className="flex-1 overflow-y-auto bg-slate-950 p-4" style={{ paddingTop: `calc(var(--tg-safe-area-inset-top, ${safeTop}px) + 16px)` }}>
+    <main className="flex-1 overflow-y-auto bg-slate-950 p-4" style={{ paddingTop: `calc(var(--tg-safe-area-inset-top, 0px) + var(--tg-content-safe-area-inset-top, 0px) + 16px)` }}>
       <h1 className="text-xl font-bold text-white mb-1">Safety Training</h1>
       <p className="text-sm text-slate-400 mb-5">Choose a course to get started.</p>
 

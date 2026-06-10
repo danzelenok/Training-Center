@@ -166,7 +166,7 @@ export function StoryPlayer({ slides, themeType, themeValue }: StoryPlayerProps)
             transformOrigin: "center center",
             position: "relative",
             flexShrink: 0,
-            marginTop: 20,
+            marginTop: 24,
           }}
         >
           {SlideCard && (
