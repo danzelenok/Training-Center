@@ -1,0 +1,104 @@
+import { db } from "@/db";
+import { pollResponses, workers, courses, slides } from "@/db/schema";
+import { withTelegramAuth } from "@/lib/telegram";
+import { auth } from "@clerk/nextjs/server";
+import { and, eq, sql } from "drizzle-orm";
+import { NextRequest, NextResponse } from "next/server";
+
+// POST /api/poll-responses — called from Telegram mini-app
+export const POST = withTelegramAuth(async (req, { worker }) => {
+  try {
+    const body = await req.json();
+    const { courseId, slideIndex, rating, comment } = body;
+
+    if (!courseId) return new NextResponse("Missing courseId", { status: 400 });
+    if (slideIndex === undefined) return new NextResponse("Missing slideIndex", { status: 400 });
+
+    const [existing] = await db
+      .select({ id: pollResponses.id })
+      .from(pollResponses)
+      .where(
+        and(
+          eq(pollResponses.workerId, worker.id),
+          eq(pollResponses.courseId, courseId),
+          eq(pollResponses.slideIndex, slideIndex)
+        )
+      )
+      .limit(1);
+
+    if (existing) {
+      await db
+        .update(pollResponses)
+        .set({ rating: rating ?? null, comment: comment ?? null, updatedAt: new Date() })
+        .where(eq(pollResponses.id, existing.id));
+    } else {
+      await db.insert(pollResponses).values({
+        workerId: worker.id,
+        courseId,
+        slideIndex,
+        rating: rating ?? null,
+        comment: comment ?? null,
+      });
+    }
+
+    return NextResponse.json({ ok: true });
+  } catch (error: any) {
+    console.error("POST /api/poll-responses error:", error);
+    return new NextResponse(error.message || "Internal Server Error", { status: 500 });
+  }
+});
+
+// GET /api/poll-responses — admin only (Clerk auth)
+// Query params: ?courseId=, ?workerId=
+export async function GET(req: NextRequest) {
+  try {
+    const { userId } = await auth();
+    if (!userId) return new NextResponse("Unauthorized", { status: 401 });
+
+    const { searchParams } = new URL(req.url);
+    const courseId = searchParams.get("courseId");
+    const workerId = searchParams.get("workerId");
+
+    const conditions = [];
+    if (courseId) conditions.push(eq(pollResponses.courseId, courseId));
+    if (workerId) conditions.push(eq(pollResponses.workerId, workerId));
+
+    const results = await db
+      .select({
+        id: pollResponses.id,
+        slideIndex: pollResponses.slideIndex,
+        rating: pollResponses.rating,
+        comment: pollResponses.comment,
+        createdAt: pollResponses.createdAt,
+        courseId: pollResponses.courseId,
+        workerId: pollResponses.workerId,
+        courseName: courses.title,
+        firstName: workers.firstName,
+        lastName: workers.lastName,
+        telegramUsername: workers.telegramUsername,
+        question: sql<string>`cast(${slides.content}->>'heading' as text)`,
+      })
+      .from(pollResponses)
+      .innerJoin(workers, eq(pollResponses.workerId, workers.id))
+      .innerJoin(courses, eq(pollResponses.courseId, courses.id))
+      .leftJoin(
+        slides,
+        and(
+          eq(slides.courseId, pollResponses.courseId),
+          eq(slides.order, pollResponses.slideIndex)
+        )
+      )
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(sql`${pollResponses.createdAt} DESC`);
+
+    return NextResponse.json(
+      results.map((r) => ({
+        ...r,
+        workerName: [r.firstName, r.lastName].filter(Boolean).join(" ") || r.telegramUsername || "Unknown",
+      }))
+    );
+  } catch (error: any) {
+    console.error("GET /api/poll-responses error:", error);
+    return new NextResponse(error.message || "Internal Server Error", { status: 500 });
+  }
+}

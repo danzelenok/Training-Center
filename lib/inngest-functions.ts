@@ -146,7 +146,7 @@ export const generateSlideAssets = inngest.createFunction(
           return (async () => {
             try {
               const [current] = await db.select().from(slides).where(eq(slides.id, slide.id)).limit(1);
-              if (current?.assetStatus === "ready" || current?.assetStatus === "generating") return;
+              if (current?.assetStatus === "ready") return;
 
               if (!content.speechText?.trim()) throw new Error(`Empty speechText for video slide ${slide.id}`);
               const role = content.avatarId === ROLE_STUDENT ? ROLE_STUDENT : ROLE_INSTRUCTOR;

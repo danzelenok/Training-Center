@@ -58,7 +58,23 @@ export const progress = pgTable("progress", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-// 5. REMINDERS TABLE
+// 5. POLL RESPONSES TABLE
+export const pollResponses = pgTable("poll_responses", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  workerId: uuid("worker_id")
+    .references(() => workers.id, { onDelete: "cascade" })
+    .notNull(),
+  courseId: uuid("course_id")
+    .references(() => courses.id, { onDelete: "cascade" })
+    .notNull(),
+  slideIndex: integer("slide_index").notNull(),
+  rating: text("rating"),
+  comment: text("comment"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// 6. REMINDERS TABLE
 export const reminders = pgTable("reminders", {
   id: uuid("id").defaultRandom().primaryKey(),
   courseId: uuid("course_id")

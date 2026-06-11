@@ -1,7 +1,7 @@
 import { db } from "@/db";
-import { workers, progress, courses } from "@/db/schema";
+import { workers, progress, courses, pollResponses, slides } from "@/db/schema";
 import { auth } from "@clerk/nextjs/server";
-import { eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -40,9 +40,45 @@ export async function GET(
     .where(eq(progress.workerId, id))
     .orderBy(progress.createdAt);
 
+  const pollResponsesList = await db
+    .select({
+      id: pollResponses.id,
+      courseId: pollResponses.courseId,
+      slideIndex: pollResponses.slideIndex,
+      rating: pollResponses.rating,
+      comment: pollResponses.comment,
+      createdAt: pollResponses.createdAt,
+      question: sql<string>`cast(${slides.content}->>'heading' as text)`,
+    })
+    .from(pollResponses)
+    .leftJoin(
+      slides,
+      and(
+        eq(slides.courseId, pollResponses.courseId),
+        eq(slides.order, pollResponses.slideIndex)
+      )
+    )
+    .where(eq(pollResponses.workerId, id))
+    .orderBy(pollResponses.courseId, pollResponses.slideIndex);
+
   return NextResponse.json({
     ...worker[0],
     telegramUserId: worker[0].telegramUserId?.toString() ?? null,
     courses: courseProgress,
+    pollResponses: pollResponsesList,
   });
+}
+
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { userId } = await auth();
+  if (!userId) return new NextResponse("Unauthorized", { status: 401 });
+
+  const { id } = await params;
+
+  await db.delete(workers).where(eq(workers.id, id));
+
+  return NextResponse.json({ success: true });
 }

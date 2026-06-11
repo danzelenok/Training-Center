@@ -27,6 +27,7 @@ export async function GET(req: NextRequest) {
 
     const results = await db
       .select({
+        id: progress.id,
         firstName: workers.firstName,
         lastName: workers.lastName,
         telegramUsername: workers.telegramUsername,
@@ -45,6 +46,7 @@ export async function GET(req: NextRequest) {
       const nameParts = [row.firstName, row.lastName].filter(Boolean);
       const workerName = nameParts.length > 0 ? nameParts.join(" ") : "Unknown";
       return {
+        id: row.id,
         workerName,
         telegramUsername: row.telegramUsername,
         courseName: row.courseName,

@@ -12,6 +12,9 @@ import {
   Trophy,
   PlayCircle,
   CircleDashed,
+  Star,
+  MessageSquare,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -60,8 +63,19 @@ interface WorkerCourseProgress {
   updatedAt: string;
 }
 
+interface WorkerPollResponse {
+  id: string;
+  courseId: string;
+  slideIndex: number;
+  rating: string | null;
+  comment: string | null;
+  createdAt: string;
+  question: string | null;
+}
+
 interface WorkerDetail extends Worker {
   courses: WorkerCourseProgress[];
+  pollResponses: WorkerPollResponse[];
 }
 
 const STATUS_CONFIG = {
@@ -97,6 +111,8 @@ export default function WorkersPage() {
   const [selectedWorker, setSelectedWorker] = useState<WorkerDetail | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const [removingCourseId, setRemovingCourseId] = useState<string | null>(null);
+  const [deletingWorker, setDeletingWorker] = useState(false);
 
   const fetchWorkers = async () => {
     try {
@@ -184,6 +200,41 @@ export default function WorkersPage() {
       toast.error(err.message || "Error assigning course", { id: toastId });
     } finally {
       setAssigningWorkerId(null);
+    }
+  };
+
+  const handleRemoveCourse = async (progressId: string) => {
+    setRemovingCourseId(progressId);
+    try {
+      const res = await fetch(`/api/reports/${progressId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to remove course");
+      setSelectedWorker((prev) =>
+        prev ? { ...prev, courses: prev.courses.filter((c) => c.progressId !== progressId) } : prev
+      );
+      await fetchWorkers();
+      toast.success("Course removed");
+    } catch (err: any) {
+      toast.error(err.message || "Could not remove course");
+    } finally {
+      setRemovingCourseId(null);
+    }
+  };
+
+  const handleDeleteWorker = async () => {
+    if (!selectedWorker) return;
+    if (!window.confirm(`Delete ${workerDisplayName(selectedWorker)}? This cannot be undone.`)) return;
+    setDeletingWorker(true);
+    try {
+      const res = await fetch(`/api/workers/${selectedWorker.id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete worker");
+      setSheetOpen(false);
+      setSelectedWorker(null);
+      await fetchWorkers();
+      toast.success("Worker deleted");
+    } catch (err: any) {
+      toast.error(err.message || "Could not delete worker");
+    } finally {
+      setDeletingWorker(false);
     }
   };
 
@@ -391,26 +442,29 @@ export default function WorkersPage() {
       {/* Worker Detail Sheet */}
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
         <SheetContent className="w-full sm:max-w-lg overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle className="text-xl font-extrabold text-[#1B2A6B] dark:text-[#C8D400]">
+              {selectedWorker ? workerDisplayName(selectedWorker) : "Loading..."}
+            </SheetTitle>
+            {selectedWorker && (
+              <SheetDescription className="text-sm text-muted-foreground space-y-1">
+                {selectedWorker.telegramUsername && (
+                  <span className="font-mono">@{selectedWorker.telegramUsername}</span>
+                )}
+                <span className="block">
+                  Joined {format(new Date(selectedWorker.createdAt), "dd MMM yyyy")}
+                </span>
+              </SheetDescription>
+            )}
+          </SheetHeader>
+
           {loadingDetail ? (
             <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground">
               <Loader2 className="h-8 w-8 animate-spin text-[#C8D400]" />
               <p className="text-sm">Loading worker details...</p>
             </div>
           ) : selectedWorker ? (
-            <div className="flex flex-col gap-6">
-              <SheetHeader>
-                <SheetTitle className="text-xl font-extrabold text-[#1B2A6B] dark:text-[#C8D400]">
-                  {workerDisplayName(selectedWorker)}
-                </SheetTitle>
-                <SheetDescription className="text-sm text-muted-foreground space-y-1">
-                  {selectedWorker.telegramUsername && (
-                    <span className="font-mono">@{selectedWorker.telegramUsername}</span>
-                  )}
-                  <span className="block">
-                    Joined {format(new Date(selectedWorker.createdAt), "dd MMM yyyy")}
-                  </span>
-                </SheetDescription>
-              </SheetHeader>
+            <div className="flex flex-col gap-6 mt-2">
 
               {/* Summary stats */}
               <div className="grid grid-cols-3 gap-3">
@@ -448,6 +502,9 @@ export default function WorkersPage() {
                   selectedWorker.courses.map((c) => {
                     const cfg = STATUS_CONFIG[c.status];
                     const Icon = cfg.icon;
+                    const coursePollResponses = (selectedWorker.pollResponses ?? []).filter(
+                      (pr) => pr.courseId === c.courseId
+                    );
                     return (
                       <div
                         key={c.progressId}
@@ -457,12 +514,25 @@ export default function WorkersPage() {
                           <span className="font-semibold text-sm text-foreground leading-tight">
                             {c.courseTitle}
                           </span>
-                          <span
-                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-bold uppercase tracking-wider whitespace-nowrap ${cfg.className}`}
-                          >
-                            <Icon className="h-3 w-3" />
-                            {cfg.label}
-                          </span>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-bold uppercase tracking-wider whitespace-nowrap ${cfg.className}`}
+                            >
+                              <Icon className="h-3 w-3" />
+                              {cfg.label}
+                            </span>
+                            <button
+                              onClick={() => handleRemoveCourse(c.progressId)}
+                              disabled={removingCourseId === c.progressId}
+                              className="p-1 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors disabled:opacity-50"
+                              title="Remove course"
+                            >
+                              {removingCourseId === c.progressId
+                                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                : <Trash2 className="h-3.5 w-3.5" />
+                              }
+                            </button>
+                          </div>
                         </div>
 
                         <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
@@ -494,6 +564,36 @@ export default function WorkersPage() {
                             </div>
                           )}
                         </div>
+
+                        {coursePollResponses.length > 0 && (
+                          <div className="pt-2 border-t border-border space-y-2">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                              <MessageSquare className="h-3 w-3" /> Poll Feedback
+                            </p>
+                            {coursePollResponses.map((pr) => (
+                              <div key={pr.id} className="rounded-lg bg-muted/40 border border-border/50 p-2.5 space-y-1">
+                                {pr.question && (
+                                  <p className="text-[11px] font-semibold text-foreground/80 leading-snug">
+                                    {pr.question}
+                                  </p>
+                                )}
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  {pr.rating && (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 text-[10px] font-semibold">
+                                      <Star className="h-2.5 w-2.5" />
+                                      {pr.rating}
+                                    </span>
+                                  )}
+                                  {pr.comment && (
+                                    <p className="text-[11px] text-muted-foreground italic">
+                                      &ldquo;{pr.comment}&rdquo;
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     );
                   })
@@ -538,6 +638,25 @@ export default function WorkersPage() {
                     )}
                   </DropdownMenuContent>
                 </DropdownMenu>
+              </div>
+
+              <div className="pt-2 border-t border-border">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleDeleteWorker}
+                  disabled={deletingWorker}
+                  className="w-full text-destructive border-destructive/30 hover:bg-destructive/10 font-bold text-xs gap-2"
+                >
+                  {deletingWorker ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <>
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Delete Worker
+                    </>
+                  )}
+                </Button>
               </div>
             </div>
           ) : null}

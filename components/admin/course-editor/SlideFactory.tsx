@@ -46,6 +46,7 @@ export interface SlideCardProps {
   mode?: "edit" | "play";
   onAnswered?: (isCorrect: boolean) => void;
   onCompleted?: () => void;
+  onPollSubmitted?: (rating: string | null, comment: string) => void;
 }
 
 export interface SlideToolbarProps {

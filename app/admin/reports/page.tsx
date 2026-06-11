@@ -10,6 +10,9 @@ import {
   Calendar,
   Zap,
   Loader2,
+  Trash2,
+  Star,
+  MessageSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast, Toaster } from "sonner";
@@ -23,6 +26,7 @@ import {
 } from "@/components/ui/select";
 
 interface Report {
+  id: string;
   workerName: string;
   telegramUsername: string | null;
   courseName: string;
@@ -36,14 +40,31 @@ interface Course {
   title: string;
 }
 
+interface PollResponse {
+  id: string;
+  slideIndex: number;
+  rating: string | null;
+  comment: string | null;
+  createdAt: string;
+  courseId: string;
+  workerId: string;
+  courseName: string;
+  workerName: string;
+  telegramUsername: string | null;
+  question: string | null;
+}
+
 export default function ReportsPage() {
   const [reports, setReports] = useState<Report[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
+  const [pollResponses, setPollResponses] = useState<PollResponse[]>([]);
+  const [pollLoading, setPollLoading] = useState(true);
 
   // Filters
   const [selectedCourse, setSelectedCourse] = useState<string>("all");
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const fetchReports = async () => {
     try {
@@ -75,6 +96,21 @@ export default function ReportsPage() {
     }
   };
 
+  const fetchPollResponses = async () => {
+    setPollLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (selectedCourse && selectedCourse !== "all") params.append("courseId", selectedCourse);
+      const res = await fetch(`/api/poll-responses?${params.toString()}`);
+      if (!res.ok) throw new Error("Failed to fetch poll responses");
+      setPollResponses(await res.json());
+    } catch (err: any) {
+      toast.error(err.message || "Could not load poll responses");
+    } finally {
+      setPollLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchCourses();
   }, []);
@@ -87,6 +123,24 @@ export default function ReportsPage() {
     };
     loadData();
   }, [selectedCourse, selectedStatus]);
+
+  useEffect(() => {
+    fetchPollResponses();
+  }, [selectedCourse]);
+
+  const handleDeleteReport = async (id: string) => {
+    setDeletingId(id);
+    try {
+      const res = await fetch(`/api/reports/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete report");
+      setReports((prev) => prev.filter((r) => r.id !== id));
+      toast.success("Record deleted");
+    } catch (err: any) {
+      toast.error(err.message || "Could not delete record");
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   const handleExportData = () => {
     const params = new URLSearchParams();
@@ -366,6 +420,7 @@ export default function ReportsPage() {
                   <th className="px-6 py-4">Status</th>
                   <th className="px-6 py-4">Completion Date</th>
                   <th className="px-6 py-4">Quiz Score</th>
+                  <th className="px-6 py-4"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -403,6 +458,19 @@ export default function ReportsPage() {
                     <td className="px-6 py-4 font-mono text-sm text-foreground">
                       {report.quizScore !== null ? `${report.quizScore}%` : "—"}
                     </td>
+                    <td className="px-6 py-4">
+                      <button
+                        onClick={() => handleDeleteReport(report.id)}
+                        disabled={deletingId === report.id}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive disabled:opacity-50"
+                        title="Delete record"
+                      >
+                        {deletingId === report.id
+                          ? <Loader2 className="h-4 w-4 animate-spin" />
+                          : <Trash2 className="h-4 w-4" />
+                        }
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -410,6 +478,77 @@ export default function ReportsPage() {
           )}
         </div>
       </div>
+      {/* Poll Feedback Section */}
+      {(pollLoading || pollResponses.length > 0) && (
+        <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-xl">
+          <div className="p-5 border-b border-border flex items-center gap-2">
+            <MessageSquare className="h-5 w-5 text-[#C8D400]" />
+            <h3 className="text-base font-extrabold text-[#1B2A6B] dark:text-[#C8D400]">
+              Poll Feedback
+            </h3>
+            <span className="ml-auto text-xs text-muted-foreground font-semibold">
+              {pollResponses.length} {pollResponses.length === 1 ? "response" : "responses"}
+            </span>
+          </div>
+
+          {pollLoading ? (
+            <div className="flex items-center justify-center py-10">
+              <Loader2 className="h-8 w-8 animate-spin text-[#C8D400]" />
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-border bg-muted/30 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    <th className="px-6 py-4">Worker</th>
+                    <th className="px-6 py-4">Course</th>
+                    <th className="px-6 py-4">Question</th>
+                    <th className="px-6 py-4">Rating</th>
+                    <th className="px-6 py-4">Comment</th>
+                    <th className="px-6 py-4">Date</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {pollResponses.map((pr) => (
+                    <tr key={pr.id} className="hover:bg-muted/20 transition-colors">
+                      <td className="px-6 py-4">
+                        <p className="font-semibold text-sm text-[#1B2A6B] dark:text-white">{pr.workerName}</p>
+                        {pr.telegramUsername && (
+                          <p className="font-mono text-xs text-muted-foreground">@{pr.telegramUsername}</p>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-foreground">{pr.courseName}</td>
+                      <td className="px-6 py-4 text-sm text-muted-foreground max-w-[180px] truncate">
+                        {pr.question || "—"}
+                      </td>
+                      <td className="px-6 py-4">
+                        {pr.rating ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 text-xs font-semibold">
+                            <Star className="h-3 w-3" />
+                            {pr.rating}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground text-xs">—</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-foreground max-w-[200px]">
+                        {pr.comment ? (
+                          <span className="italic text-muted-foreground">&ldquo;{pr.comment}&rdquo;</span>
+                        ) : (
+                          <span className="text-muted-foreground/50 text-xs">no comment</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-muted-foreground text-xs">
+                        {format(new Date(pr.createdAt), "yyyy-MM-dd HH:mm")}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

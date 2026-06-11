@@ -94,6 +94,8 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
 
   const [course, setCourse] = useState<Course | null>(null);
   const [slidesList, setSlidesList] = useState<Slide[]>([]);
+  const slidesListRef = useRef<Slide[]>([]);
+  slidesListRef.current = slidesList;
   const [loading, setLoading] = useState(true);
 
   // Auto-save states and hooks
@@ -121,7 +123,7 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
             description: course.description,
             themeType: course.themeType || "preset",
             themeValue: course.themeValue || "linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)",
-            slides: slidesList,
+            slides: slidesListRef.current,
           }),
         });
 
@@ -133,7 +135,7 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
         const data = await res.json();
         if (Array.isArray(data.slides)) {
           const serverIds = data.slides.map((s: Slide) => s.id).filter(Boolean);
-          const hasIdChanges = slidesList.some((slide, idx) => serverIds[idx] && slide.id !== serverIds[idx]);
+          const hasIdChanges = slidesListRef.current.some((slide, idx) => serverIds[idx] && slide.id !== serverIds[idx]);
           if (hasIdChanges) {
             isInitialLoad.current = true;
             setSlidesList(prev => prev.map((slide, idx) => ({
@@ -148,7 +150,7 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
         setSaveStatus("error");
       }
     }, 1500);
-  }, [id, course, slidesList, loading]);
+  }, [id, course, loading]);
 
   useEffect(() => {
     if (loading || !course) return;
@@ -275,7 +277,21 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
                 data.slides?.find((s: any) => s.id === slide.id) ??
                 data.slides?.[idx];
               if (match) {
-                return { ...slide, id: match.id, content: match.content, assetStatus: match.assetStatus };
+                return {
+                  ...slide,
+                  id: match.id,
+                  assetStatus: match.assetStatus,
+                  // Only merge server-generated URL fields — never overwrite user-edited content
+                  content: {
+                    ...slide.content,
+                    ...(match.content?.url !== undefined && { url: match.content.url }),
+                    ...(match.content?.assetUrl !== undefined && { assetUrl: match.content.assetUrl }),
+                    ...(match.content?.captions !== undefined && { captions: match.content.captions }),
+                    ...(match.content?.instructorVideoUrl !== undefined && { instructorVideoUrl: match.content.instructorVideoUrl }),
+                    ...(match.content?.studentVideoUrl !== undefined && { studentVideoUrl: match.content.studentVideoUrl }),
+                    ...(match.content?.slots !== undefined && { slots: match.content.slots }),
+                  },
+                };
               }
               return slide;
             })
@@ -564,19 +580,21 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
     toast.success("Slide duplicated successfully!");
   };
 
-  // Update content of the active slide
-  const updateActiveSlideContent = (index: number, updatedFields: any, slideFields?: any) => {
-    const newList = [...slidesList];
-    newList[index] = {
-      ...newList[index],
-      content: {
-        ...newList[index].content,
-        ...updatedFields,
-      },
-      ...slideFields,
-    };
-    setSlidesList(newList);
-  };
+  // Update content of the active slide — functional setState so concurrent calls never overwrite each other
+  const updateActiveSlideContent = useCallback((index: number, updatedFields: any, slideFields?: any) => {
+    setSlidesList(prev => {
+      const newList = [...prev];
+      newList[index] = {
+        ...newList[index],
+        content: {
+          ...newList[index].content,
+          ...updatedFields,
+        },
+        ...slideFields,
+      };
+      return newList;
+    });
+  }, []);
 
   // Save changes to database via API
   const handleSaveCourse = async () => {
@@ -595,7 +613,7 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
           description: course.description,
           themeType: course.themeType || "preset",
           themeValue: course.themeValue || "linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)",
-          slides: slidesList,
+          slides: slidesListRef.current,
         }),
       });
 
@@ -607,11 +625,14 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
 
       isInitialLoad.current = true;
       setCourse(data);
-      const savedSlides = (data.slides || []).map((s: Slide) => ({
-        ...s,
-        id: s.id || crypto.randomUUID()
-      }));
-      setSlidesList(savedSlides);
+      // Only sync server-assigned IDs — don't overwrite local content that may have changed during the fetch
+      if (Array.isArray(data.slides)) {
+        const serverSlides: Slide[] = data.slides;
+        setSlidesList(prev => prev.map((slide, idx) => ({
+          ...slide,
+          id: serverSlides[idx]?.id || slide.id,
+        })));
+      }
       setSaveStatus("saved");
       toast.success("All changes saved successfully!", { id: toastId });
     } catch (err: any) {

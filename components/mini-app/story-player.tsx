@@ -131,6 +131,20 @@ export function StoryPlayer({ slides, courseId, initData, themeType, themeValue 
     saveProgress(currentIndex, "in_progress", newCorrect, newTotal);
   };
 
+  const handlePollSubmitted = (rating: string | null, comment: string) => {
+    if (courseId && initData) {
+      fetch("/api/poll-responses", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Telegram-Init-Data": initData,
+        },
+        body: JSON.stringify({ courseId, slideIndex: currentIndex, rating, comment }),
+      }).catch(() => {});
+    }
+    goNext();
+  };
+
   const handleTap = (e: React.MouseEvent<HTMLDivElement>) => {
     const target = e.target as HTMLElement;
     if (
@@ -273,6 +287,7 @@ export function StoryPlayer({ slides, courseId, initData, themeType, themeValue 
               mode="play"
               onAnswered={handleQuizAnswered}
               onCompleted={() => setQuizAnswered(true)}
+              onPollSubmitted={handlePollSubmitted}
             />
           )}
         </div>
