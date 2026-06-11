@@ -57,6 +57,7 @@ export function VideoCard({
   const isFailed = slide.assetStatus === "failed";
 
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isBuffering, setIsBuffering] = useState(false);
   const [isCCActive, setIsCCActive] = useState(false);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -65,6 +66,7 @@ export function VideoCard({
   const [chadImage, setChadImage] = useState(CHAD_FALLBACK_IMAGE);
   const [florinImage, setFlorinImage] = useState(FLORIN_FALLBACK_IMAGE);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const autoPlayStartedRef = useRef(false);
 
   useEffect(() => {
     fetchAvatarsList().then((list) => {
@@ -76,9 +78,26 @@ export function VideoCard({
   }, []);
 
   useEffect(() => {
-    if (mode === "play" && videoRef.current && content.url) {
-      videoRef.current.play().catch(() => {});
+    if (mode !== "play" || !content.url) return;
+    autoPlayStartedRef.current = false;
+    setIsBuffering(true);
+    setIsPlaying(false);
+
+    const el = videoRef.current;
+    if (!el) return;
+
+    const startPlay = () => {
+      autoPlayStartedRef.current = true;
+      setIsBuffering(false);
+      el.play().catch(() => {});
       setIsPlaying(true);
+    };
+
+    if (el.readyState >= 3) {
+      startPlay();
+    } else {
+      el.addEventListener("canplay", startPlay, { once: true });
+      return () => el.removeEventListener("canplay", startPlay);
     }
   }, [mode, content.url]);
 
@@ -203,6 +222,11 @@ export function VideoCard({
       if (mode === "play") {
         return (
           <div className="absolute inset-0 z-10 overflow-hidden rounded-[24px]">
+            {isBuffering && (
+              <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/30 pointer-events-none">
+                <div className="h-10 w-10 rounded-full border-2 border-white border-t-transparent animate-spin" />
+              </div>
+            )}
             <video
               ref={(node) => {
                 videoRef.current = node;
@@ -211,6 +235,7 @@ export function VideoCard({
               src={content.url}
               className="w-full h-full object-cover pointer-events-none"
               playsInline
+              preload="auto"
               onTimeUpdate={(e) => {
                 const el = e.currentTarget;
                 setCurrentTime(el.currentTime);

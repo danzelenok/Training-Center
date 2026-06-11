@@ -64,7 +64,8 @@ export async function POST(
         slide.type === "audio" ||
         slide.type === "dialogue" ||
         slide.type === "video" ||
-        (slide.type === "text" && !!(slide.content as any).visualKeywords);
+        (slide.type === "text" && !!(slide.content as any).visualKeywords) ||
+        (slide.type === "chat" && (slide.content as any).belowType === "image" && !!(slide.content as any).visualKeywords);
       return {
         courseId: id,
         order: index + 1,

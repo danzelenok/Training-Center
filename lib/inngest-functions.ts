@@ -109,6 +109,7 @@ export const generateSlideAssets = inngest.createFunction(
     const targetSlides = courseSlides.filter((slide) => {
       if (slide.type === "audio" || slide.type === "dialogue" || slide.type === "video") return true;
       if (slide.type === "text" && (slide.content as any)?.visualKeywords) return true;
+      if (slide.type === "chat" && (slide.content as any)?.belowType === "image" && (slide.content as any)?.visualKeywords) return true;
       return false;
     });
 
@@ -264,7 +265,7 @@ export const generateSlideAssets = inngest.createFunction(
                 return uploadRes.url;
               }
 
-              if (slide.type === "text" && content.visualKeywords) {
+              if ((slide.type === "text" || slide.type === "chat") && content.visualKeywords) {
                 const imageUrl = await searchPhoto(content.visualKeywords);
                 await db
                   .update(slides)

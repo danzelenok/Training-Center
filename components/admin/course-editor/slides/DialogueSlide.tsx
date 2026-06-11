@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import { Card } from "@/components/ui/card";
-import { AlertTriangle, GripVertical, Loader2, Play, X, Sparkles, FileText } from "lucide-react";
+import { AlertTriangle, Loader2, Play, X, Sparkles, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { Slide } from "../CardCanvas";
 import { SlideBody } from "../SlideBody";
@@ -20,6 +20,7 @@ interface DialogueCardProps {
   onEnableDrag?: () => void;
   mode?: "edit" | "play";
   onCompleted?: () => void;
+  onAnswered?: (isCorrect: boolean) => void;
 }
 
 // 1. Silhouettes & Soundwave Icons
@@ -137,61 +138,19 @@ function DialogueScriptOverlay({
   isActive,
   onUpdateLines,
   onRegenerateVideo,
-  onDisableDrag,
-  onEnableDrag,
   onClose,
   isInstructorLoading,
   isStudentLoading,
 }: DialogueScriptOverlayProps) {
-  const [draggedLineIdx, setDraggedLineIdx] = useState<number | null>(null);
-  const draggedLineIdxRef = useRef<number | null>(null);
+  const line0 = linesList[0] || { slotIndex: 0, character: "instructor", text: "" };
+  const line1 = linesList[1] || { slotIndex: 1, character: "student", text: "" };
 
-  const handleLineDragStart = (idx: number, e: React.DragEvent) => {
-    e.stopPropagation();
-    setDraggedLineIdx(idx);
-    draggedLineIdxRef.current = idx;
-    e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("text/plain", idx.toString());
-
-    const rowEl = e.currentTarget.closest("[data-line-index]");
-    if (rowEl) {
-      rowEl.classList.add("shadow-2xl", "scale-[1.02]", "border-primary/80", "ring-2", "ring-primary/25");
-      e.dataTransfer.setDragImage(rowEl, 20, 24);
-      setTimeout(() => {
-        rowEl.classList.remove("shadow-2xl", "scale-[1.02]", "border-primary/80", "ring-2", "ring-primary/25");
-      }, 0);
-    }
-  };
-
-  const handleLineDragOver = (idx: number, e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    const currentDraggedIdx = draggedLineIdxRef.current;
-    if (currentDraggedIdx !== null && currentDraggedIdx !== idx) {
-      const updatedLines = [...linesList];
-      const [draggedItem] = updatedLines.splice(currentDraggedIdx, 1);
-      updatedLines.splice(idx, 0, draggedItem);
-
-      onUpdateLines(updatedLines);
-      draggedLineIdxRef.current = idx;
-      setDraggedLineIdx(idx);
-    }
-  };
-
-  const handleLineDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDraggedLineIdx(null);
-    draggedLineIdxRef.current = null;
-    onEnableDrag?.();
-  };
-
-  const handleLineDragEnd = (e: React.DragEvent) => {
-    e.stopPropagation();
-    setDraggedLineIdx(null);
-    draggedLineIdxRef.current = null;
-    onEnableDrag?.();
+  const updateLine = (idx: 0 | 1, text: string) => {
+    const updated = [
+      { ...(idx === 0 ? { ...line0, text } : line0), slotIndex: 0, character: "instructor" },
+      { ...(idx === 1 ? { ...line1, text } : line1), slotIndex: 1, character: "student" },
+    ];
+    onUpdateLines(updated);
   };
 
   return (
@@ -209,95 +168,34 @@ function DialogueScriptOverlay({
         </button>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto scrollbar-none pb-2 pr-0.5">
-        {linesList.map((line: any, lineIdx: number) => {
-          const isLineDragged = isActive && draggedLineIdx === lineIdx;
-          const slotIdx = line.slotIndex !== undefined ? line.slotIndex : (line.character === "student" ? 1 : 0);
+      <div className="flex-1 flex flex-col gap-3 min-h-0 overflow-y-auto scrollbar-none pb-2">
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[9px] font-black uppercase tracking-wider text-[#7A8A00]">
+            {labelA || "Instructor"} · Left
+          </span>
+          <textarea
+            disabled={!isActive}
+            value={line0.text}
+            onChange={(e) => updateLine(0, e.target.value)}
+            placeholder="Enter speech for left avatar…"
+            rows={3}
+            className="w-full rounded-lg border border-[#C8D400]/60 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#C8D400] focus:border-[#C8D400] bg-card text-foreground placeholder-muted-foreground/30 resize-none"
+          />
+        </div>
 
-          return (
-            <div
-              key={`line-${lineIdx}`}
-              data-line-index={lineIdx}
-              onDragOver={isActive ? (e) => handleLineDragOver(lineIdx, e) : undefined}
-              onDrop={isActive ? handleLineDrop : undefined}
-              className={`flex items-center gap-2 mb-2.5 relative group/line transition-all duration-200 ${
-                isLineDragged ? "opacity-30 scale-[0.98]" : ""
-              }`}
-            >
-              {isActive && (
-                <div
-                  draggable={isActive}
-                  onDragStart={(e) => handleLineDragStart(lineIdx, e)}
-                  onDragEnd={handleLineDragEnd}
-                  onMouseDown={(e) => {
-                    e.stopPropagation();
-                    onDisableDrag?.();
-                  }}
-                  onMouseUp={() => {
-                    if (draggedLineIdx === null) onEnableDrag?.();
-                  }}
-                  onMouseLeave={() => {
-                    if (draggedLineIdx === null) onEnableDrag?.();
-                  }}
-                  className="h-6 w-6 flex items-center justify-center cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground shrink-0 transition-transform hover:scale-110"
-                  title="Drag to reorder"
-                >
-                  <GripVertical className="h-3.5 w-3.5" />
-                </div>
-              )}
-
-              <button
-                type="button"
-                disabled={!isActive}
-                onClick={() => {
-                  const nextSlot = slotIdx === 0 ? 1 : 0;
-                  const updatedLines = [...linesList];
-                  updatedLines[lineIdx] = {
-                    ...line,
-                    slotIndex: nextSlot,
-                    character: nextSlot === 1 ? "student" : "instructor",
-                  };
-                  onUpdateLines(updatedLines);
-                }}
-                className={`h-7 w-7 rounded-full flex items-center justify-center font-bold text-xs shrink-0 transition-all border-2 shadow-xs ${
-                  slotIdx === 0
-                    ? "bg-[#FDFEE6] border-[#C8D400] text-[#7A8A00] hover:bg-yellow-100/50"
-                    : "bg-[#EFF6FF] border-[#3B82F6] text-[#1D4ED8] hover:bg-blue-100/50"
-                }`}
-                title={slotIdx === 0 ? `Switch to ${labelB || "Florin"}` : `Switch to ${labelA || "Chad"}`}
-              >
-                {slotIdx === 0 ? "I" : "W"}
-              </button>
-
-              <input
-                type="text"
-                disabled={!isActive}
-                value={line.text}
-                onChange={(e) => {
-                  const updatedLines = [...linesList];
-                  updatedLines[lineIdx] = { ...line, text: e.target.value };
-                  onUpdateLines(updatedLines);
-                }}
-                placeholder="Enter dialogue text..."
-                className="flex-1 rounded-lg border border-border px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary bg-card text-foreground placeholder-muted-foreground/30"
-              />
-
-              {isActive && linesList.length > 1 && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const updatedLines = linesList.filter((_, i) => i !== lineIdx);
-                    onUpdateLines(updatedLines);
-                  }}
-                  className="h-6 w-6 rounded-md flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors shrink-0 cursor-pointer"
-                  title="Delete line"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              )}
-            </div>
-          );
-        })}
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[9px] font-black uppercase tracking-wider text-[#1D4ED8]">
+            {labelB || "Worker"} · Right
+          </span>
+          <textarea
+            disabled={!isActive}
+            value={line1.text}
+            onChange={(e) => updateLine(1, e.target.value)}
+            placeholder="Enter reply from right avatar…"
+            rows={3}
+            className="w-full rounded-lg border border-[#3B82F6]/60 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 bg-card text-foreground placeholder-muted-foreground/30 resize-none"
+          />
+        </div>
       </div>
 
       {(isInstructorLoading || isStudentLoading) && (
@@ -306,22 +204,11 @@ function DialogueScriptOverlay({
         </div>
       )}
 
-      <div className="flex gap-2 mt-1 border-t border-border pt-3 shrink-0">
-        <button
-          type="button"
-          onClick={() => {
-            const updated = [...linesList];
-            updated.push({ slotIndex: 1, character: "student", text: "" });
-            onUpdateLines(updated);
-          }}
-          className="flex-1 py-2 border border-dashed border-border rounded-xl text-xs font-bold transition-all cursor-pointer bg-card hover:bg-accent text-foreground flex items-center justify-center gap-1.5 hover:border-primary/50"
-        >
-          + Add Line
-        </button>
+      <div className="mt-1 border-t border-border pt-3 shrink-0">
         <button
           type="button"
           onClick={onRegenerateVideo}
-          className="flex-1 py-2 bg-[#1B2A6B] hover:bg-[#1B2A6B]/90 text-white rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-sm active:scale-95"
+          className="w-full py-2 bg-[#1B2A6B] hover:bg-[#1B2A6B]/90 text-white rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-sm active:scale-95"
         >
           <Sparkles className="h-3.5 w-3.5" /> Generate
         </button>
@@ -342,6 +229,7 @@ export function DialogueCard({
   onEnableDrag,
   mode,
   onCompleted,
+  onAnswered,
 }: DialogueCardProps) {
   const content = slide.content || {};
   const [chadImage, setChadImage] = useState(CHAD_FALLBACK_IMAGE);
@@ -394,10 +282,19 @@ export function DialogueCard({
     secondVideoPlayedRef.current = false;
     setDialogueCompleted(false);
     setActivePlayer(startWith);
-    const ref = startWith === "instructor" ? instructorVideoRef : studentVideoRef;
-    if (ref.current) {
-      ref.current.currentTime = 0;
-      ref.current.play().catch(() => {});
+
+    const el = (startWith === "instructor" ? instructorVideoRef : studentVideoRef).current;
+    if (!el) return;
+
+    el.currentTime = 0;
+
+    const startPlay = () => el.play().catch(() => {});
+
+    if (el.readyState >= 3) {
+      startPlay();
+    } else {
+      el.addEventListener("canplay", startPlay, { once: true });
+      return () => el.removeEventListener("canplay", startPlay);
     }
   }, [mode, instructorVideoUrl, studentVideoUrl, firstSpeaker]);
 
@@ -543,7 +440,7 @@ export function DialogueCard({
           explanation={content.belowQuizExplanation || ""}
           isActive={isActive}
           mode={mode}
-          onAnswered={onCompleted}
+          onAnswered={(isCorrect) => { onAnswered?.(isCorrect); onCompleted?.(); }}
           onUpdateContent={(fields) => {
             const updated: any = {};
             if (fields.question !== undefined) updated.belowQuizQuestion = fields.question;
@@ -601,6 +498,7 @@ export function DialogueCard({
                     src={instructorVideoUrl}
                     playsInline
                     preload={mode === "play" ? "auto" : "metadata"}
+                    poster={mode === "play" ? (typeA === "instructor" ? chadImage : typeA === "worker" ? florinImage : undefined) : undefined}
                     className="w-full h-full object-cover"
                     style={
                       typeA === "instructor"
@@ -667,6 +565,7 @@ export function DialogueCard({
                     src={studentVideoUrl}
                     playsInline
                     preload={mode === "play" ? "auto" : "metadata"}
+                    poster={mode === "play" ? (typeB === "instructor" ? chadImage : typeB === "worker" ? florinImage : undefined) : undefined}
                     className="w-full h-full object-cover"
                     style={
                       typeB === "instructor"
