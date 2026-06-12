@@ -52,9 +52,11 @@ export async function POST(
 
     try {
       const lni = await fetchLNIContext(prompt);
+      console.log("[LNI] sources found:", lni.sources.length);
       if (lni.sources.length > 0) {
         lniContext = lni.sourcesText;
         lniDescription = lni.sourcesDescription;
+        console.log("[LNI] lniDescription set:", lniDescription.slice(0, 100));
       }
     } catch (err) {
       console.warn("[LNI] Failed to fetch L&I context, proceeding without it:", err);
@@ -100,11 +102,13 @@ export async function POST(
     }
 
     // 3. Update course description with LNI sources if found
+    console.log("[LNI] lniDescription before DB update:", lniDescription ? lniDescription.slice(0, 100) : "undefined");
     if (lniDescription) {
       await db
         .update(courses)
         .set({ description: lniDescription, updatedAt: new Date() })
         .where(eq(courses.id, id));
+      console.log("[LNI] description updated in DB");
     }
 
     // 4. Set courses.generationStatus = generating
