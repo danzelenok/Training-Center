@@ -1,6 +1,24 @@
+import { GoogleGenerativeAI } from "@google/generative-ai";
+
 const LNI_FETCH_TIMEOUT_MS = 5000;
 const MAX_TEXT_PER_PAGE = 3000;
 const MAX_TOTAL_CONTEXT = 8000;
+
+async function extractEnglishSearchQuery(prompt: string): Promise<string> {
+  const geminiKey = process.env.GEMINI_API_KEY;
+  if (!geminiKey) return prompt;
+  try {
+    const genAI = new GoogleGenerativeAI(geminiKey);
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const result = await model.generateContent(
+      `You are helping search the Washington State L&I (Labor & Industries) safety website. Read the following course request (in any language) and decide what workplace safety topic to search for. If a specific topic is mentioned, use it. If the request is vague or says "any topic", pick a common workplace safety topic yourself (e.g. fall protection, electrical safety, scaffold safety, PPE, etc.). Reply with 3-5 English keywords only — no explanation, no punctuation.\n\nCourse request: ${prompt}`
+    );
+    const keywords = result.response.text().trim().replace(/\n+/g, " ").replace(/\s{2,}/g, " ");
+    return keywords.length > 2 ? keywords : prompt;
+  } catch {
+    return prompt;
+  }
+}
 
 function withTimeout(url: string, ms: number): Promise<Response> {
   const controller = new AbortController();
@@ -56,7 +74,9 @@ export async function fetchLNIContext(topic: string): Promise<{
     return { sources: [], sourcesText: "", sourcesDescription: "" };
   }
 
-  const searchUrl = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(`site:lni.wa.gov ${topic}`)}&count=3`;
+  const searchQuery = await extractEnglishSearchQuery(topic);
+  console.log("[LNI] search query:", searchQuery);
+  const searchUrl = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(`site:lni.wa.gov ${searchQuery}`)}&count=3`;
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), LNI_FETCH_TIMEOUT_MS);
