@@ -37,7 +37,7 @@ export async function POST(
 
     // Parse request body
     const body = await req.json();
-    const { prompt, model } = body;
+    const { prompt, model, useLNI = true } = body;
 
     if (!prompt || typeof prompt !== "string" || !prompt.trim()) {
       return new NextResponse("Prompt is required", { status: 400 });
@@ -50,16 +50,20 @@ export async function POST(
     let lniContext: string | undefined;
     let lniDescription: string | undefined;
 
-    try {
-      const lni = await fetchLNIContext(prompt);
-      console.log("[LNI] sources found:", lni.sources.length);
-      if (lni.sources.length > 0) {
-        lniContext = lni.sourcesText;
-        lniDescription = lni.sourcesDescription;
-        console.log("[LNI] lniDescription set:", lniDescription.slice(0, 100));
+    if (useLNI) {
+      try {
+        const lni = await fetchLNIContext(prompt);
+        console.log("[LNI] sources found:", lni.sources.length);
+        if (lni.sources.length > 0) {
+          lniContext = lni.sourcesText;
+          lniDescription = lni.sourcesDescription;
+          console.log("[LNI] lniDescription set:", lniDescription.slice(0, 100));
+        }
+      } catch (err) {
+        console.warn("[LNI] Failed to fetch L&I context, proceeding without it:", err);
       }
-    } catch (err) {
-      console.warn("[LNI] Failed to fetch L&I context, proceeding without it:", err);
+    } else {
+      console.log("[LNI] Skipped by user toggle");
     }
 
     // Call Gemini structure generator with selected model

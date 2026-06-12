@@ -60,6 +60,7 @@ export default function CoursesPage() {
   const [creating, setCreating] = useState(false);
 
   // Actions states
+  const [expandedDescId, setExpandedDescId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [publishingId, setPublishingId] = useState<string | null>(null);
   const [revokingId, setRevokingId] = useState<string | null>(null);
@@ -344,7 +345,16 @@ export default function CoursesPage() {
                       <div className="font-semibold text-[#1B2A6B] dark:text-white group-hover:text-[#C8D400] transition-colors truncate">
                         {course.title}
                       </div>
-                      <div className="text-xs text-muted-foreground truncate mt-0.5">
+                      <div
+                        className={`text-xs text-muted-foreground mt-0.5 ${expandedDescId === course.id ? "" : "truncate"}`}
+                        onClick={(e) => {
+                          if (!course.description) return;
+                          e.stopPropagation();
+                          setExpandedDescId(expandedDescId === course.id ? null : course.id);
+                        }}
+                        title={course.description && expandedDescId !== course.id ? "Click to expand" : undefined}
+                        style={course.description ? { cursor: "pointer" } : undefined}
+                      >
                         {course.description || "No description provided"}
                       </div>
                     </td>

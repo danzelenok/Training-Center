@@ -88,6 +88,8 @@ function CourseEditorContent() {
     setAiPrompt,
     aiModel,
     setAiModel,
+    aiUseLNI,
+    setAiUseLNI,
     aiGenerating,
 
     updateCourseStyle,
@@ -675,6 +677,31 @@ function CourseEditorContent() {
                 </button>
               </div>
             </div>
+          </div>
+
+          <div className="flex items-center justify-between rounded-xl border border-border bg-muted/30 px-4 py-3">
+            <div>
+              <p className="text-xs font-bold text-foreground">Use Washington State L&amp;I Materials</p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">
+                Enrich slides with official safety references from lni.wa.gov
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={aiUseLNI}
+              onClick={() => setAiUseLNI(!aiUseLNI)}
+              disabled={aiGenerating}
+              className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus-visible:outline-none disabled:opacity-50 disabled:cursor-not-allowed ${
+                aiUseLNI ? "bg-[#C8D400]" : "bg-muted-foreground/30"
+              }`}
+            >
+              <span
+                className={`pointer-events-none block h-4 w-4 rounded-full bg-white shadow-lg transition-transform duration-200 ${
+                  aiUseLNI ? "translate-x-4" : "translate-x-0"
+                }`}
+              />
+            </button>
           </div>
 
           <DialogFooter className="gap-2">

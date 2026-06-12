@@ -50,6 +50,7 @@ interface CourseEditorContextType {
   aiDialogOpen: boolean;
   aiPrompt: string;
   aiModel: "fast" | "advanced";
+  aiUseLNI: boolean;
   aiGenerating: boolean;
 
   setSlidesList: React.Dispatch<React.SetStateAction<Slide[]>>;
@@ -65,6 +66,7 @@ interface CourseEditorContextType {
   setAiDialogOpen: (open: boolean) => void;
   setAiPrompt: (prompt: string) => void;
   setAiModel: (model: "fast" | "advanced") => void;
+  setAiUseLNI: (value: boolean) => void;
 
   updateCourseStyle: (type: string, value: string) => void;
   fetchCourse: () => Promise<void>;
@@ -214,6 +216,7 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
   const [aiDialogOpen, setAiDialogOpen] = useState(false);
   const [aiPrompt, setAiPrompt] = useState("");
   const [aiModel, setAiModel] = useState<"fast" | "advanced">("advanced");
+  const [aiUseLNI, setAiUseLNI] = useState(true);
   const [aiGenerating, setAiGenerating] = useState(false);
 
   // Fetch Course details & slides
@@ -685,7 +688,7 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
       const res = await fetch(`/api/courses/${id}/generate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: aiPrompt, model: aiModel }),
+        body: JSON.stringify({ prompt: aiPrompt, model: aiModel, useLNI: aiUseLNI }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to generate course");
@@ -769,6 +772,7 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
         aiDialogOpen,
         aiPrompt,
         aiModel,
+        aiUseLNI,
         aiGenerating,
 
         setSlidesList,
@@ -784,6 +788,7 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
         setAiDialogOpen,
         setAiPrompt,
         setAiModel,
+        setAiUseLNI,
 
         updateCourseStyle,
         fetchCourse,
