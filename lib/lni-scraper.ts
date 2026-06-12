@@ -77,6 +77,7 @@ export async function fetchLNIContext(topic: string): Promise<{
   const searchQuery = await extractEnglishSearchQuery(topic);
   console.log("[LNI] search query:", searchQuery);
   const searchUrl = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(`site:lni.wa.gov ${searchQuery}`)}&count=3`;
+  console.log("[LNI] brave url:", searchUrl);
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), LNI_FETCH_TIMEOUT_MS);
@@ -89,10 +90,12 @@ export async function fetchLNIContext(topic: string): Promise<{
     signal: controller.signal,
   }).finally(() => clearTimeout(timer));
 
+  console.log("[LNI] brave status:", searchRes.status);
   if (!searchRes.ok) {
     return { sources: [], sourcesText: "", sourcesDescription: "" };
   }
   const data = await searchRes.json();
+  console.log("[LNI] brave results count:", data.web?.results?.length ?? 0);
   const braveResults: { url: string; title: string; description: string }[] =
     (data.web?.results || []).map((item: any) => ({
       url: item.url,
