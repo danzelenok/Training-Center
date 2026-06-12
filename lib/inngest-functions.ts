@@ -567,10 +567,10 @@ export const pollHeygenJobStatus = inngest.createFunction(
       if (!videoUrl) throw new Error("HeyGen completed, but no video URL returned");
 
       const totalSec = submittedAt ? Math.round((Date.now() - submittedAt) / 1000) : null;
-      console.log(`[HeyGen Poll] ✅ job=${jobId} role=${role ?? "legacy"} COMPLETED after ${totalSec !== null ? `${totalSec}s` : "unknown time"}. Starting ImageKit upload.`);
+      console.log(`[HeyGen Poll] ✅ job=${jobId} role=${role ?? "legacy"} COMPLETED after ${totalSec !== null ? `${totalSec}s` : "unknown time"}.`);
 
-      // Upload to ImageKit and save to the correct content field
-      await step.run("upload-to-imagekit", async () => {
+      // Save HeyGen video URL directly to the correct content field
+      await step.run("save-video-url", async () => {
         const [slide] = await db
           .select({ content: slides.content })
           .from(slides)
@@ -578,18 +578,6 @@ export const pollHeygenJobStatus = inngest.createFunction(
           .limit(1);
 
         const currentContent = (slide?.content || {}) as Record<string, any>;
-
-        const fileName = role
-          ? `dialogue_${role}_${slideId}.mp4`
-          : `dialogue_${slideId}.mp4`;
-
-        const uploadStart = Date.now();
-        const uploadRes = await imagekit.upload({
-          file: videoUrl,
-          fileName,
-          folder: `/courses/${courseId}/video`,
-        });
-        console.log(`[HeyGen Poll] ImageKit upload for role=${role ?? "legacy"} took ${Date.now() - uploadStart}ms → ${uploadRes.url}`);
 
         let updatedContent: Record<string, any>;
         let newStatus: "ready" | "generating";
@@ -602,9 +590,9 @@ export const pollHeygenJobStatus = inngest.createFunction(
                 { slotIndex: 1, avatarId: currentContent.heygenAvatarBId || "" },
               ];
           const updatedSlots = currentSlots.map((s: any) =>
-            s.slotIndex === 0 ? { ...s, videoUrl: uploadRes.url } : s
+            s.slotIndex === 0 ? { ...s, videoUrl: videoUrl } : s
           );
-          updatedContent = { ...currentContent, instructorVideoUrl: uploadRes.url, slots: updatedSlots };
+          updatedContent = { ...currentContent, instructorVideoUrl: videoUrl, slots: updatedSlots };
           // ready when student URL exists OR no student job was ever submitted (no student lines)
           const studDone = !!currentContent.studentVideoUrl || !currentContent.heygenStudentJobId;
           newStatus = studDone ? "ready" : "generating";
@@ -616,15 +604,15 @@ export const pollHeygenJobStatus = inngest.createFunction(
                 { slotIndex: 1, avatarId: currentContent.heygenAvatarBId || "" },
               ];
           const updatedSlots = currentSlots.map((s: any) =>
-            s.slotIndex === 1 ? { ...s, videoUrl: uploadRes.url } : s
+            s.slotIndex === 1 ? { ...s, videoUrl: videoUrl } : s
           );
-          updatedContent = { ...currentContent, studentVideoUrl: uploadRes.url, slots: updatedSlots };
+          updatedContent = { ...currentContent, studentVideoUrl: videoUrl, slots: updatedSlots };
           // ready when instructor URL exists OR no instructor job was ever submitted (no instructor lines)
           const instDone = !!currentContent.instructorVideoUrl || !currentContent.heygenInstructorJobId;
           newStatus = instDone ? "ready" : "generating";
         } else {
           // legacy path: single combined video
-          updatedContent = { ...currentContent, assetUrl: uploadRes.url, url: uploadRes.url };
+          updatedContent = { ...currentContent, assetUrl: videoUrl, url: videoUrl };
           newStatus = "ready";
         }
 

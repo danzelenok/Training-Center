@@ -404,10 +404,10 @@ export default function ReportsPage() {
                 <FileText className="h-7 w-7" />
               </div>
               <h3 className="text-lg font-bold text-[#1B2A6B] dark:text-[#C8D400] mb-1">
-                Ни один отчёт не найден
+                No reports found
               </h3>
               <p className="text-muted-foreground text-sm max-w-md">
-                Выберите другие параметры фильтрации или проверьте активность воркеров.
+                Try adjusting your filters or check that workers are active.
               </p>
             </div>
           ) : (

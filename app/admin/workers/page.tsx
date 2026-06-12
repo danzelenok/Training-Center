@@ -340,7 +340,7 @@ export default function WorkersPage() {
                 <Users className="h-7 w-7" />
               </div>
               <h3 className="text-lg font-bold text-[#1B2A6B] dark:text-[#C8D400] mb-1">
-                Ни один воркер ещё не открывал Mini App
+                No workers have opened the Mini App yet
               </h3>
               <p className="text-muted-foreground text-sm max-w-md">
                 Once workers launch the Telegram Mini App, they will automatically appear here.
