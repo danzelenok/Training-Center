@@ -301,22 +301,26 @@ AVAILABLE SLIDE TYPES — use all of them creatively based on what fits the topi
 Use all slide types creatively. Vary the format to keep learners engaged. All text must be in English.`;
 
 
-export async function generateCourseStructure(prompt: string, modelName: string = "gemini-2.5-pro"): Promise<SlideInput[]> {
+export async function generateCourseStructure(prompt: string, modelName: string = "gemini-2.5-pro", lniContext?: string): Promise<SlideInput[]> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new Error("GEMINI_API_KEY environment variable is not configured on the server.");
   }
 
   const genAI = new GoogleGenerativeAI(apiKey);
-  
+
   // Use the specified model (e.g. gemini-3.5-flash or gemini-2.5-pro)
   const model = genAI.getGenerativeModel({
     model: modelName,
     systemInstruction: systemInstruction,
   });
 
+  const userMessage = lniContext
+    ? `REFERENCE MATERIALS FROM WASHINGTON STATE L&I:\n${lniContext}\n\nUsing the above official materials as your primary source, create a training course on: ${prompt}`
+    : `Create a training course based on this topic: ${prompt}`;
+
   const response = await model.generateContent({
-    contents: [{ role: "user", parts: [{ text: `Create a training course based on this topic: ${prompt}` }] }],
+    contents: [{ role: "user", parts: [{ text: userMessage }] }],
     generationConfig: {
       responseMimeType: "application/json",
       temperature: 0.7,

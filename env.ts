@@ -18,6 +18,7 @@ export const env = createEnv({
     HEYGEN_API_KEY: z.string().optional(),
     HEYGEN_INSTRUCTOR_AVATAR_ID: z.string().optional(),
     HEYGEN_STUDENT_AVATAR_ID: z.string().optional(),
+    BRAVE_SEARCH_API_KEY: z.string().optional(),
     MINI_APP_URL: z.string().url().optional(),
   },
   client: {
@@ -45,6 +46,7 @@ export const env = createEnv({
     HEYGEN_API_KEY: process.env.HEYGEN_API_KEY,
     HEYGEN_INSTRUCTOR_AVATAR_ID: process.env.HEYGEN_INSTRUCTOR_AVATAR_ID,
     HEYGEN_STUDENT_AVATAR_ID: process.env.HEYGEN_STUDENT_AVATAR_ID,
+    BRAVE_SEARCH_API_KEY: process.env.BRAVE_SEARCH_API_KEY,
     NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
     NEXT_PUBLIC_CLERK_SIGN_IN_URL: process.env.NEXT_PUBLIC_CLERK_SIGN_IN_URL,
     NEXT_PUBLIC_CLERK_SIGN_UP_URL: process.env.NEXT_PUBLIC_CLERK_SIGN_UP_URL,

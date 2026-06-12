@@ -4,6 +4,7 @@ import { auth } from "@clerk/nextjs/server";
 import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { generateCourseStructure } from "@/lib/gemini";
+import { fetchLNIContext } from "@/lib/lni-scraper";
 import { inngest } from "@/lib/inngest";
 
 export async function POST(
@@ -45,8 +46,22 @@ export async function POST(
     // Determine target model (fast -> gemini-3.5-flash, advanced -> gemini-2.5-pro)
     const modelIdentifier = model === "fast" ? "gemini-3.5-flash" : "gemini-2.5-pro";
 
+    // Fetch LNI context (non-blocking — generation continues if this fails)
+    let lniContext: string | undefined;
+    let lniDescription: string | undefined;
+
+    try {
+      const lni = await fetchLNIContext(prompt);
+      if (lni.sources.length > 0) {
+        lniContext = lni.sourcesText;
+        lniDescription = lni.sourcesDescription;
+      }
+    } catch (err) {
+      console.warn("[LNI] Failed to fetch L&I context, proceeding without it:", err);
+    }
+
     // Call Gemini structure generator with selected model
-    const generatedSlides = await generateCourseStructure(prompt, modelIdentifier);
+    const generatedSlides = await generateCourseStructure(prompt, modelIdentifier, lniContext);
 
     // 1. Delete all existing EN slides for this course
     await db
@@ -84,7 +99,15 @@ export async function POST(
         .returning();
     }
 
-    // 3. Set courses.generationStatus = generating
+    // 3. Update course description with LNI sources if found
+    if (lniDescription) {
+      await db
+        .update(courses)
+        .set({ description: lniDescription, updatedAt: new Date() })
+        .where(eq(courses.id, id));
+    }
+
+    // 4. Set courses.generationStatus = generating
     await db
       .update(courses)
       .set({
