@@ -73,25 +73,51 @@ export async function fetchLNIContext(topic: string): Promise<{
     return { sources: [], sourcesText: "", sourcesDescription: "" };
   }
   const data = await searchRes.json();
-  const urls: string[] = (data.web?.results || []).map((item: any) => item.url);
+  const braveResults: { url: string; title: string; description: string }[] =
+    (data.web?.results || []).map((item: any) => ({
+      url: item.url,
+      title: item.title || "",
+      description: (item.description || "").replace(/<[^>]+>/g, " ").replace(/\s{2,}/g, " ").trim(),
+    }));
 
-  if (urls.length === 0) {
+  if (braveResults.length === 0) {
     return { sources: [], sourcesText: "", sourcesDescription: "" };
   }
 
+  const isPdf = (url: string) => /\.(pdf|doc|docx)(\?|$)/i.test(url);
+
   const sources: { url: string; title: string; text: string }[] = [];
 
-  for (const url of urls) {
+  for (const result of braveResults) {
+    if (isPdf(result.url)) {
+      // Use Brave snippet for non-HTML documents
+      if (result.description.length > 50) {
+        sources.push({ url: result.url, title: result.title || result.url, text: result.description });
+      }
+      continue;
+    }
     try {
-      const pageRes = await withTimeout(url, LNI_FETCH_TIMEOUT_MS);
-      if (!pageRes.ok) continue;
+      const pageRes = await withTimeout(result.url, LNI_FETCH_TIMEOUT_MS);
+      if (!pageRes.ok) {
+        if (result.description.length > 50) {
+          sources.push({ url: result.url, title: result.title || result.url, text: result.description });
+        }
+        continue;
+      }
+      const contentType = pageRes.headers.get("content-type") || "";
+      if (!contentType.includes("text/html")) {
+        if (result.description.length > 50) {
+          sources.push({ url: result.url, title: result.title || result.url, text: result.description });
+        }
+        continue;
+      }
       const html = await pageRes.text();
       const { title, text } = extractPageText(html);
-      if (text.length > 100) {
-        sources.push({ url, title: title || url, text });
-      }
+      sources.push({ url: result.url, title: title || result.title || result.url, text: text.length > 100 ? text : result.description });
     } catch {
-      // skip failed pages
+      if (result.description.length > 50) {
+        sources.push({ url: result.url, title: result.title || result.url, text: result.description });
+      }
     }
   }
 
