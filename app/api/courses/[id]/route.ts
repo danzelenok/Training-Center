@@ -66,7 +66,7 @@ export async function PATCH(
       .update(courses)
       .set({
         title,
-        description: description || "",
+        ...(description !== undefined ? { description } : {}),
         themeType: themeType !== undefined ? themeType : undefined,
         themeValue: themeValue !== undefined ? themeValue : undefined,
         generationStatus: generationStatus !== undefined ? generationStatus : undefined,
