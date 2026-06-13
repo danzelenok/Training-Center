@@ -81,49 +81,83 @@ export async function PATCH(
 
     // 2. Reconcile Slides (if provided)
     if (Array.isArray(updatedSlides)) {
-      const existingSlides = await db
-        .select()
-        .from(slides)
-        .where(eq(slides.courseId, id));
+      const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-      await db.delete(slides).where(eq(slides.courseId, id));
+      await db.transaction(async (tx) => {
+        const existingSlides = await tx
+          .select()
+          .from(slides)
+          .where(eq(slides.courseId, id));
 
-      if (updatedSlides.length > 0) {
-        const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-        const slidesToInsert = updatedSlides.map((slide, index) => {
-          const existingSlide = UUID_RE.test(slide.id || "")
-            ? existingSlides.find((es) => es.id === slide.id)
-            : undefined;
+        await tx.delete(slides).where(eq(slides.courseId, id));
 
-          const existingContent = (existingSlide?.content || {}) as Record<string, any>;
-          const clientContent = (slide.content || {}) as Record<string, any>;
+        if (updatedSlides.length > 0) {
+          // Detect duplicate IDs in the client payload and assign fresh UUIDs to avoid
+          // a PK violation that would otherwise leave the course with no slides after the delete.
+          const seenIds = new Set<string>();
+          const slidesToInsert = updatedSlides.map((slide, index) => {
+            const existingSlide = UUID_RE.test(slide.id || "")
+              ? existingSlides.find((es) => es.id === slide.id)
+              : undefined;
 
-          // Merge content: keep existing keys unless overwritten by a defined client value.
-          // Specifically preserve backend-controlled fields if they are missing or undefined in clientContent.
-          const mergedContent = { ...existingContent };
-          for (const key of Object.keys(clientContent)) {
-            if (clientContent[key] !== undefined) {
-              mergedContent[key] = clientContent[key];
+            const existingContent = (existingSlide?.content || {}) as Record<string, any>;
+            const clientContent = (slide.content || {}) as Record<string, any>;
+
+            // Fields set server-side (Inngest/HeyGen) that the client must never clear once populated.
+            // Auto-save fires with stale client state and would wipe freshly-saved video URLs
+            // before the frontend polling has a chance to pick them up.
+            const SERVER_OWNED = new Set([
+              'instructorVideoUrl', 'studentVideoUrl',
+              'heygenInstructorJobId', 'heygenStudentJobId',
+              'assetUrl', 'url', 'audioUrl', 'captions',
+            ]);
+
+            const mergedContent = { ...existingContent };
+            for (const key of Object.keys(clientContent)) {
+              if (clientContent[key] !== undefined) {
+                // Never let client clear a value that the server already set
+                if (SERVER_OWNED.has(key) && existingContent[key] && !clientContent[key]) continue;
+                mergedContent[key] = clientContent[key];
+              }
             }
-          }
 
-          // If the database has a newer/processing assetStatus, preserve it.
-          const mergedAssetStatus = existingSlide ? existingSlide.assetStatus : (slide.assetStatus || "ready");
+            // For dialogue slots: preserve server-set videoUrl per slot even if client sends empty
+            if (Array.isArray(clientContent.slots) && Array.isArray(existingContent.slots)) {
+              mergedContent.slots = clientContent.slots.map((cs: any) => {
+                const es = existingContent.slots.find((s: any) => s.slotIndex === cs.slotIndex);
+                return { ...cs, videoUrl: (es?.videoUrl && !cs.videoUrl) ? es.videoUrl : (cs.videoUrl ?? '') };
+              });
+            }
 
-          return {
-            // Preserve existing UUID so Inngest updates land on the right row
-            ...(existingSlide ? { id: existingSlide.id } : (UUID_RE.test(slide.id || "") ? { id: slide.id as string } : {})),
-            courseId: id,
-            order: index + 1,
-            type: (slide.type || "text") as "text" | "video" | "audio" | "quiz" | "dialogue" | "chat" | "poll",
-            content: mergedContent,
-            language: slide.language || "en",
-            assetStatus: mergedAssetStatus as "pending" | "generating" | "ready" | "failed",
-          };
-        });
+            const mergedAssetStatus = existingSlide ? existingSlide.assetStatus : (slide.assetStatus || "ready");
 
-        await db.insert(slides).values(slidesToInsert);
-      }
+            // Determine ID: prefer preserved existing UUID, fall back to client UUID,
+            // but deduplicate — a repeated UUID gets a fresh one to prevent PK conflicts.
+            let resolvedId: string | undefined;
+            if (existingSlide) {
+              resolvedId = existingSlide.id;
+            } else if (UUID_RE.test(slide.id || "")) {
+              resolvedId = slide.id as string;
+            }
+            if (resolvedId && seenIds.has(resolvedId)) {
+              resolvedId = crypto.randomUUID();
+            }
+            if (resolvedId) seenIds.add(resolvedId);
+
+            return {
+              ...(resolvedId ? { id: resolvedId } : {}),
+              courseId: id,
+              order: index + 1,
+              type: (slide.type || "text") as "text" | "video" | "audio" | "quiz" | "dialogue" | "chat" | "poll",
+              content: mergedContent,
+              language: slide.language || "en",
+              assetStatus: mergedAssetStatus as "pending" | "generating" | "ready" | "failed",
+            };
+          });
+
+          await tx.insert(slides).values(slidesToInsert);
+        }
+      });
     }
 
     // Fetch the updated slides to return to the client

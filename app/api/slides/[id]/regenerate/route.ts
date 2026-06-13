@@ -56,8 +56,10 @@ export async function POST(
     const hasHeygenAvatarBId = typeof body.heygenAvatarBId === "string";
     const hasSlots = body.slots && Array.isArray(body.slots);
     if (hasNewAudioScript || hasNewVisualKeywords || hasNewDialogueLines || hasNewSpeechText || hasHeygenAvatarAId || hasHeygenAvatarBId || hasSlots) {
+      const isVideoRegeneration = asset === "video" && slide.type === "dialogue";
+      const existingContent = slide.content as Record<string, any>;
       const updatedContent = {
-        ...(slide.content as Record<string, any>),
+        ...existingContent,
         ...(hasNewAudioScript ? { audioScript: body.audioScript } : {}),
         ...(hasNewVisualKeywords ? { visualKeywords: body.visualKeywords } : {}),
         ...(hasNewDialogueLines ? { dialogueLines: body.dialogueLines } : {}),
@@ -65,9 +67,24 @@ export async function POST(
         ...(hasHeygenAvatarAId ? { heygenAvatarAId: body.heygenAvatarAId } : {}),
         ...(hasHeygenAvatarBId ? { heygenAvatarBId: body.heygenAvatarBId } : {}),
         ...(hasSlots ? { slots: body.slots } : {}),
+        // Clear stale video URLs so the polling idempotency gate doesn't abort early
+        ...(isVideoRegeneration ? {
+          instructorVideoUrl: "",
+          studentVideoUrl: "",
+          slots: (hasSlots ? body.slots : (existingContent.slots || [])).map((s: any) => ({ ...s, videoUrl: "" })),
+        } : {}),
       };
       await db.update(slides).set({ content: updatedContent, updatedAt: new Date() }).where(eq(slides.id, id));
       slide.content = updatedContent;
+    }
+
+    // If nothing changed and the video already exists, skip regeneration entirely
+    if (asset === "video" && slide.type === "dialogue") {
+      const didUpdateContent = hasNewAudioScript || hasNewVisualKeywords || hasNewDialogueLines || hasNewSpeechText || hasHeygenAvatarAId || hasHeygenAvatarBId || hasSlots;
+      const existingContent = slide.content as Record<string, any>;
+      if (!didUpdateContent && existingContent.instructorVideoUrl && existingContent.studentVideoUrl) {
+        return NextResponse.json({ success: true, skipped: true });
+      }
     }
 
     // Set slide status to generating and parent course to generating

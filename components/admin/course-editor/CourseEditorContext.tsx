@@ -274,15 +274,13 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
           // Prevent this update from triggering auto-save
           isInitialLoad.current = true;
           setSlidesList((prevSlides) =>
-            prevSlides.map((slide, idx) => {
-              // Match by ID first; fall back to position if IDs are stale after re-save
-              const match =
-                data.slides?.find((s: any) => s.id === slide.id) ??
-                data.slides?.[idx];
+            prevSlides.map((slide) => {
+              // Only match by ID — never fall back to position to avoid assigning
+              // a wrong ID when slide counts differ, which causes duplicate PKs on save
+              const match = data.slides?.find((s: any) => s.id === slide.id);
               if (match) {
                 return {
                   ...slide,
-                  id: match.id,
                   assetStatus: match.assetStatus,
                   // Only merge server-generated URL fields — never overwrite user-edited content
                   content: {
