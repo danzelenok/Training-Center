@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   ArrowLeft,
   Film,
+  FileText,
   Loader2,
   MessageSquare,
   Pause,
@@ -501,8 +502,36 @@ export function VideoToolbar({
   const captions = content.captions || "";
   const forceCompletion = content.forceCompletion === true;
   const [isGeneratingCaptions, setIsGeneratingCaptions] = useState(false);
+  const [scriptOpen, setScriptOpen] = useState(false);
+  const [localScript, setLocalScript] = useState(content.speechText || "");
+
+  useEffect(() => {
+    setLocalScript(content.speechText || "");
+  }, [content.speechText]);
 
   const updateContent = (fields: any) => onUpdateSlideContent(index, fields);
+
+  const handleRegenerateWithScript = async () => {
+    if (!slide.id) return;
+    updateContent({ speechText: localScript });
+    onUpdateSlideContent(index, {}, { assetStatus: "generating" });
+    setScriptOpen(false);
+    try {
+      const res = await fetch(`/api/slides/${slide.id}/regenerate?asset=video`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ speechText: localScript }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `Server error ${res.status}`);
+      }
+      toast.success("HeyGen video generation triggered in background.");
+    } catch (err: any) {
+      toast.error("Failed to regenerate video: " + err.message);
+      onUpdateSlideContent(index, {}, { assetStatus: "failed" });
+    }
+  };
 
   if (videoMode === "generate" && !content.url) return null;
 
@@ -583,6 +612,29 @@ export function VideoToolbar({
                 />
               </div>
             </div>
+          ) : scriptOpen ? (
+            <div className="w-full max-w-xs border rounded-2xl p-3 shadow-2xl z-20 gap-3 mt-1.5 animate-slide-up flex flex-col no-swipe backdrop-blur-md bg-popover text-popover-foreground border-border">
+              <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Avatar Script</span>
+              <textarea
+                value={localScript}
+                onChange={(e) => setLocalScript(e.target.value)}
+                placeholder="Enter what the avatar should say..."
+                rows={5}
+                className="w-full rounded-xl border border-border bg-card text-foreground px-2.5 py-2 text-xs leading-relaxed resize-none focus:outline-none focus:ring-1 focus:ring-primary transition-colors scrollbar-none"
+              />
+              <button
+                type="button"
+                disabled={!localScript.trim()}
+                onClick={handleRegenerateWithScript}
+                className={`w-full py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  !localScript.trim()
+                    ? "opacity-40 cursor-not-allowed bg-[#1B2A6B]/20 text-[#1B2A6B]"
+                    : "bg-[#1B2A6B] hover:bg-[#1B2A6B]/90 text-white active:scale-95"
+                }`}
+              >
+                <Sparkles className="h-3.5 w-3.5" /> Regenerate
+              </button>
+            </div>
           ) : null
         }
       >
@@ -590,16 +642,25 @@ export function VideoToolbar({
           icon={<Film className="h-4.5 w-4.5 shrink-0" />}
           label="Toggle Video Config Options"
           isActive={videoToolsOpen}
-          onClick={() => { setVideoToolsOpen(!videoToolsOpen); setCaptionsToolsOpen(false); }}
+          onClick={() => { setVideoToolsOpen(!videoToolsOpen); setCaptionsToolsOpen(false); setScriptOpen(false); }}
           variant="primary"
         />
         <PanelButton
           icon={<MessageSquare className="h-4.5 w-4.5 shrink-0" />}
           label="Toggle Captions Options"
           isActive={captionsToolsOpen}
-          onClick={() => { setCaptionsToolsOpen(!captionsToolsOpen); setVideoToolsOpen(false); }}
+          onClick={() => { setCaptionsToolsOpen(!captionsToolsOpen); setVideoToolsOpen(false); setScriptOpen(false); }}
           variant="primary"
         />
+        {videoMode === "generate" && (
+          <PanelButton
+            icon={<FileText className="h-4 w-4 shrink-0" />}
+            label="Edit Avatar Script"
+            isActive={scriptOpen}
+            onClick={() => { setScriptOpen(!scriptOpen); setVideoToolsOpen(false); setCaptionsToolsOpen(false); }}
+            variant="dark"
+          />
+        )}
       </ControlPanel>
     );
   }

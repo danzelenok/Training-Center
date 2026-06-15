@@ -21,6 +21,9 @@ export async function POST(
     // Parse query params to determine if generating audio, image, or video
     const { searchParams } = new URL(req.url);
     const asset = searchParams.get("asset") as "audio" | "video";
+    // Optional: target a specific dialogue slot (0 = instructor, 1 = student)
+    const slotParam = searchParams.get("slot");
+    const targetSlot: 0 | 1 | null = slotParam === "0" ? 0 : slotParam === "1" ? 1 : null;
 
     if (!asset || (asset !== "audio" && asset !== "video")) {
       return new NextResponse("Invalid asset type. Must be 'audio' or 'video'", { status: 400 });
@@ -67,22 +70,27 @@ export async function POST(
         ...(hasHeygenAvatarAId ? { heygenAvatarAId: body.heygenAvatarAId } : {}),
         ...(hasHeygenAvatarBId ? { heygenAvatarBId: body.heygenAvatarBId } : {}),
         ...(hasSlots ? { slots: body.slots } : {}),
-        // Clear stale video URLs so the polling idempotency gate doesn't abort early
+        // Clear only the targeted slot's stale URL so the polling gate doesn't abort early
         ...(isVideoRegeneration ? {
-          instructorVideoUrl: "",
-          studentVideoUrl: "",
-          slots: (hasSlots ? body.slots : (existingContent.slots || [])).map((s: any) => ({ ...s, videoUrl: "" })),
+          ...(targetSlot === null || targetSlot === 0 ? { instructorVideoUrl: "" } : {}),
+          ...(targetSlot === null || targetSlot === 1 ? { studentVideoUrl: "" } : {}),
+          slots: (hasSlots ? body.slots : (existingContent.slots || [])).map((s: any) => ({
+            ...s,
+            videoUrl: (targetSlot === null || s.slotIndex === targetSlot) ? "" : s.videoUrl,
+          })),
         } : {}),
       };
       await db.update(slides).set({ content: updatedContent, updatedAt: new Date() }).where(eq(slides.id, id));
       slide.content = updatedContent;
     }
 
-    // If nothing changed and the video already exists, skip regeneration entirely
+    // If nothing changed and the targeted video(s) already exist, skip regeneration entirely
     if (asset === "video" && slide.type === "dialogue") {
       const didUpdateContent = hasNewAudioScript || hasNewVisualKeywords || hasNewDialogueLines || hasNewSpeechText || hasHeygenAvatarAId || hasHeygenAvatarBId || hasSlots;
       const existingContent = slide.content as Record<string, any>;
-      if (!didUpdateContent && existingContent.instructorVideoUrl && existingContent.studentVideoUrl) {
+      const instructorDone = targetSlot === 1 || !!existingContent.instructorVideoUrl;
+      const studentDone    = targetSlot === 0 || !!existingContent.studentVideoUrl;
+      if (!didUpdateContent && instructorDone && studentDone) {
         return NextResponse.json({ success: true, skipped: true });
       }
     }
@@ -97,6 +105,7 @@ export async function POST(
       data: {
         slideId: id,
         assetType: asset,
+        ...(targetSlot !== null ? { targetSlot } : {}),
       },
     });
 

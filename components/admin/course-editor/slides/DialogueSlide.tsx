@@ -336,11 +336,14 @@ export function DialogueCard({
     onUpdateSlideContent(index, fields);
   };
 
-  const handleRegenerateVideo = async () => {
+  const handleRegenerateVideo = async (slot?: 0 | 1) => {
     if (!slide.id) return;
     onUpdateSlideContent(index, {}, { assetStatus: "generating" });
+    const url = slot !== undefined
+      ? `/api/slides/${slide.id}/regenerate?asset=video&slot=${slot}`
+      : `/api/slides/${slide.id}/regenerate?asset=video`;
     try {
-      const res = await fetch(`/api/slides/${slide.id}/regenerate?asset=video`, {
+      const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -354,7 +357,10 @@ export function DialogueCard({
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error || `Server error ${res.status}`);
       }
-      toast.success("HeyGen dialogue video generation triggered in background.");
+      toast.success(slot !== undefined
+        ? `Generating ${slot === 0 ? "left" : "right"} avatar video…`
+        : "HeyGen dialogue video generation triggered in background."
+      );
     } catch (err: any) {
       toast.error("Failed to regenerate video: " + err.message);
       onUpdateSlideContent(index, {}, { assetStatus: "failed" });
@@ -393,7 +399,7 @@ export function DialogueCard({
         {isActive && (
           <button
             type="button"
-            onClick={handleRegenerateVideo}
+            onClick={() => handleRegenerateVideo()}
             className="mt-2 text-xs font-bold bg-primary hover:bg-primary/90 text-primary-foreground py-2 px-5 rounded-xl shadow-md transition-all active:scale-95 cursor-pointer no-swipe font-sans"
           >
             Retry Generation
@@ -473,7 +479,7 @@ export function DialogueCard({
         {/* Avatars Header */}
         <div className="flex items-center justify-between shrink-0 pt-6 pb-2 mx-[-28px] px-5 md:px-6 relative">
           {/* Character A — Instructor */}
-          <div className="flex flex-col items-center">
+          <div className="flex flex-col items-center gap-1">
             <button
               type="button"
               disabled={!isActive}
@@ -532,6 +538,15 @@ export function DialogueCard({
                 </div>
               )}
             </button>
+            {isActive && !instructorVideoUrl && !isInstructorLoading && slide.assetStatus !== "generating" && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); handleRegenerateVideo(0); }}
+                className="flex items-center gap-0.5 text-[9px] font-bold text-primary/60 hover:text-primary transition-colors no-swipe"
+              >
+                <Sparkles className="h-2.5 w-2.5" /> Generate
+              </button>
+            )}
           </div>
 
           {/* Soundwave Dots connecting characters */}
@@ -540,7 +555,7 @@ export function DialogueCard({
           </div>
 
           {/* Character B — Student / Worker */}
-          <div className="flex flex-col items-center">
+          <div className="flex flex-col items-center gap-1">
             <button
               type="button"
               disabled={!isActive}
@@ -599,6 +614,15 @@ export function DialogueCard({
                 </div>
               )}
             </button>
+            {isActive && !studentVideoUrl && !isStudentLoading && slide.assetStatus !== "generating" && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); handleRegenerateVideo(1); }}
+                className="flex items-center gap-0.5 text-[9px] font-bold text-blue-400/70 hover:text-blue-500 transition-colors no-swipe"
+              >
+                <Sparkles className="h-2.5 w-2.5" /> Generate
+              </button>
+            )}
           </div>
         </div>
 

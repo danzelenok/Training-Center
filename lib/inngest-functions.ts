@@ -304,7 +304,7 @@ export const regenerateSingleSlideAsset = inngest.createFunction(
     retries: 1,
   },
   async ({ event, step }) => {
-    const { slideId, assetType } = event.data;
+    const { slideId, assetType, targetSlot } = event.data; // targetSlot: 0 | 1 | undefined
 
     // 1. Fetch slide
     const slide = await step.run("fetch-slide", async () => {
@@ -349,7 +349,7 @@ export const regenerateSingleSlideAsset = inngest.createFunction(
 
         const regenStartTs = Date.now();
 
-        if (slot0Lines.length > 0) {
+        if (slot0Lines.length > 0 && (targetSlot === undefined || targetSlot === 0)) {
           const instJobId = await step.run(`submit-heygen-instructor-${slide.id}`, async () => {
             const t0 = Date.now();
             console.log(`[dialogue regen] Submitting instructor job (${slot0Lines.length} lines) at ${new Date().toISOString()}`);
@@ -367,7 +367,7 @@ export const regenerateSingleSlideAsset = inngest.createFunction(
           });
         }
 
-        if (slot1Lines.length > 0) {
+        if (slot1Lines.length > 0 && (targetSlot === undefined || targetSlot === 1)) {
           const studJobId = await step.run(`submit-heygen-student-${slide.id}`, async () => {
             const t0 = Date.now();
             console.log(`[dialogue regen] Submitting student job (${slot1Lines.length} lines) at ${new Date().toISOString()}`);
