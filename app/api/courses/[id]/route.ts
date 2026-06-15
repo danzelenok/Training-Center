@@ -1,7 +1,7 @@
 import { db } from "@/db";
 import { courses, slides } from "@/db/schema";
 import { auth } from "@clerk/nextjs/server";
-import { eq, asc } from "drizzle-orm";
+import { eq, asc, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 // 1. GET /api/courses/[id] - Fetch a course and all its slides ordered by 'order'
@@ -83,77 +83,98 @@ export async function PATCH(
     if (Array.isArray(updatedSlides)) {
       const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+      // Fields written exclusively by Inngest/HeyGen — the client must never overwrite them.
+      // We achieve this by never including them in PATCH UPDATE operations: instead we use
+      // a jsonb merge (`content || $clientFields`) that only applies the non-owned keys,
+      // leaving whatever Inngest last wrote untouched regardless of timing.
+      const SERVER_OWNED = new Set([
+        'instructorVideoUrl', 'studentVideoUrl',
+        'heygenInstructorJobId', 'heygenStudentJobId',
+        'assetUrl', 'url', 'audioUrl', 'captions',
+      ]);
+
       const existingSlides = await db
         .select()
         .from(slides)
         .where(eq(slides.courseId, id));
 
-      await db.delete(slides).where(eq(slides.courseId, id));
+      const existingById = new Map(existingSlides.map((s) => [s.id, s]));
 
-      if (updatedSlides.length > 0) {
-        // Detect duplicate IDs in the client payload and assign fresh UUIDs to avoid
-        // a PK violation that would otherwise leave the course with no slides after the delete.
-        const seenIds = new Set<string>();
-        const slidesToInsert = updatedSlides.map((slide, index) => {
-          const existingSlide = UUID_RE.test(slide.id || "")
-            ? existingSlides.find((es) => es.id === slide.id)
-            : undefined;
+      // Build the set of client-side IDs so we know which DB slides to delete
+      const clientIds = new Set<string>();
+      for (const slide of updatedSlides) {
+        if (UUID_RE.test(slide.id || "")) clientIds.add(slide.id);
+      }
 
-          const existingContent = (existingSlide?.content || {}) as Record<string, any>;
-          const clientContent = (slide.content || {}) as Record<string, any>;
+      // Delete slides that were removed by the client
+      const toDeleteIds = existingSlides.filter((s) => !clientIds.has(s.id)).map((s) => s.id);
+      if (toDeleteIds.length > 0) {
+        await db.delete(slides).where(sql`${slides.id} = ANY(${toDeleteIds}::uuid[])`);
+      }
 
-          // Fields set server-side (Inngest/HeyGen) that the client must never clear once populated.
-          // Auto-save fires with stale client state and would wipe freshly-saved video URLs
-          // before the frontend polling has a chance to pick them up.
-          const SERVER_OWNED = new Set([
-            'instructorVideoUrl', 'studentVideoUrl',
-            'heygenInstructorJobId', 'heygenStudentJobId',
-            'assetUrl', 'url', 'audioUrl', 'captions',
-          ]);
+      // Upsert: UPDATE existing slides, INSERT new ones
+      const seenIds = new Set<string>();
+      const slidesToInsert: any[] = [];
 
-          const mergedContent = { ...existingContent };
-          for (const key of Object.keys(clientContent)) {
-            if (clientContent[key] !== undefined) {
-              // Never let client clear a value that the server already set
-              if (SERVER_OWNED.has(key) && existingContent[key] && !clientContent[key]) continue;
-              mergedContent[key] = clientContent[key];
-            }
+      for (const [index, slide] of updatedSlides.entries()) {
+        const isValidUUID = UUID_RE.test(slide.id || "");
+        const existingSlide = isValidUUID ? existingById.get(slide.id) : undefined;
+
+        const clientContent = (slide.content || {}) as Record<string, any>;
+        const existingContent = (existingSlide?.content || {}) as Record<string, any>;
+
+        // Build a content patch that excludes SERVER_OWNED keys entirely.
+        // For existing slides we apply this via `content || $patch::jsonb` so the DB's
+        // server-owned fields are never touched — no matter when Inngest writes them.
+        const clientPatch: Record<string, any> = {};
+        for (const [key, value] of Object.entries(clientContent)) {
+          if (value !== undefined && !SERVER_OWNED.has(key)) {
+            clientPatch[key] = value;
           }
+        }
 
-          // For dialogue slots: preserve server-set videoUrl per slot even if client sends empty
-          if (Array.isArray(clientContent.slots) && Array.isArray(existingContent.slots)) {
-            mergedContent.slots = clientContent.slots.map((cs: any) => {
-              const es = existingContent.slots.find((s: any) => s.slotIndex === cs.slotIndex);
-              return { ...cs, videoUrl: (es?.videoUrl && !cs.videoUrl) ? es.videoUrl : (cs.videoUrl ?? '') };
-            });
-          }
+        // Preserve per-slot videoUrl from DB snapshot for dialogue slots
+        if (Array.isArray(clientContent.slots)) {
+          const existingSlots = Array.isArray(existingContent.slots) ? existingContent.slots : [];
+          clientPatch.slots = clientContent.slots.map((cs: any) => {
+            const es = existingSlots.find((s: any) => s.slotIndex === cs.slotIndex);
+            return { ...cs, videoUrl: (es?.videoUrl && !cs.videoUrl) ? es.videoUrl : (cs.videoUrl ?? '') };
+          });
+        }
 
-          const mergedAssetStatus = existingSlide ? existingSlide.assetStatus : (slide.assetStatus || "ready");
-
-          // Determine ID: prefer preserved existing UUID, fall back to client UUID,
-          // but deduplicate — a repeated UUID gets a fresh one to prevent PK conflicts.
+        if (existingSlide) {
+          // UPDATE: jsonb-merge only the non-server-owned fields.
+          // assetStatus is also preserved from DB — only Inngest/regenerate route should change it.
+          await db
+            .update(slides)
+            .set({
+              order: index + 1,
+              type: (slide.type || existingSlide.type) as "text" | "video" | "audio" | "quiz" | "dialogue" | "chat" | "poll",
+              language: slide.language || existingSlide.language || "en",
+              content: sql`content || ${JSON.stringify(clientPatch)}::jsonb`,
+              updatedAt: new Date(),
+            })
+            .where(eq(slides.id, existingSlide.id));
+        } else {
+          // INSERT new slide — no existing content to protect, so clientPatch is the full content
           let resolvedId: string | undefined;
-          if (existingSlide) {
-            resolvedId = existingSlide.id;
-          } else if (UUID_RE.test(slide.id || "")) {
-            resolvedId = slide.id as string;
-          }
-          if (resolvedId && seenIds.has(resolvedId)) {
-            resolvedId = crypto.randomUUID();
-          }
+          if (isValidUUID) resolvedId = slide.id as string;
+          if (resolvedId && seenIds.has(resolvedId)) resolvedId = crypto.randomUUID();
           if (resolvedId) seenIds.add(resolvedId);
 
-          return {
+          slidesToInsert.push({
             ...(resolvedId ? { id: resolvedId } : {}),
             courseId: id,
             order: index + 1,
             type: (slide.type || "text") as "text" | "video" | "audio" | "quiz" | "dialogue" | "chat" | "poll",
-            content: mergedContent,
+            content: clientPatch,
             language: slide.language || "en",
-            assetStatus: mergedAssetStatus as "pending" | "generating" | "ready" | "failed",
-          };
-        });
+            assetStatus: (slide.assetStatus || "ready") as "pending" | "generating" | "ready" | "failed",
+          });
+        }
+      }
 
+      if (slidesToInsert.length > 0) {
         await db.insert(slides).values(slidesToInsert);
       }
     }
