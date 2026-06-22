@@ -563,13 +563,23 @@ export const pollHeygenJobStatus = inngest.createFunction(
     console.log(`[HeyGen Poll] job=${jobId} status=${check.status}${elapsedAfterCheckStr}`);
 
     if (check.status === "completed") {
-      const videoUrl = check.videoUrl || "";
-      if (!videoUrl) throw new Error("HeyGen completed, but no video URL returned");
+      const heygenVideoUrl = check.videoUrl || "";
+      if (!heygenVideoUrl) throw new Error("HeyGen completed, but no video URL returned");
 
       const totalSec = submittedAt ? Math.round((Date.now() - submittedAt) / 1000) : null;
       console.log(`[HeyGen Poll] ✅ job=${jobId} role=${role ?? "legacy"} COMPLETED after ${totalSec !== null ? `${totalSec}s` : "unknown time"}.`);
 
-      // Save HeyGen video URL directly to the correct content field
+      // HeyGen's CDN URL is a signed link that expires (~7 days) — re-host it on ImageKit so it doesn't go dead later
+      const videoUrl = await step.run("persist-video-to-imagekit", async () => {
+        const uploadRes = await imagekit.upload({
+          file: heygenVideoUrl,
+          fileName: `dialogue_${slideId}_${role ?? "legacy"}_${jobId}.mp4`,
+          folder: `/courses/${courseId}/dialogue`,
+        });
+        return uploadRes.url;
+      });
+
+      // Save the permanent ImageKit video URL to the correct content field
       await step.run("save-video-url", async () => {
         const [slide] = await db
           .select({ content: slides.content })
