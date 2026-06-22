@@ -19,42 +19,106 @@ export default function MiniAppCoursePage({ params }: PageProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function fetchSlides() {
-      try {
-        const initData =
-          typeof window !== "undefined"
-            ? (window as any).Telegram?.WebApp?.initData ||
-              (process.env.NODE_ENV === "development" ? "mock-dev-data" : "")
-            : "";
-        setInitData(initData);
+  const [needsOnboarding, setNeedsOnboarding] = useState(false);
+  const [nameInput, setNameInput] = useState("");
+  const [savingName, setSavingName] = useState(false);
+  const [onboardingError, setOnboardingError] = useState<string | null>(null);
 
-        const res = await fetch(`/api/courses/${courseId}/slides`, {
+  async function fetchSlides(initData: string) {
+    try {
+      const res = await fetch(`/api/courses/${courseId}/slides`, {
+        headers: { "Telegram-Init-Data": initData },
+      });
+
+      if (!res.ok) {
+        throw new Error(
+          res.status === 401
+            ? "Unauthorized. Please open this course inside Telegram."
+            : "Failed to load course slides."
+        );
+      }
+
+      const data = await res.json();
+      if (!data.slides?.length) throw new Error("This course contains no slides.");
+      setSlides(data.slides as Slide[]);
+      setThemeType(data.course?.themeType);
+      setThemeValue(data.course?.themeValue);
+    } catch (err: any) {
+      setError(err.message || "An unexpected error occurred.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    async function init() {
+      const initData =
+        typeof window !== "undefined"
+          ? (window as any).Telegram?.WebApp?.initData ||
+            (process.env.NODE_ENV === "development" ? "mock-dev-data" : "")
+          : "";
+      setInitData(initData);
+
+      try {
+        const meRes = await fetch("/api/mini-app/me", {
           headers: { "Telegram-Init-Data": initData },
         });
-
-        if (!res.ok) {
+        if (!meRes.ok) {
           throw new Error(
-            res.status === 401
+            meRes.status === 401
               ? "Unauthorized. Please open this course inside Telegram."
-              : "Failed to load course slides."
+              : "Failed to load your profile."
           );
         }
-
-        const data = await res.json();
-        if (!data.slides?.length) throw new Error("This course contains no slides.");
-        setSlides(data.slides as Slide[]);
-        setThemeType(data.course?.themeType);
-        setThemeValue(data.course?.themeValue);
+        const me = await meRes.json();
+        if (!me.displayName) {
+          setNeedsOnboarding(true);
+          setLoading(false);
+          return;
+        }
       } catch (err: any) {
         setError(err.message || "An unexpected error occurred.");
-      } finally {
         setLoading(false);
+        return;
       }
+
+      await fetchSlides(initData);
     }
 
-    fetchSlides();
+    init();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [courseId]);
+
+  async function handleOnboardingSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const trimmed = nameInput.trim();
+    if (!trimmed) {
+      setOnboardingError("Please enter your name.");
+      return;
+    }
+
+    setSavingName(true);
+    setOnboardingError(null);
+    try {
+      const res = await fetch("/api/mini-app/me", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "Telegram-Init-Data": initData,
+        },
+        body: JSON.stringify({ displayName: trimmed }),
+      });
+      if (!res.ok) throw new Error("Failed to save your name.");
+
+      setNeedsOnboarding(false);
+      setLoading(true);
+      await fetchSlides(initData);
+    } catch (err: any) {
+      setOnboardingError(err.message || "Failed to save your name.");
+    } finally {
+      setSavingName(false);
+    }
+  }
 
   if (!courseId) {
     return (
@@ -67,6 +131,41 @@ export default function MiniAppCoursePage({ params }: PageProps) {
             Please open this mini-app via a valid course link in Telegram.
           </p>
         </div>
+      </main>
+    );
+  }
+
+  if (needsOnboarding) {
+    return (
+      <main className="flex flex-col items-center justify-center min-h-screen bg-slate-950 text-white p-6">
+        <form
+          onSubmit={handleOnboardingSubmit}
+          className="w-full max-w-md text-center flex flex-col gap-5"
+        >
+          <h1 className="text-2xl font-bold tracking-tight bg-gradient-to-r from-sky-400 to-indigo-400 bg-clip-text text-transparent">
+            Добро пожаловать
+          </h1>
+          <p className="text-sm text-slate-400">Введите ваше имя</p>
+          <input
+            type="text"
+            value={nameInput}
+            onChange={(e) => setNameInput(e.target.value)}
+            maxLength={100}
+            autoFocus
+            placeholder="Ваше имя"
+            className="w-full rounded-xl bg-slate-900 border border-slate-700 text-white placeholder-slate-500 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+          />
+          {onboardingError && (
+            <p className="text-xs text-red-400">{onboardingError}</p>
+          )}
+          <button
+            type="submit"
+            disabled={savingName}
+            className="w-full text-sm font-semibold rounded-xl py-3 bg-sky-500 hover:bg-sky-400 active:bg-sky-600 text-white transition-colors disabled:opacity-50"
+          >
+            {savingName ? "Сохранение..." : "Продолжить"}
+          </button>
+        </form>
       </main>
     );
   }

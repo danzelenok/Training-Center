@@ -40,6 +40,7 @@ interface Worker {
   telegramUsername: string | null;
   firstName: string | null;
   lastName: string | null;
+  displayName: string | null;
   createdAt: string;
   updatedAt: string;
   coursesAssigned: number;
@@ -239,17 +240,26 @@ export default function WorkersPage() {
   };
 
   const filteredWorkers = workersList.filter((w) => {
+    const displayName = w.displayName?.toLowerCase() || "";
     const username = w.telegramUsername?.toLowerCase() || "";
     const firstName = w.firstName?.toLowerCase() || "";
     const lastName = w.lastName?.toLowerCase() || "";
     const query = search.toLowerCase();
-    return username.includes(query) || firstName.includes(query) || lastName.includes(query);
+    return (
+      displayName.includes(query) ||
+      username.includes(query) ||
+      firstName.includes(query) ||
+      lastName.includes(query)
+    );
   });
 
   const workerDisplayName = (w: Worker | WorkerDetail | null) => {
     if (!w) return "";
+    if (w.displayName) return w.displayName;
     const name = [w.firstName, w.lastName].filter(Boolean).join(" ");
-    return name || w.telegramUsername || "Unknown";
+    if (name) return name;
+    if (w.telegramUsername) return w.telegramUsername;
+    return w.telegramUserId;
   };
 
   return (
@@ -362,9 +372,8 @@ export default function WorkersPage() {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="border-b border-border bg-muted/30 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                  <th className="px-6 py-4">Name</th>
                   <th className="px-6 py-4">Telegram Username</th>
-                  <th className="px-6 py-4">First Name</th>
-                  <th className="px-6 py-4">Last Name</th>
                   <th className="px-6 py-4">Joined Date</th>
                   <th className="px-6 py-4">Courses Assigned</th>
                   <th className="px-6 py-4 text-right">Actions</th>
@@ -377,14 +386,11 @@ export default function WorkersPage() {
                     onClick={() => openWorkerDetail(worker)}
                     className="hover:bg-muted/20 transition-colors group cursor-pointer"
                   >
+                    <td className="px-6 py-4 text-sm font-semibold text-foreground">
+                      {workerDisplayName(worker)}
+                    </td>
                     <td className="px-6 py-4 font-mono text-xs font-semibold text-[#1B2A6B] dark:text-white">
                       {worker.telegramUsername ? `@${worker.telegramUsername}` : "—"}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-foreground">
-                      {worker.firstName || "—"}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-foreground">
-                      {worker.lastName || "—"}
                     </td>
                     <td className="px-6 py-4 text-muted-foreground text-xs">
                       {format(new Date(worker.createdAt), "yyyy-MM-dd HH:mm")}

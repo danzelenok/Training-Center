@@ -37,6 +37,7 @@ export const workers = pgTable("workers", {
   telegramUsername: text("telegram_username"),
   firstName: text("first_name"),
   lastName: text("last_name"),
+  displayName: text("display_name"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

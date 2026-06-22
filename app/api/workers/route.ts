@@ -21,6 +21,7 @@ export async function GET() {
         telegramUsername: workers.telegramUsername,
         firstName: workers.firstName,
         lastName: workers.lastName,
+        displayName: workers.displayName,
         createdAt: workers.createdAt,
         updatedAt: workers.updatedAt,
         coursesAssigned: sql<number>`cast(count(${progress.id}) as int)`,
