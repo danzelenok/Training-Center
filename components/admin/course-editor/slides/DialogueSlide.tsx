@@ -261,6 +261,7 @@ export function DialogueCard({
   const [avatarPickerOpen, setAvatarPickerOpen] = useState<{ side: "A" | "B" } | null>(null);
   const [activePlayer, setActivePlayer] = useState<"instructor" | "student" | null>(null);
   const [dialogueCompleted, setDialogueCompleted] = useState(false);
+  const [needsTapToPlay, setNeedsTapToPlay] = useState(false);
   const instructorVideoRef = useRef<HTMLVideoElement>(null);
   const studentVideoRef = useRef<HTMLVideoElement>(null);
   const secondVideoPlayedRef = useRef(false);
@@ -281,6 +282,7 @@ export function DialogueCard({
 
     secondVideoPlayedRef.current = false;
     setDialogueCompleted(false);
+    setNeedsTapToPlay(false);
     setActivePlayer(startWith);
 
     const el = (startWith === "instructor" ? instructorVideoRef : studentVideoRef).current;
@@ -288,7 +290,7 @@ export function DialogueCard({
 
     el.currentTime = 0;
 
-    const startPlay = () => el.play().catch(() => {});
+    const startPlay = () => el.play().then(() => setNeedsTapToPlay(false)).catch(() => setNeedsTapToPlay(true));
 
     if (el.readyState >= 3) {
       startPlay();
@@ -313,11 +315,19 @@ export function DialogueCard({
       secondVideoPlayedRef.current = true;
       setActivePlayer(other);
       otherRef.current.currentTime = 0;
-      otherRef.current.play().catch(() => {});
+      otherRef.current
+        .play()
+        .then(() => setNeedsTapToPlay(false))
+        .catch(() => setNeedsTapToPlay(true));
     } else {
       setActivePlayer(null);
       setDialogueCompleted(true);
     }
+  };
+
+  const handleManualPlay = () => {
+    const ref = activePlayer === "instructor" ? instructorVideoRef : activePlayer === "student" ? studentVideoRef : null;
+    ref?.current?.play().then(() => setNeedsTapToPlay(false)).catch(() => {});
   };
 
   const isFailed = slide.assetStatus === "failed";
@@ -482,9 +492,9 @@ export function DialogueCard({
           <div className="flex flex-col items-center gap-1">
             <button
               type="button"
-              disabled={!isActive}
+              disabled={!isActive || mode === "play"}
               onClick={() => {
-                if (!isActive) return;
+                if (!isActive || mode === "play") return;
                 setAvatarPickerOpen(isPickerOpenA ? null : { side: "A" });
               }}
               className={`w-[110px] h-[110px] md:w-[125px] md:h-[125px] lg:w-[130px] lg:h-[130px] rounded-full border-[3px] border-primary shadow-lg overflow-hidden flex items-center justify-center relative group shrink-0 transition-all duration-200 ${
@@ -558,9 +568,9 @@ export function DialogueCard({
           <div className="flex flex-col items-center gap-1">
             <button
               type="button"
-              disabled={!isActive}
+              disabled={!isActive || mode === "play"}
               onClick={() => {
-                if (!isActive) return;
+                if (!isActive || mode === "play") return;
                 setAvatarPickerOpen(isPickerOpenB ? null : { side: "B" });
               }}
               className={`w-[110px] h-[110px] md:w-[125px] md:h-[125px] lg:w-[130px] lg:h-[130px] rounded-full border-[3px] border-blue-500 shadow-lg overflow-hidden flex items-center justify-center relative group shrink-0 transition-all duration-200 ${
@@ -659,6 +669,25 @@ export function DialogueCard({
         }`}>
           {renderContentContainer()}
         </div>
+
+        {/* Tap-to-play overlay: autoplay with sound requires a user gesture */}
+        {mode === "play" && needsTapToPlay && !dialogueCompleted && (instructorVideoUrl || studentVideoUrl) && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleManualPlay();
+            }}
+            className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 bg-black/40 backdrop-blur-[2px] cursor-pointer no-swipe"
+          >
+            <div className="h-16 w-16 rounded-full bg-white/90 flex items-center justify-center shadow-2xl">
+              <Play className="h-7 w-7 text-[#1B2A6B] fill-current" />
+            </div>
+            <span className="text-white text-xs font-bold uppercase tracking-wider drop-shadow">
+              Tap to play
+            </span>
+          </button>
+        )}
 
         {/* Dialogue Script Overlay */}
         {content.showDialogueScript === true && (
