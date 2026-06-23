@@ -1,7 +1,7 @@
 import { db } from "@/db";
 import { workers, progress, courses, pollResponses, slides } from "@/db/schema";
 import { auth } from "@clerk/nextjs/server";
-import { and, eq, sql } from "drizzle-orm";
+import { and, count, eq, sql } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -34,10 +34,23 @@ export async function GET(
       completedAt: progress.completedAt,
       assignedAt: progress.createdAt,
       updatedAt: progress.updatedAt,
+      totalSlides: count(slides.id),
     })
     .from(progress)
     .innerJoin(courses, eq(progress.courseId, courses.id))
+    .leftJoin(slides, eq(slides.courseId, courses.id))
     .where(eq(progress.workerId, id))
+    .groupBy(
+      progress.id,
+      courses.id,
+      courses.title,
+      progress.status,
+      progress.currentSlideIndex,
+      progress.quizScore,
+      progress.completedAt,
+      progress.createdAt,
+      progress.updatedAt
+    )
     .orderBy(progress.createdAt);
 
   const pollResponsesList = await db

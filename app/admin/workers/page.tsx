@@ -5,6 +5,7 @@ import {
   Users,
   Search,
   CheckCircle,
+  CheckCheck,
   Clock,
   Loader2,
   ChevronDown,
@@ -15,6 +16,7 @@ import {
   Star,
   MessageSquare,
   Trash2,
+  Layers,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -62,6 +64,7 @@ interface WorkerCourseProgress {
   completedAt: string | null;
   assignedAt: string;
   updatedAt: string;
+  totalSlides: number;
 }
 
 interface WorkerPollResponse {
@@ -113,6 +116,7 @@ export default function WorkersPage() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [removingCourseId, setRemovingCourseId] = useState<string | null>(null);
+  const [markingCompleted, setMarkingCompleted] = useState<string | null>(null);
   const [deletingWorker, setDeletingWorker] = useState(false);
 
   const fetchWorkers = async () => {
@@ -218,6 +222,35 @@ export default function WorkersPage() {
       toast.error(err.message || "Could not remove course");
     } finally {
       setRemovingCourseId(null);
+    }
+  };
+
+  const handleMarkCompleted = async (progressId: string) => {
+    setMarkingCompleted(progressId);
+    try {
+      const res = await fetch(`/api/reports/${progressId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!res.ok) throw new Error("Failed to mark as completed");
+      setSelectedWorker((prev) =>
+        prev
+          ? {
+              ...prev,
+              courses: prev.courses.map((c) =>
+                c.progressId === progressId
+                  ? { ...c, status: "completed" as const, completedAt: new Date().toISOString() }
+                  : c
+              ),
+            }
+          : prev
+      );
+      await fetchWorkers();
+      toast.success("Marked as completed");
+    } catch (err: any) {
+      toast.error(err.message || "Could not mark as completed");
+    } finally {
+      setMarkingCompleted(null);
     }
   };
 
@@ -558,6 +591,15 @@ export default function WorkersPage() {
                               <p>{format(new Date(c.updatedAt), "dd MMM yyyy HH:mm")}</p>
                             </div>
                           )}
+                          {c.status !== "completed" && c.totalSlides > 0 && (
+                            <div>
+                              <span className="font-semibold text-foreground flex items-center gap-1">
+                                <Layers className="h-3 w-3" />
+                                Slide
+                              </span>
+                              <p>{c.currentSlideIndex + 1} / {c.totalSlides}</p>
+                            </div>
+                          )}
                           {c.quizScore !== null && (
                             <div>
                               <span className="font-semibold text-foreground flex items-center gap-1">
@@ -570,6 +612,21 @@ export default function WorkersPage() {
                             </div>
                           )}
                         </div>
+
+                        {c.status !== "completed" && (
+                          <button
+                            onClick={() => handleMarkCompleted(c.progressId)}
+                            disabled={markingCompleted === c.progressId}
+                            className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/5 hover:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-semibold py-1.5 transition-colors disabled:opacity-50"
+                          >
+                            {markingCompleted === c.progressId ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <CheckCheck className="h-3.5 w-3.5" />
+                            )}
+                            Mark as Completed
+                          </button>
+                        )}
 
                         {coursePollResponses.length > 0 && (
                           <div className="pt-2 border-t border-border space-y-2">

@@ -79,13 +79,17 @@ export const POST = withTelegramAuth(async (req, { worker }) => {
       // Check transition to completed
       const wasCompleted = existing.status === "completed";
 
+      // Never downgrade a completed course — once done, always done
+      const effectiveStatus = wasCompleted ? "completed" : status;
+      const effectiveIsCompleted = effectiveStatus === "completed";
+
       const [updated] = await db
         .update(progress)
         .set({
           currentSlideIndex,
-          status,
+          status: effectiveStatus,
           quizScore: quizScore !== undefined ? quizScore : existing.quizScore,
-          completedAt: isCompleted ? (existing.completedAt || completedAtVal) : existing.completedAt,
+          completedAt: effectiveIsCompleted ? (existing.completedAt || completedAtVal) : existing.completedAt,
           updatedAt: new Date(),
         })
         .where(eq(progress.id, existing.id))

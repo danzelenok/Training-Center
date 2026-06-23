@@ -111,11 +111,19 @@ export function StoryPlayer({ slides, courseId, initData, themeType, themeValue 
   const slide = slides[currentIndex];
 
   const goNext = () => {
+    // Poll slides are feedback-only; the last non-poll slide is where content ends
+    const lastContentIndex = slides.reduce(
+      (last, s, idx) => (s.type !== "poll" ? idx : last),
+      slides.length - 1
+    );
+
     if (currentIndex < slides.length - 1) {
       const nextIndex = currentIndex + 1;
       setCurrentIndex(nextIndex);
       setQuizAnswered(false);
-      saveProgress(nextIndex, "in_progress", quizCorrect, quizTotal);
+      // Mark completed as soon as the user reaches (or passes) the last content slide
+      const newStatus = nextIndex >= lastContentIndex ? "completed" : "in_progress";
+      saveProgress(nextIndex, newStatus, quizCorrect, quizTotal);
     } else {
       setCompleted(true);
       saveProgress(currentIndex, "completed", quizCorrect, quizTotal);
