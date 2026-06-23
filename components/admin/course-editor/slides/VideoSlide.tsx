@@ -94,11 +94,19 @@ export function VideoCard({
       setIsPlaying(true);
     };
 
+    const onError = () => {
+      setIsBuffering(false);
+    };
+
     if (el.readyState >= 3) {
       startPlay();
     } else {
       el.addEventListener("canplay", startPlay, { once: true });
-      return () => el.removeEventListener("canplay", startPlay);
+      el.addEventListener("error", onError, { once: true });
+      return () => {
+        el.removeEventListener("canplay", startPlay);
+        el.removeEventListener("error", onError);
+      };
     }
   }, [mode, content.url]);
 
