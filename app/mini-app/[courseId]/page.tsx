@@ -143,16 +143,16 @@ export default function MiniAppCoursePage({ params }: PageProps) {
           className="w-full max-w-md text-center flex flex-col gap-5"
         >
           <h1 className="text-2xl font-bold tracking-tight bg-gradient-to-r from-sky-400 to-indigo-400 bg-clip-text text-transparent">
-            Добро пожаловать
+            Welcome
           </h1>
-          <p className="text-sm text-slate-400">Введите ваше имя</p>
+          <p className="text-sm text-slate-400">Enter your name to get started</p>
           <input
             type="text"
             value={nameInput}
             onChange={(e) => setNameInput(e.target.value)}
             maxLength={100}
             autoFocus
-            placeholder="Ваше имя"
+            placeholder="Your name"
             className="w-full rounded-xl bg-slate-900 border border-slate-700 text-white placeholder-slate-500 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
           />
           {onboardingError && (
@@ -163,7 +163,7 @@ export default function MiniAppCoursePage({ params }: PageProps) {
             disabled={savingName}
             className="w-full text-sm font-semibold rounded-xl py-3 bg-sky-500 hover:bg-sky-400 active:bg-sky-600 text-white transition-colors disabled:opacity-50"
           >
-            {savingName ? "Сохранение..." : "Продолжить"}
+            {savingName ? "Saving..." : "Continue"}
           </button>
         </form>
       </main>
