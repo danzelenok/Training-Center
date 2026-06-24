@@ -89,7 +89,11 @@ export function VideoCard({
     const el = videoRef.current;
     if (!el) return;
 
-    const startPlay = () => {
+    let resolved = false;
+
+    const tryPlay = () => {
+      if (resolved) return;
+      resolved = true;
       autoPlayStartedRef.current = true;
       setIsBuffering(false);
       el.play()
@@ -98,19 +102,35 @@ export function VideoCard({
     };
 
     const onError = () => {
+      if (resolved) return;
+      resolved = true;
       setIsBuffering(false);
+      setNeedsTapToPlay(true);
     };
 
+    // Fallback: iOS WKWebView sometimes blocks preloading entirely until a
+    // user gesture — canplay never fires. After 1 s show tap-to-play so the
+    // user isn't stuck staring at a spinner.
+    const fallbackTimer = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        setIsBuffering(false);
+        setNeedsTapToPlay(true);
+      }
+    }, 1000);
+
     if (el.readyState >= 3) {
-      startPlay();
+      tryPlay();
     } else {
-      el.addEventListener("canplay", startPlay, { once: true });
+      el.addEventListener("canplay", tryPlay, { once: true });
       el.addEventListener("error", onError, { once: true });
-      return () => {
-        el.removeEventListener("canplay", startPlay);
-        el.removeEventListener("error", onError);
-      };
     }
+
+    return () => {
+      el.removeEventListener("canplay", tryPlay);
+      el.removeEventListener("error", onError);
+      clearTimeout(fallbackTimer);
+    };
   }, [mode, content.url]);
 
   const togglePlay = () => {
@@ -258,8 +278,10 @@ export function VideoCard({
                 setCurrentTime(el.currentTime);
                 if (el.duration && el.duration !== duration) setDuration(el.duration);
               }}
-              onPlay={() => setIsPlaying(true)}
+              onPlay={() => { setIsPlaying(true); setIsBuffering(false); }}
               onPause={() => setIsPlaying(false)}
+              onWaiting={() => setIsBuffering(true)}
+              onCanPlay={() => setIsBuffering(false)}
               onEnded={() => { setIsPlaying(false); onCompleted?.(); }}
             />
             {isCCActive && captions && (
@@ -282,7 +304,12 @@ export function VideoCard({
                 onClick={(e) => {
                   e.stopPropagation();
                   const el = videoRef.current;
-                  if (el) el.play().then(() => setNeedsTapToPlay(false)).catch(() => {});
+                  if (!el) return;
+                  setNeedsTapToPlay(false);
+                  setIsBuffering(true);
+                  el.play()
+                    .then(() => setIsBuffering(false))
+                    .catch(() => { setNeedsTapToPlay(true); setIsBuffering(false); });
                 }}
                 className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 bg-black/40 backdrop-blur-[2px] cursor-pointer"
               >
