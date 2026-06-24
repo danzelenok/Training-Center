@@ -59,7 +59,6 @@ export function VideoCard({
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
-  const [needsTapToPlay, setNeedsTapToPlay] = useState(false);
   const [isCCActive, setIsCCActive] = useState(false);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -84,64 +83,37 @@ export function VideoCard({
     autoPlayStartedRef.current = false;
     setIsBuffering(true);
     setIsPlaying(false);
-    setNeedsTapToPlay(false);
 
     const el = videoRef.current;
     if (!el) return;
 
-    let resolved = false;
-
-    const tryPlay = () => {
-      if (resolved) return;
-      resolved = true;
+    const startPlay = () => {
       autoPlayStartedRef.current = true;
       setIsBuffering(false);
-      el.play()
-        .then(() => setNeedsTapToPlay(false))
-        .catch(() => setNeedsTapToPlay(true));
+      el.play().catch(() => {});
+      setIsPlaying(true);
     };
 
     const onError = () => {
-      if (resolved) return;
-      resolved = true;
       setIsBuffering(false);
-      setNeedsTapToPlay(true);
     };
-
-    // Fallback: iOS WKWebView sometimes blocks preloading entirely until a
-    // user gesture — canplay never fires. After 1 s show tap-to-play so the
-    // user isn't stuck staring at a spinner.
-    const fallbackTimer = setTimeout(() => {
-      if (!resolved) {
-        resolved = true;
-        setIsBuffering(false);
-        setNeedsTapToPlay(true);
-      }
-    }, 1000);
 
     if (el.readyState >= 3) {
-      tryPlay();
+      startPlay();
     } else {
-      el.addEventListener("canplay", tryPlay, { once: true });
+      el.addEventListener("canplay", startPlay, { once: true });
       el.addEventListener("error", onError, { once: true });
+      return () => {
+        el.removeEventListener("canplay", startPlay);
+        el.removeEventListener("error", onError);
+      };
     }
-
-    return () => {
-      el.removeEventListener("canplay", tryPlay);
-      el.removeEventListener("error", onError);
-      clearTimeout(fallbackTimer);
-    };
   }, [mode, content.url]);
 
   const togglePlay = () => {
     if (videoRef.current) {
-      if (videoRef.current.paused) {
-        videoRef.current.play().then(() => setNeedsTapToPlay(false)).catch(() => {});
-        setIsPlaying(true);
-      } else {
-        videoRef.current.pause();
-        setIsPlaying(false);
-      }
+      if (videoRef.current.paused) { videoRef.current.play().catch(() => {}); setIsPlaying(true); }
+      else { videoRef.current.pause(); setIsPlaying(false); }
     }
   };
   const changeSpeed = () => {
@@ -278,10 +250,8 @@ export function VideoCard({
                 setCurrentTime(el.currentTime);
                 if (el.duration && el.duration !== duration) setDuration(el.duration);
               }}
-              onPlay={() => { setIsPlaying(true); setIsBuffering(false); }}
+              onPlay={() => setIsPlaying(true)}
               onPause={() => setIsPlaying(false)}
-              onWaiting={() => setIsBuffering(true)}
-              onCanPlay={() => setIsBuffering(false)}
               onEnded={() => { setIsPlaying(false); onCompleted?.(); }}
             />
             {isCCActive && captions && (
@@ -297,29 +267,6 @@ export function VideoCard({
                   <p className="text-[10px] text-white leading-normal font-medium">{content.speechText}</p>
                 </div>
               </div>
-            )}
-            {needsTapToPlay && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  const el = videoRef.current;
-                  if (!el) return;
-                  setNeedsTapToPlay(false);
-                  setIsBuffering(true);
-                  el.play()
-                    .then(() => setIsBuffering(false))
-                    .catch(() => { setNeedsTapToPlay(true); setIsBuffering(false); });
-                }}
-                className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 bg-black/40 backdrop-blur-[2px] cursor-pointer"
-              >
-                <div className="h-16 w-16 rounded-full bg-white/90 flex items-center justify-center shadow-2xl">
-                  <Play className="h-7 w-7 text-[#1B2A6B] fill-current" />
-                </div>
-                <span className="text-white text-xs font-bold uppercase tracking-wider drop-shadow">
-                  Tap to play
-                </span>
-              </button>
             )}
             <div className="absolute bottom-0 left-0 right-0 z-20 px-4 pb-4 pt-8 bg-gradient-to-t from-black/80 to-transparent">
               <MediaPlayerBar
