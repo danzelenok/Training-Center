@@ -1,11 +1,11 @@
 import { inngest } from "./inngest";
 import { ROLE_STUDENT, ROLE_INSTRUCTOR } from "./avatar-roles";
 import { db } from "@/db";
-import { courses, slides } from "@/db/schema";
+import { courses, slides, mediaFiles } from "@/db/schema";
 import { eq, and, sql } from "drizzle-orm";
 import { generateTTS } from "./openai";
 import { searchPhoto } from "./pexels";
-import { imagekit } from "./imagekit";
+import { uploadToR2 } from "./r2";
 import { submitDialogueVideo, submitSingleVideo, checkDialogueVideoStatus } from "./heygen";
 
 // Returns the voice ID for a slot based on the avatar assigned to it, not the slot position.
@@ -253,11 +253,20 @@ export const generateSlideAssets = inngest.createFunction(
                 const script = content.audioScript || content.text || content.body || "";
                 if (!script.trim()) throw new Error(`Empty audio script for slide ${slide.id}`);
                 const buffer = await generateTTS(script);
-                const uploadRes = await imagekit.upload({
-                  file: buffer,
-                  fileName: `audio_${slide.id}.mp3`,
-                  folder: `/courses/${courseId}/audio`,
+                const fileName = `audio_${slide.id}.mp3`;
+                const r2Key = `courses/${courseId}/audio/${fileName}`;
+                const publicUrl = await uploadToR2(buffer, r2Key, "audio/mpeg");
+
+                await db.insert(mediaFiles).values({
+                  r2Key,
+                  url: publicUrl,
+                  fileName,
+                  fileType: "audio",
+                  mimeType: "audio/mpeg",
+                  courseId,
                 });
+
+                const uploadRes = { url: publicUrl };
                 await db
                   .update(slides)
                   .set({ content: { ...content, url: uploadRes.url }, assetStatus: "ready", updatedAt: new Date() })
@@ -461,11 +470,21 @@ export const regenerateSingleSlideAsset = inngest.createFunction(
               throw new Error("Empty audio script");
             }
             const buffer = await generateTTS(script);
-            const uploadRes = await imagekit.upload({
-              file: buffer,
-              fileName: `audio_${slide.id}.mp3`,
-              folder: `/courses/${slide.courseId}/audio`,
+            const fileName = `audio_${slide.id}.mp3`;
+            const courseId = slide.courseId;
+            const r2Key = `courses/${courseId}/audio/${fileName}`;
+            const publicUrl = await uploadToR2(buffer, r2Key, "audio/mpeg");
+
+            await db.insert(mediaFiles).values({
+              r2Key,
+              url: publicUrl,
+              fileName,
+              fileType: "audio",
+              mimeType: "audio/mpeg",
+              courseId,
             });
+
+            const uploadRes = { url: publicUrl };
             await db
               .update(slides)
               .set({
@@ -476,6 +495,14 @@ export const regenerateSingleSlideAsset = inngest.createFunction(
                 assetStatus: "ready",
                 updatedAt: new Date(),
               })
+              .where(eq(slides.id, slideId));
+          } else if (assetType === "photo") {
+            const keywords = content.visualKeywords;
+            if (!keywords?.trim()) throw new Error("Empty visualKeywords");
+            const imageUrl = await searchPhoto(keywords);
+            await db
+              .update(slides)
+              .set({ content: { ...content, imageUrl }, assetStatus: "ready", updatedAt: new Date() })
               .where(eq(slides.id, slideId));
           }
         } catch (error: any) {
@@ -569,17 +596,28 @@ export const pollHeygenJobStatus = inngest.createFunction(
       const totalSec = submittedAt ? Math.round((Date.now() - submittedAt) / 1000) : null;
       console.log(`[HeyGen Poll] ✅ job=${jobId} role=${role ?? "legacy"} COMPLETED after ${totalSec !== null ? `${totalSec}s` : "unknown time"}.`);
 
-      // HeyGen's CDN URL is a signed link that expires (~7 days) — re-host it on ImageKit so it doesn't go dead later
-      const videoUrl = await step.run("persist-video-to-imagekit", async () => {
-        const uploadRes = await imagekit.upload({
-          file: heygenVideoUrl,
-          fileName: `dialogue_${slideId}_${role ?? "legacy"}_${jobId}.mp4`,
-          folder: `/courses/${courseId}/dialogue`,
+      // HeyGen's CDN URL is a signed link that expires (~7 days) — re-host it on Cloudflare R2
+      const videoUrl = await step.run("persist-video-to-r2", async () => {
+        const fileName = `dialogue_${slideId}_${role ?? "legacy"}_${jobId}.mp4`;
+        const uploadStart = Date.now();
+        const r2Key = `courses/${courseId}/video/${fileName}`;
+        const publicUrl = await uploadToR2(heygenVideoUrl, r2Key, "video/mp4");
+        console.log(`[HeyGen Poll] R2 upload for role=${role ?? "legacy"} took ${Date.now() - uploadStart}ms → ${publicUrl}`);
+
+        await db.insert(mediaFiles).values({
+          r2Key,
+          url: publicUrl,
+          fileName,
+          fileType: "video",
+          mimeType: "video/mp4",
+          courseId,
         });
+
+        const uploadRes = { url: publicUrl };
         return uploadRes.url;
       });
 
-      // Save the permanent ImageKit video URL to the correct content field
+      // Save the permanent R2 video URL to the correct content field
       await step.run("save-video-url", async () => {
         const [slide] = await db
           .select({ content: slides.content })

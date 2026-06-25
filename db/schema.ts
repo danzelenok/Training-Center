@@ -87,3 +87,17 @@ export const reminders = pgTable("reminders", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+// 7. MEDIA_FILES TABLE
+export const mediaFiles = pgTable("media_files", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  r2Key: text("r2_key").notNull(),
+  url: text("url").notNull(),
+  fileName: text("file_name").notNull(),
+  fileType: text("file_type").$type<"video" | "image" | "audio">().notNull(),
+  mimeType: text("mime_type").notNull(),
+  size: bigint("size", { mode: "number" }),
+  courseId: uuid("course_id").references(() => courses.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+

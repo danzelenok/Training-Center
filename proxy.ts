@@ -34,7 +34,7 @@ export const proxy = (req: any, evt: any) => {
   const pathname: string = req.nextUrl.pathname;
   const isBypassedUpload =
     pathname.match(/^\/api\/courses\/[^/]+\/upload$/) || // PPTX course upload
-    pathname === "/api/media/upload";                     // ImageKit media upload
+    pathname === "/api/media/upload";                     // R2 media upload
 
   if (isBypassedUpload) {
     return NextResponse.next();

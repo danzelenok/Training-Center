@@ -314,8 +314,8 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
             setCourse((prev) => prev ? { ...prev, generationStatus: data.generationStatus } : null);
           }
         }
-      } catch (err) {
-        console.error("Error polling generation status:", err);
+      } catch {
+        // Network blip during polling — interval will retry automatically
       }
     }, 2000);
 
@@ -400,7 +400,6 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
     updateActiveSlideContent(activeSlideIndex, {
       url: photo.url,
       imageUrl: photo.url,
-      imageKitFileId: undefined,
     });
     setMediaPickerOpen(false);
     toast.success("Pexels photo applied!");
@@ -420,7 +419,6 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
     updateActiveSlideContent(activeSlideIndex, {
       url: file.url,
       imageUrl: file.url,
-      imageKitFileId: file.fileId,
     });
     setMediaPickerOpen(false);
     toast.success(`Media set: ${file.name}`);
@@ -441,7 +439,6 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
       updateActiveSlideContent(activeSlideIndex, {
         url: data.url,
         imageUrl: data.url,
-        imageKitFileId: data.fileId,
       });
       toast.success(`${file.name} uploaded and applied!`, { id: toastId });
     } catch (err: any) {
@@ -464,9 +461,9 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
     if (type === "text") {
       newContent = { heading: "New Slide Title", body: "Add your micro-learning contents here..." };
     } else if (type === "video") {
-      newContent = { heading: "New Video Card", body: "", url: "", imageKitFileId: "" };
+      newContent = { heading: "New Video Card", body: "", url: "" };
     } else if (type === "audio") {
-      newContent = { heading: "New Audio Card", body: "", audioScript: "", url: "", imageKitFileId: "" };
+      newContent = { heading: "New Audio Card", body: "", audioScript: "", url: "" };
     } else if (type === "dialogue") {
       newContent = {
         heading: "Foreman & Worker Briefing",

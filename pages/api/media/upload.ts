@@ -1,5 +1,7 @@
-import { imagekit } from "@/lib/imagekit";
 import { NextApiRequest, NextApiResponse } from "next";
+import { uploadToR2 } from "@/lib/r2";
+import { db } from "@/db";
+import { mediaFiles } from "@/db/schema";
 
 export const config = {
   api: {
@@ -105,23 +107,46 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(400).json({ error: "No file found in upload" });
     }
 
-    // Upload to ImageKit
-    const result = await imagekit.upload({
-      file: parsed.buffer,
-      fileName: parsed.filename,
-      useUniqueFileName: true,
-    });
+    const ext = parsed.filename.split(".").pop()?.toLowerCase() || "";
+    const videoExts = ["mp4", "webm", "mov", "m4v"];
+    const imageExts = ["jpg", "jpeg", "png", "gif", "webp"];
+    const audioExts = ["mp3", "wav", "m4a", "ogg"];
 
-    return res.status(200).json({
-      fileId: result.fileId,
-      url: result.url,
-      name: result.name,
-      fileType: result.fileType,
-      thumbnailUrl: result.thumbnailUrl,
-      size: result.size,
-    });
+    const mimeMap: Record<string, string> = {
+      mp4: "video/mp4", webm: "video/webm", mov: "video/quicktime", m4v: "video/x-m4v",
+      jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", gif: "image/gif", webp: "image/webp",
+      mp3: "audio/mpeg", wav: "audio/wav", m4a: "audio/mp4", ogg: "audio/ogg",
+    };
+
+    if (videoExts.includes(ext) || imageExts.includes(ext) || audioExts.includes(ext)) {
+      const fileType = videoExts.includes(ext) ? "video" : imageExts.includes(ext) ? "image" : "audio";
+      const mimeType = mimeMap[ext] || "application/octet-stream";
+      const uniqueName = `${Date.now()}_${parsed.filename}`;
+      const r2Key = `uploads/${fileType}/${uniqueName}`;
+
+      const publicUrl = await uploadToR2(parsed.buffer, r2Key, mimeType);
+
+      const [inserted] = await db.insert(mediaFiles).values({
+        r2Key,
+        url: publicUrl,
+        fileName: parsed.filename,
+        fileType,
+        mimeType,
+        size: parsed.buffer.length,
+      }).returning();
+
+      return res.status(200).json({
+        fileId: inserted.id,
+        url: publicUrl,
+        name: parsed.filename,
+        fileType: mimeType,
+        size: parsed.buffer.length,
+      });
+    }
+
+    return res.status(400).json({ error: "Unsupported file extension" });
   } catch (error: any) {
-    console.error("Error uploading to ImageKit:", error);
+    console.error("Error uploading file:", error);
     return res.status(500).json({ error: error.message || "Upload failed" });
   }
 }

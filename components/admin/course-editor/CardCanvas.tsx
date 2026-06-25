@@ -24,7 +24,6 @@ export interface Slide {
     url?: string;
     imageUrl?: string;
     question?: string;
-    imageKitFileId?: string;
     visualKeywords?: string;
     audioScript?: string;
     dialogueLines?: { character?: string; slotIndex?: number; text: string }[];

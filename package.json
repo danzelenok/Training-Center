@@ -10,6 +10,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1075.0",
     "@base-ui/react": "^1.5.0",
     "@clerk/nextjs": "^7.4.2",
     "@google/generative-ai": "^0.24.1",
@@ -23,7 +24,6 @@
     "embla-carousel-react": "^8.6.0",
     "embla-carousel-wheel-gestures": "^8.1.0",
     "grammy": "^1.43.0",
-    "imagekit": "^6.0.0",
     "inngest": "^4.5.0",
     "input-otp": "^1.4.2",
     "lucide-react": "^1.17.0",

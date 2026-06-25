@@ -213,7 +213,7 @@ function DeleteConfirmDialog({
           <h3 className="text-base font-bold text-foreground">Delete File?</h3>
           <p className="text-sm text-muted-foreground mt-1">
             This will permanently remove{" "}
-            <span className="font-semibold text-foreground">{file.name}</span> from ImageKit.
+            <span className="font-semibold text-foreground">{file.name}</span> from storage.
             This action cannot be undone.
           </p>
         </div>
@@ -478,7 +478,7 @@ export default function MediaManagerPage() {
             Media Library
           </h1>
           <p className="text-muted-foreground text-sm mt-0.5">
-            Manage uploaded images, videos, and audio files stored on ImageKit CDN.
+            Manage uploaded images, videos, and audio files stored on Cloudflare R2 storage.
           </p>
         </div>
 
