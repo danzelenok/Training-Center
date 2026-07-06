@@ -24,7 +24,7 @@ export function SlideBody({
   const len = value.length;
 
   let className =
-    "font-sans font-medium text-left resize-none bg-transparent focus:outline-none leading-relaxed w-full p-0 border-0 focus:ring-0 overflow-y-auto scrollbar-none max-h-full text-foreground placeholder-muted-foreground/40";
+    "font-sans font-medium text-left resize-none bg-transparent focus:outline-none leading-relaxed w-full p-0 border-0 focus:ring-0 overflow-y-auto scrollbar-none max-h-full text-foreground placeholder-muted-foreground/40 whitespace-pre-wrap";
 
   if (!hasHeading && !hasImage) {
     if (len < 100) className += " text-xl md:text-2xl";

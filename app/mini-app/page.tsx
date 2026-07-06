@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { BookOpen, CheckCircle2, Clock, X } from "lucide-react";
+import { BookOpen, CheckCircle2, Clock, ChevronDown, ChevronUp, X } from "lucide-react";
 
 
 type ProgressStatus = "not_started" | "in_progress" | "completed";
@@ -37,11 +37,57 @@ function StatusBadge({ status }: { status: ProgressStatus }) {
   );
 }
 
+function CourseCard({ course, onClick }: { course: Course; onClick: () => void }) {
+  const isCompleted = course.progressStatus === "completed";
+  const isInProgress = course.progressStatus === "in_progress";
+
+  return (
+    <li
+      className={`border rounded-2xl p-4 flex flex-col gap-3 transition-colors ${
+        isCompleted
+          ? "bg-emerald-950/20 border-emerald-800/40"
+          : isInProgress
+          ? "bg-slate-900 border-yellow-700/30"
+          : "bg-slate-900 border-sky-800/40"
+      }`}
+    >
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-start justify-between gap-2">
+          <h2 className="text-base font-semibold text-white leading-snug flex-1">
+            {course.title}
+          </h2>
+          <StatusBadge status={course.progressStatus} />
+        </div>
+        {course.description && (
+          <p className="text-sm text-slate-400 leading-relaxed line-clamp-3">
+            {course.description}
+          </p>
+        )}
+      </div>
+
+      <button
+        onClick={onClick}
+        className={`w-full text-sm font-semibold rounded-xl py-2.5 transition-colors ${
+          isCompleted
+            ? "bg-slate-700 hover:bg-slate-600 active:bg-slate-800 text-slate-200"
+            : isInProgress
+            ? "bg-yellow-500 hover:bg-yellow-400 active:bg-yellow-600 text-slate-950"
+            : "bg-sky-500 hover:bg-sky-400 active:bg-sky-600 text-white"
+        }`}
+      >
+        {isCompleted ? "Review Again" : isInProgress ? "Continue" : "Start Learning"}
+      </button>
+    </li>
+  );
+}
+
 export default function MiniAppPage() {
   const router = useRouter();
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [completedOpen, setCompletedOpen] = useState(false);
+
   useEffect(() => {
     const initData =
       (window as any).Telegram?.WebApp?.initData ||
@@ -84,6 +130,9 @@ export default function MiniAppPage() {
     );
   }
 
+  const active = courses.filter((c) => c.progressStatus !== "completed");
+  const completed = courses.filter((c) => c.progressStatus === "completed");
+
   return (
     <main className="flex-1 overflow-y-auto bg-slate-950 px-4 pb-8" style={safeTopStyle}>
       <h1 className="text-xl font-bold text-white mb-1">Safety Training</h1>
@@ -92,55 +141,55 @@ export default function MiniAppPage() {
       {courses.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-3 mt-16 text-center text-slate-500">
           <BookOpen className="h-10 w-10 opacity-40" />
-          <p className="text-sm">No courses available yet.</p>
+          <p className="text-sm">No courses assigned yet.</p>
         </div>
       ) : (
-        <ul className="flex flex-col gap-3">
-          {courses.map((course) => {
-            const isCompleted = course.progressStatus === "completed";
-            const isInProgress = course.progressStatus === "in_progress";
-
-            return (
-              <li
-                key={course.id}
-                className={`border rounded-2xl p-4 flex flex-col gap-3 transition-colors ${
-                  isCompleted
-                    ? "bg-emerald-950/20 border-emerald-800/40"
-                    : isInProgress
-                    ? "bg-slate-900 border-yellow-700/30"
-                    : "bg-slate-900 border-sky-800/40"
-                }`}
-              >
-                <div className="flex flex-col gap-1.5">
-                  <div className="flex items-start justify-between gap-2">
-                    <h2 className="text-base font-semibold text-white leading-snug flex-1">
-                      {course.title}
-                    </h2>
-                    <StatusBadge status={course.progressStatus} />
-                  </div>
-                  {course.description && (
-                    <p className="text-sm text-slate-400 leading-relaxed line-clamp-3">
-                      {course.description}
-                    </p>
-                  )}
-                </div>
-
-                <button
+        <div className="flex flex-col gap-6">
+          {/* Active courses */}
+          {active.length > 0 && (
+            <ul className="flex flex-col gap-3">
+              {active.map((course) => (
+                <CourseCard
+                  key={course.id}
+                  course={course}
                   onClick={() => router.push(`/mini-app/${course.id}`)}
-                  className={`w-full text-sm font-semibold rounded-xl py-2.5 transition-colors ${
-                    isCompleted
-                      ? "bg-slate-700 hover:bg-slate-600 active:bg-slate-800 text-slate-200"
-                      : isInProgress
-                      ? "bg-yellow-500 hover:bg-yellow-400 active:bg-yellow-600 text-slate-950"
-                      : "bg-sky-500 hover:bg-sky-400 active:bg-sky-600 text-white"
-                  }`}
-                >
-                  {isCompleted ? "Review Again" : isInProgress ? "Continue" : "Start Learning"}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+                />
+              ))}
+            </ul>
+          )}
+
+          {/* Completed courses — collapsible */}
+          {completed.length > 0 && (
+            <div className="border border-emerald-800/30 rounded-2xl overflow-hidden">
+              <button
+                onClick={() => setCompletedOpen((o) => !o)}
+                className="w-full flex items-center justify-between px-4 py-3 bg-emerald-950/30 text-emerald-400 text-sm font-semibold"
+              >
+                <span className="flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4" />
+                  Completed ({completed.length})
+                </span>
+                {completedOpen ? (
+                  <ChevronUp className="h-4 w-4" />
+                ) : (
+                  <ChevronDown className="h-4 w-4" />
+                )}
+              </button>
+
+              {completedOpen && (
+                <ul className="flex flex-col gap-3 p-3">
+                  {completed.map((course) => (
+                    <CourseCard
+                      key={course.id}
+                      course={course}
+                      onClick={() => router.push(`/mini-app/${course.id}`)}
+                    />
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
       )}
     </main>
   );

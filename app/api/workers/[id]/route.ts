@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { workers, progress, courses, pollResponses, slides } from "@/db/schema";
+import { workers, progress, courses, pollResponses, slides, assignments } from "@/db/schema";
 import { auth } from "@clerk/nextjs/server";
 import { and, count, eq, sql } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
@@ -25,6 +25,7 @@ export async function GET(
 
   const courseProgress = await db
     .select({
+      assignmentId: assignments.id,
       progressId: progress.id,
       courseId: courses.id,
       courseTitle: courses.title,
@@ -32,15 +33,20 @@ export async function GET(
       currentSlideIndex: progress.currentSlideIndex,
       quizScore: progress.quizScore,
       completedAt: progress.completedAt,
-      assignedAt: progress.createdAt,
-      updatedAt: progress.updatedAt,
+      assignedAt: assignments.assignedAt,
+      updatedAt: sql<Date>`coalesce(${progress.updatedAt}, ${assignments.updatedAt})`,
       totalSlides: count(slides.id),
     })
-    .from(progress)
-    .innerJoin(courses, eq(progress.courseId, courses.id))
+    .from(assignments)
+    .innerJoin(courses, eq(courses.id, assignments.courseId))
+    .leftJoin(
+      progress,
+      and(eq(progress.workerId, assignments.workerId), eq(progress.courseId, assignments.courseId))
+    )
     .leftJoin(slides, eq(slides.courseId, courses.id))
-    .where(eq(progress.workerId, id))
+    .where(eq(assignments.workerId, id))
     .groupBy(
+      assignments.id,
       progress.id,
       courses.id,
       courses.title,
@@ -48,10 +54,11 @@ export async function GET(
       progress.currentSlideIndex,
       progress.quizScore,
       progress.completedAt,
-      progress.createdAt,
+      assignments.assignedAt,
+      assignments.updatedAt,
       progress.updatedAt
     )
-    .orderBy(progress.createdAt);
+    .orderBy(assignments.assignedAt);
 
   const pollResponsesList = await db
     .select({
@@ -77,7 +84,19 @@ export async function GET(
   return NextResponse.json({
     ...worker[0],
     telegramUserId: worker[0].telegramUserId?.toString() ?? null,
-    courses: courseProgress,
+    courses: courseProgress.map((r) => ({
+      assignmentId: r.assignmentId,
+      progressId: r.progressId ?? null,
+      courseId: r.courseId,
+      courseTitle: r.courseTitle,
+      status: r.status ?? "not_started",
+      currentSlideIndex: r.currentSlideIndex ?? 0,
+      quizScore: r.quizScore ?? null,
+      completedAt: r.completedAt ?? null,
+      assignedAt: r.assignedAt,
+      updatedAt: r.updatedAt,
+      totalSlides: r.totalSlides,
+    })),
     pollResponses: pollResponsesList,
   });
 }

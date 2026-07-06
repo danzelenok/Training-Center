@@ -14,6 +14,7 @@ import {
   Image as ImageIcon,
   Sparkles,
   Eye,
+  Send,
 } from "lucide-react";
 import { toast, Toaster } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -34,6 +35,8 @@ import {
   DialogFooter,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 // Decoupled components
 import Sidebar from "@/components/admin/course-editor/Sidebar";
@@ -91,6 +94,18 @@ function CourseEditorContent() {
     aiUseLNI,
     setAiUseLNI,
     aiGenerating,
+
+    publishDialogOpen,
+    setPublishDialogOpen,
+    publishAssignTo,
+    setPublishAssignTo,
+    publishWorkerIds,
+    setPublishWorkerIds,
+    publishNotifyTelegram,
+    setPublishNotifyTelegram,
+    publishWorkersList,
+    publishWorkersLoading,
+    confirmPublish,
 
     updateCourseStyle,
     openMediaPicker,
@@ -608,6 +623,119 @@ function CourseEditorContent() {
           </div>
         </SheetContent>
       </Sheet>
+
+      {/* Publish Dialog */}
+      <Dialog open={publishDialogOpen} onOpenChange={setPublishDialogOpen}>
+        <DialogContent className="sm:max-w-[460px]">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold text-[#1B2A6B] dark:text-[#C8D400]">
+              Publish Course
+            </DialogTitle>
+            <DialogDescription className="text-muted-foreground text-xs mt-1">
+              Choose who can see this course and whether to post an announcement.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-5 py-3">
+            {/* Assign to */}
+            <div className="space-y-2">
+              <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                Assign to
+              </p>
+              <RadioGroup
+                value={publishAssignTo}
+                onValueChange={(v) => setPublishAssignTo(v as "all" | "specific")}
+                className="space-y-2"
+              >
+                <label className="flex items-start gap-3 rounded-xl border border-border p-3 cursor-pointer hover:bg-muted/30 transition-colors">
+                  <RadioGroupItem value="all" className="mt-0.5" />
+                  <div>
+                    <p className="text-xs font-bold text-foreground">All current workers</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">
+                      Every registered worker gets access immediately. Future workers will also be auto-assigned.
+                    </p>
+                  </div>
+                </label>
+                <label className="flex items-start gap-3 rounded-xl border border-border p-3 cursor-pointer hover:bg-muted/30 transition-colors">
+                  <RadioGroupItem value="specific" className="mt-0.5" />
+                  <div className="w-full">
+                    <p className="text-xs font-bold text-foreground">Specific workers</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">
+                      Only the workers you select below will see this course.
+                    </p>
+                    {publishAssignTo === "specific" && (
+                      <div className="mt-3 max-h-40 overflow-y-auto space-y-1 pr-1">
+                        {publishWorkersLoading ? (
+                          <p className="text-[10px] text-muted-foreground">Loading workers…</p>
+                        ) : publishWorkersList.length === 0 ? (
+                          <p className="text-[10px] text-muted-foreground">No registered workers yet.</p>
+                        ) : (
+                          publishWorkersList.map((w) => (
+                            <label key={w.id} className="flex items-center gap-2 cursor-pointer">
+                              <Checkbox
+                                checked={publishWorkerIds.includes(w.id)}
+                                onCheckedChange={(checked) =>
+                                  setPublishWorkerIds((prev) =>
+                                    checked ? [...prev, w.id] : prev.filter((x) => x !== w.id)
+                                  )
+                                }
+                              />
+                              <span className="text-xs text-foreground">{w.label}</span>
+                            </label>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </label>
+              </RadioGroup>
+            </div>
+
+            {/* Telegram notify */}
+            <div className="flex items-center justify-between rounded-xl border border-border bg-muted/30 px-4 py-3">
+              <div>
+                <p className="text-xs font-bold text-foreground">Post announcement to Telegram group</p>
+                <p className="text-[10px] text-muted-foreground mt-0.5">
+                  Sends a message with a "Start Learning" button to the group.
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={publishNotifyTelegram}
+                onClick={() => setPublishNotifyTelegram(!publishNotifyTelegram)}
+                className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ${
+                  publishNotifyTelegram ? "bg-[#C8D400]" : "bg-muted-foreground/30"
+                }`}
+              >
+                <span
+                  className={`pointer-events-none block h-4 w-4 rounded-full bg-white shadow-lg transition-transform duration-200 ${
+                    publishNotifyTelegram ? "translate-x-4" : "translate-x-0"
+                  }`}
+                />
+              </button>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setPublishDialogOpen(false)}
+              className="border-border text-muted-foreground hover:text-foreground text-xs"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={confirmPublish}
+              disabled={publishAssignTo === "specific" && publishWorkerIds.length === 0}
+              className="bg-[#C8D400] hover:bg-[#B6C200] text-[#1B2A6B] font-extrabold border-0 text-xs px-4"
+            >
+              <Send className="h-4 w-4 mr-1.5" />
+              Publish
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Global Radix Dialog for AI Slide Generation */}
       <Dialog open={aiDialogOpen} onOpenChange={setAiDialogOpen}>

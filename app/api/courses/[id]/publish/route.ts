@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { courses, slides } from "@/db/schema";
+import { courses, slides, workers, assignments } from "@/db/schema";
 import { auth } from "@clerk/nextjs/server";
 import { eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
@@ -16,6 +16,11 @@ export async function POST(
     if (!userId) {
       return new NextResponse("Unauthorized", { status: 401 });
     }
+
+    const body = await req.json().catch(() => ({}));
+    const assignTo: "all" | "specific" = body.assignTo === "specific" ? "specific" : "all";
+    const workerIds: string[] = Array.isArray(body.workerIds) ? body.workerIds : [];
+    const notifyTelegram: boolean = body.notifyTelegram !== false;
 
     // 1. Fetch the course
     const [course] = await db
@@ -42,32 +47,52 @@ export async function POST(
       );
     }
 
-    // 3. Delete previous Telegram message if republishing
-    if (course.telegramMessageId && course.telegramGroupId) {
-      await deleteTelegramMessage(course.telegramMessageId, course.telegramGroupId);
+    const isFirstPublish = course.status !== "published";
+
+    // 3. Broadcast to Telegram, unless the caller opted out
+    let telegramMessageId: bigint | null = course.telegramMessageId;
+    let telegramGroupId: bigint | null = course.telegramGroupId;
+
+    if (notifyTelegram) {
+      // Delete previous Telegram message if republishing
+      if (course.telegramMessageId && course.telegramGroupId) {
+        await deleteTelegramMessage(course.telegramMessageId, course.telegramGroupId);
+      }
+
+      try {
+        const messageId = await sendCourseAnnouncement(course.id, course.title);
+        telegramMessageId = BigInt(messageId);
+
+        const groupIdStr = env.TELEGRAM_GROUP_ID || process.env.TELEGRAM_GROUP_ID;
+        telegramGroupId = groupIdStr ? BigInt(groupIdStr) : null;
+      } catch (botError: any) {
+        console.error("Failed to post course announcement on Telegram bot:", botError);
+        return new NextResponse(
+          JSON.stringify({
+            error: "Failed to broadcast course announcement to Telegram. Check bot configuration & group permissions.",
+            details: botError.message,
+          }),
+          { status: 502, headers: { "Content-Type": "application/json" } }
+        );
+      }
     }
 
-    // 4. Send new Telegram Announcement
-    let telegramMessageId: bigint | null = null;
-    let telegramGroupId: bigint | null = null;
-
-    try {
-      const messageId = await sendCourseAnnouncement(course.id, course.title);
-      telegramMessageId = BigInt(messageId);
-
-      const groupIdStr = env.TELEGRAM_GROUP_ID || process.env.TELEGRAM_GROUP_ID;
-      if (groupIdStr) {
-        telegramGroupId = BigInt(groupIdStr);
+    // 4. On first publish, create assignments according to the chosen scope
+    if (isFirstPublish) {
+      if (assignTo === "all") {
+        const allWorkers = await db.select({ id: workers.id }).from(workers);
+        if (allWorkers.length > 0) {
+          await db
+            .insert(assignments)
+            .values(allWorkers.map((w) => ({ workerId: w.id, courseId: id })))
+            .onConflictDoNothing({ target: [assignments.workerId, assignments.courseId] });
+        }
+      } else if (workerIds.length > 0) {
+        await db
+          .insert(assignments)
+          .values(workerIds.map((workerId) => ({ workerId, courseId: id })))
+          .onConflictDoNothing({ target: [assignments.workerId, assignments.courseId] });
       }
-    } catch (botError: any) {
-      console.error("Failed to post course announcement on Telegram bot:", botError);
-      return new NextResponse(
-        JSON.stringify({
-          error: "Failed to broadcast course announcement to Telegram. Check bot configuration & group permissions.",
-          details: botError.message,
-        }),
-        { status: 502, headers: { "Content-Type": "application/json" } }
-      );
     }
 
     // 5. Update status and message details in the database
@@ -77,6 +102,7 @@ export async function POST(
         status: "published",
         telegramMessageId,
         telegramGroupId,
+        ...(isFirstPublish && assignTo === "all" ? { autoAssignNewWorkers: true } : {}),
         updatedAt: new Date(),
       })
       .where(eq(courses.id, id))

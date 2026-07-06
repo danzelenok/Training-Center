@@ -219,6 +219,7 @@ export function StoryPlayer({ slides, courseId, initData, themeType, themeValue 
               Quiz Score: {Math.round((quizCorrect / quizTotal) * 100)}%
             </p>
           )}
+          <p className="text-xs text-slate-500">This course is now in your Completed section — you can revisit it anytime.</p>
         </div>
 
         <div className="flex flex-col gap-3 w-full max-w-xs">

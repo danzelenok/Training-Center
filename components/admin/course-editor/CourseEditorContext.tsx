@@ -53,6 +53,13 @@ interface CourseEditorContextType {
   aiUseLNI: boolean;
   aiGenerating: boolean;
 
+  publishDialogOpen: boolean;
+  publishAssignTo: "all" | "specific";
+  publishWorkerIds: string[];
+  publishNotifyTelegram: boolean;
+  publishWorkersList: { id: string; label: string }[];
+  publishWorkersLoading: boolean;
+
   setSlidesList: React.Dispatch<React.SetStateAction<Slide[]>>;
   setActiveSlideIndex: (idx: number | null) => void;
   setMediaPickerOpen: (open: boolean) => void;
@@ -67,6 +74,12 @@ interface CourseEditorContextType {
   setAiPrompt: (prompt: string) => void;
   setAiModel: (model: "fast" | "advanced") => void;
   setAiUseLNI: (value: boolean) => void;
+
+  setPublishDialogOpen: (open: boolean) => void;
+  setPublishAssignTo: (value: "all" | "specific") => void;
+  setPublishWorkerIds: React.Dispatch<React.SetStateAction<string[]>>;
+  setPublishNotifyTelegram: (value: boolean) => void;
+  confirmPublish: () => Promise<void>;
 
   updateCourseStyle: (type: string, value: string) => void;
   fetchCourse: () => Promise<void>;
@@ -218,6 +231,14 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
   const [aiModel, setAiModel] = useState<"fast" | "advanced">("advanced");
   const [aiUseLNI, setAiUseLNI] = useState(true);
   const [aiGenerating, setAiGenerating] = useState(false);
+
+  // Publish dialog states
+  const [publishDialogOpen, setPublishDialogOpen] = useState(false);
+  const [publishAssignTo, setPublishAssignTo] = useState<"all" | "specific">("all");
+  const [publishWorkerIds, setPublishWorkerIds] = useState<string[]>([]);
+  const [publishNotifyTelegram, setPublishNotifyTelegram] = useState(true);
+  const [publishWorkersList, setPublishWorkersList] = useState<{ id: string; label: string }[]>([]);
+  const [publishWorkersLoading, setPublishWorkersLoading] = useState(false);
 
   // Fetch Course details & slides
   const fetchCourse = async () => {
@@ -639,23 +660,66 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
     }
   };
 
-  // Broadcast module on Telegram
+  // Open publish dialog (validate first, save, fetch workers, then open)
   const handlePublish = async () => {
     if (slidesList.length === 0) {
       toast.error("Cannot publish a course without slides. Add cards or import a PPTX first.");
       return;
     }
     await handleSaveCourse();
+
+    // Reset dialog state
+    setPublishAssignTo("all");
+    setPublishWorkerIds([]);
+    setPublishNotifyTelegram(true);
+
+    // Fetch workers list for the "specific" picker
+    setPublishWorkersLoading(true);
+    setPublishDialogOpen(true);
+    try {
+      const res = await fetch("/api/workers");
+      if (res.ok) {
+        const data = await res.json();
+        setPublishWorkersList(
+          data.map((w: any) => ({
+            id: w.id,
+            label: w.displayName || [w.firstName, w.lastName].filter(Boolean).join(" ") || w.telegramUsername || w.telegramUserId,
+          }))
+        );
+      }
+    } catch {
+      // Non-fatal — worker list just stays empty, user can still use "all"
+    } finally {
+      setPublishWorkersLoading(false);
+    }
+  };
+
+  // Actually submit the publish with chosen options
+  const confirmPublish = async () => {
+    setPublishDialogOpen(false);
     setPublishing(true);
-    const toastId = toast.loading("Publishing module & posting announcement to Telegram Group...");
+    const toastMsg = publishNotifyTelegram
+      ? "Publishing & broadcasting to Telegram…"
+      : "Publishing course…";
+    const toastId = toast.loading(toastMsg);
     try {
       const res = await fetch(`/api/courses/${id}/publish`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          assignTo: publishAssignTo,
+          workerIds: publishAssignTo === "specific" ? publishWorkerIds : [],
+          notifyTelegram: publishNotifyTelegram,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Publishing failed");
 
-      toast.success("Course is LIVE! Announcement sent directly to workers group.", { id: toastId });
+      const successMsg = publishNotifyTelegram
+        ? "Course is LIVE! Announcement sent to Telegram group."
+        : "Course published. No Telegram announcement sent.";
+      toast.success(successMsg, { id: toastId });
+
       if (course) {
         setCourse({
           ...course,
@@ -803,6 +867,17 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
         handlePublish,
         handleGenerateAI,
         handlePPTXUpload,
+        publishDialogOpen,
+        publishAssignTo,
+        publishWorkerIds,
+        publishNotifyTelegram,
+        publishWorkersList,
+        publishWorkersLoading,
+        setPublishDialogOpen,
+        setPublishAssignTo,
+        setPublishWorkerIds,
+        setPublishNotifyTelegram,
+        confirmPublish,
       }}
     >
       {children}

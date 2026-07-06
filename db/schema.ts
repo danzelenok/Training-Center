@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, integer, bigint, timestamp, boolean, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, integer, bigint, timestamp, boolean, jsonb, unique } from "drizzle-orm/pg-core";
 
 // 1. COURSES TABLE
 export const courses = pgTable("courses", {
@@ -11,6 +11,7 @@ export const courses = pgTable("courses", {
   generationStatus: text("generation_status").$type<"none" | "pending" | "generating" | "ready" | "failed">().default("none").notNull(),
   themeType: text("theme_type").default("preset").notNull(),
   themeValue: text("theme_value").default("linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)").notNull(),
+  autoAssignNewWorkers: boolean("auto_assign_new_workers").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -59,7 +60,19 @@ export const progress = pgTable("progress", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-// 5. POLL RESPONSES TABLE
+// 5. ASSIGNMENTS TABLE
+export const assignments = pgTable("assignments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workerId: uuid("worker_id").notNull().references(() => workers.id, { onDelete: "cascade" }),
+  courseId: uuid("course_id").notNull().references(() => courses.id, { onDelete: "cascade" }),
+  assignedAt: timestamp("assigned_at").notNull().defaultNow(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  uniqueAssignment: unique().on(table.workerId, table.courseId),
+}));
+
+// 6. POLL RESPONSES TABLE
 export const pollResponses = pgTable("poll_responses", {
   id: uuid("id").defaultRandom().primaryKey(),
   workerId: uuid("worker_id")
@@ -75,7 +88,7 @@ export const pollResponses = pgTable("poll_responses", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-// 6. REMINDERS TABLE
+// 7. REMINDERS TABLE
 export const reminders = pgTable("reminders", {
   id: uuid("id").defaultRandom().primaryKey(),
   courseId: uuid("course_id")
@@ -88,7 +101,7 @@ export const reminders = pgTable("reminders", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-// 7. MEDIA_FILES TABLE
+// 8. MEDIA_FILES TABLE
 export const mediaFiles = pgTable("media_files", {
   id: uuid("id").defaultRandom().primaryKey(),
   r2Key: text("r2_key").notNull(),

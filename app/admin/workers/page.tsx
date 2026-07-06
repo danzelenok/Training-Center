@@ -55,7 +55,8 @@ interface Course {
 }
 
 interface WorkerCourseProgress {
-  progressId: string;
+  assignmentId: string;
+  progressId: string | null;
   courseId: string;
   courseTitle: string;
   status: "not_started" | "in_progress" | "completed";
@@ -208,13 +209,13 @@ export default function WorkersPage() {
     }
   };
 
-  const handleRemoveCourse = async (progressId: string) => {
-    setRemovingCourseId(progressId);
+  const handleRemoveCourse = async (assignmentId: string) => {
+    setRemovingCourseId(assignmentId);
     try {
-      const res = await fetch(`/api/reports/${progressId}`, { method: "DELETE" });
+      const res = await fetch(`/api/reports/${assignmentId}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Failed to remove course");
       setSelectedWorker((prev) =>
-        prev ? { ...prev, courses: prev.courses.filter((c) => c.progressId !== progressId) } : prev
+        prev ? { ...prev, courses: prev.courses.filter((c) => c.assignmentId !== assignmentId) } : prev
       );
       await fetchWorkers();
       toast.success("Course removed");
@@ -225,10 +226,12 @@ export default function WorkersPage() {
     }
   };
 
-  const handleMarkCompleted = async (progressId: string) => {
-    setMarkingCompleted(progressId);
+  const handleMarkCompleted = async (progressId: string | null, assignmentId: string) => {
+    // Use progressId when it exists (fast path), assignmentId triggers upsert on the server
+    const idToUse = progressId ?? assignmentId;
+    setMarkingCompleted(assignmentId);
     try {
-      const res = await fetch(`/api/reports/${progressId}`, {
+      const res = await fetch(`/api/reports/${idToUse}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
       });
@@ -238,7 +241,7 @@ export default function WorkersPage() {
           ? {
               ...prev,
               courses: prev.courses.map((c) =>
-                c.progressId === progressId
+                c.assignmentId === assignmentId
                   ? { ...c, status: "completed" as const, completedAt: new Date().toISOString() }
                   : c
               ),
@@ -546,7 +549,7 @@ export default function WorkersPage() {
                     );
                     return (
                       <div
-                        key={c.progressId}
+                        key={c.assignmentId}
                         className="rounded-xl border border-border bg-card p-4 space-y-3"
                       >
                         <div className="flex items-start justify-between gap-2">
@@ -561,12 +564,12 @@ export default function WorkersPage() {
                               {cfg.label}
                             </span>
                             <button
-                              onClick={() => handleRemoveCourse(c.progressId)}
-                              disabled={removingCourseId === c.progressId}
+                              onClick={() => handleRemoveCourse(c.assignmentId)}
+                              disabled={removingCourseId === c.assignmentId}
                               className="p-1 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors disabled:opacity-50"
                               title="Remove course"
                             >
-                              {removingCourseId === c.progressId
+                              {removingCourseId === c.assignmentId
                                 ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
                                 : <Trash2 className="h-3.5 w-3.5" />
                               }
@@ -615,11 +618,11 @@ export default function WorkersPage() {
 
                         {c.status !== "completed" && (
                           <button
-                            onClick={() => handleMarkCompleted(c.progressId)}
-                            disabled={markingCompleted === c.progressId}
+                            onClick={() => handleMarkCompleted(c.progressId, c.assignmentId)}
+                            disabled={markingCompleted === c.assignmentId}
                             className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/5 hover:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-semibold py-1.5 transition-colors disabled:opacity-50"
                           >
-                            {markingCompleted === c.progressId ? (
+                            {markingCompleted === c.assignmentId ? (
                               <Loader2 className="h-3.5 w-3.5 animate-spin" />
                             ) : (
                               <CheckCheck className="h-3.5 w-3.5" />

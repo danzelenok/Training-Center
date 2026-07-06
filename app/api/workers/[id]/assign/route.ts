@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { progress, workers } from "@/db/schema";
+import { assignments, workers } from "@/db/schema";
 import { auth } from "@clerk/nextjs/server";
 import { eq, and } from "drizzle-orm";
 import { NextResponse } from "next/server";
@@ -33,40 +33,24 @@ export async function POST(
       return new NextResponse("Worker not found", { status: 404 });
     }
 
-    // 2. Check for existing progress
-    const [existingProgress] = await db
-      .select()
-      .from(progress)
-      .where(
-        and(
-          eq(progress.workerId, workerId),
-          eq(progress.courseId, courseId)
-        )
-      )
-      .limit(1);
-
-    if (existingProgress) {
-      return NextResponse.json({
-        ...existingProgress,
-        isNew: false
-      });
-    }
-
-    // 3. Insert new progress record
-    const [newProgress] = await db
-      .insert(progress)
-      .values({
-        workerId,
-        courseId,
-        status: "not_started",
-        currentSlideIndex: 0,
-      })
+    // 2. Insert the assignment; no-op if this worker/course pair already exists
+    const [inserted] = await db
+      .insert(assignments)
+      .values({ workerId, courseId })
+      .onConflictDoNothing({ target: [assignments.workerId, assignments.courseId] })
       .returning();
 
-    return NextResponse.json({
-      ...newProgress,
-      isNew: true
-    });
+    if (inserted) {
+      return NextResponse.json({ ...inserted, isNew: true });
+    }
+
+    const [existingAssignment] = await db
+      .select()
+      .from(assignments)
+      .where(and(eq(assignments.workerId, workerId), eq(assignments.courseId, courseId)))
+      .limit(1);
+
+    return NextResponse.json({ ...existingAssignment, isNew: false });
   } catch (error: any) {
     console.error("Error assigning course to worker:", error);
     return new NextResponse(error.message || "Internal Server Error", { status: 500 });

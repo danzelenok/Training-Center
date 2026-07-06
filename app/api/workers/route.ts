@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { workers, progress } from "@/db/schema";
+import { workers, assignments, progress } from "@/db/schema";
 import { auth } from "@clerk/nextjs/server";
 import { desc, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
@@ -24,10 +24,10 @@ export async function GET() {
         displayName: workers.displayName,
         createdAt: workers.createdAt,
         updatedAt: workers.updatedAt,
-        coursesAssigned: sql<number>`cast(count(${progress.id}) as int)`,
+        coursesAssigned: sql<number>`cast(count(${assignments.id}) as int)`,
       })
       .from(workers)
-      .leftJoin(progress, sql`${progress.workerId} = ${workers.id}`)
+      .leftJoin(assignments, sql`${assignments.workerId} = ${workers.id}`)
       .groupBy(workers.id)
       .orderBy(desc(workers.createdAt));
 

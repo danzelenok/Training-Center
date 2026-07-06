@@ -1,7 +1,7 @@
 import { db } from "@/db";
 import { courses, slides } from "@/db/schema";
 import { auth } from "@clerk/nextjs/server";
-import { eq, asc, sql } from "drizzle-orm";
+import { eq, asc, sql, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 // 1. GET /api/courses/[id] - Fetch a course and all its slides ordered by 'order'
@@ -109,7 +109,7 @@ export async function PATCH(
       // Delete slides that were removed by the client
       const toDeleteIds = existingSlides.filter((s) => !clientIds.has(s.id)).map((s) => s.id);
       if (toDeleteIds.length > 0) {
-        await db.delete(slides).where(sql`${slides.id} = ANY(${toDeleteIds}::uuid[])`);
+        await db.delete(slides).where(inArray(slides.id, toDeleteIds));
       }
 
       // Upsert: UPDATE existing slides, INSERT new ones
