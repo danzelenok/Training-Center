@@ -1,34 +1,24 @@
 import { db } from "@/db";
-import { courses, progress, workers, assignments } from "@/db/schema";
+import { courses, progress, assignments } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { NextResponse } from "next/server";
-import { validateInitData } from "@/lib/telegram";
+import { withTelegramAuth } from "@/lib/telegram";
 
-export async function GET(req: Request) {
-  const initDataRaw = req.headers.get("Telegram-Init-Data");
+export const GET = withTelegramAuth(async (_req, { worker }) => {
+  // Idempotently assign any courses marked autoAssignNewWorkers=true.
+  // For existing workers this is a no-op (ON CONFLICT DO NOTHING).
+  const autoAssignCourses = await db
+    .select({ id: courses.id })
+    .from(courses)
+    .where(and(eq(courses.autoAssignNewWorkers, true), eq(courses.status, "published")));
 
-  if (!initDataRaw) {
-    return NextResponse.json([]);
+  if (autoAssignCourses.length > 0) {
+    await db
+      .insert(assignments)
+      .values(autoAssignCourses.map((c) => ({ workerId: worker.id, courseId: c.id })))
+      .onConflictDoNothing();
   }
 
-  let telegramUser;
-  try {
-    telegramUser = validateInitData(initDataRaw);
-  } catch {
-    return NextResponse.json([]);
-  }
-
-  const [worker] = await db
-    .select({ id: workers.id })
-    .from(workers)
-    .where(eq(workers.telegramUserId, telegramUser.id))
-    .limit(1);
-
-  if (!worker) {
-    return NextResponse.json([]);
-  }
-
-  // Only courses explicitly assigned to this worker
   const rows = await db
     .select({
       id: courses.id,
@@ -54,4 +44,4 @@ export async function GET(req: Request) {
       currentSlideIndex: r.currentSlideIndex ?? 0,
     }))
   );
-}
+});

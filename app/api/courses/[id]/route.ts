@@ -59,7 +59,7 @@ export async function PATCH(
     }
 
     const body = await req.json();
-    const { title, description, themeType, themeValue, slides: updatedSlides, generationStatus } = body;
+    const { title, description, themeType, themeValue, autoAssignNewWorkers, slides: updatedSlides, generationStatus } = body;
 
     // 1. Update Course details
     const [updatedCourse] = await db
@@ -69,6 +69,7 @@ export async function PATCH(
         ...(description !== undefined ? { description } : {}),
         themeType: themeType !== undefined ? themeType : undefined,
         themeValue: themeValue !== undefined ? themeValue : undefined,
+        autoAssignNewWorkers: autoAssignNewWorkers !== undefined ? autoAssignNewWorkers : undefined,
         generationStatus: generationStatus !== undefined ? generationStatus : undefined,
         updatedAt: new Date(),
       })

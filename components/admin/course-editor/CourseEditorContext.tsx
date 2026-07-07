@@ -20,6 +20,7 @@ export interface Course {
   title: string;
   description: string;
   status: "draft" | "published";
+  autoAssignNewWorkers: boolean;
   telegramMessageId: string | null;
   telegramGroupId: string | null;
   slides: Slide[];
@@ -91,6 +92,7 @@ interface CourseEditorContextType {
   handleSelectFromLibrary: (file: MediaLibraryFile) => void;
   handleSlideDirectUpload: (file: File) => Promise<void>;
   updateCourseMeta: (field: "title" | "description", value: string) => void;
+  toggleAutoAssignNewWorkers: () => void;
   addSlide: (type: Slide["type"]) => void;
   deleteSlide: (indexToDelete: number) => void;
   duplicateSlide: (indexToDuplicate: number) => void;
@@ -138,6 +140,7 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
             description: course.description,
             themeType: course.themeType || "preset",
             themeValue: course.themeValue || "linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)",
+            autoAssignNewWorkers: course.autoAssignNewWorkers,
             slides: slidesListRef.current,
           }),
         });
@@ -473,6 +476,11 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
   const updateCourseMeta = (field: "title" | "description", value: string) => {
     if (!course) return;
     setCourse({ ...course, [field]: value });
+  };
+
+  const toggleAutoAssignNewWorkers = () => {
+    if (!course) return;
+    setCourse({ ...course, autoAssignNewWorkers: !course.autoAssignNewWorkers });
   };
 
   // Add slide manually
@@ -859,6 +867,7 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
         handleSelectFromLibrary,
         handleSlideDirectUpload,
         updateCourseMeta,
+        toggleAutoAssignNewWorkers,
         addSlide,
         deleteSlide,
         duplicateSlide,
