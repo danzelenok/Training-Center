@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Card } from "@/components/ui/card";
 import {
   AlertTriangle,
@@ -59,6 +59,7 @@ export function VideoCard({
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
+  const [isStalled, setIsStalled] = useState(false);
   const [isCCActive, setIsCCActive] = useState(false);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -68,6 +69,7 @@ export function VideoCard({
   const [florinImage, setFlorinImage] = useState(FLORIN_FALLBACK_IMAGE);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const autoPlayStartedRef = useRef(false);
+  const stallTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     fetchAvatarsList().then((list) => {
@@ -78,37 +80,63 @@ export function VideoCard({
     });
   }, []);
 
-  useEffect(() => {
-    if (mode !== "play" || !content.url) return;
+  // Waits for the video to become playable and starts it. On mobile networks/webviews,
+  // "canplay" or "error" can both silently never fire — a timeout guarantees we never
+  // leave the user staring at a spinner forever with no way to recover.
+  const attemptAutoplay = useCallback((el: HTMLVideoElement) => {
     autoPlayStartedRef.current = false;
+    setIsStalled(false);
     setIsBuffering(true);
     setIsPlaying(false);
 
-    const el = videoRef.current;
-    if (!el) return;
-
-    const startPlay = () => {
-      autoPlayStartedRef.current = true;
-      setIsBuffering(false);
-      el.play().catch(() => {});
-      setIsPlaying(true);
+    const cleanup = () => {
+      el.removeEventListener("canplay", onCanPlay);
+      el.removeEventListener("error", onGiveUp);
+      if (stallTimeoutRef.current) {
+        clearTimeout(stallTimeoutRef.current);
+        stallTimeoutRef.current = null;
+      }
     };
 
-    const onError = () => {
+    const onCanPlay = () => {
+      cleanup();
+      autoPlayStartedRef.current = true;
       setIsBuffering(false);
+      el.play()
+        .then(() => setIsPlaying(true))
+        .catch(() => setIsPlaying(false));
+    };
+
+    const onGiveUp = () => {
+      cleanup();
+      setIsBuffering(false);
+      setIsStalled(true);
     };
 
     if (el.readyState >= 3) {
-      startPlay();
-    } else {
-      el.addEventListener("canplay", startPlay, { once: true });
-      el.addEventListener("error", onError, { once: true });
-      return () => {
-        el.removeEventListener("canplay", startPlay);
-        el.removeEventListener("error", onError);
-      };
+      onCanPlay();
+      return cleanup;
     }
-  }, [mode, content.url]);
+
+    el.addEventListener("canplay", onCanPlay, { once: true });
+    el.addEventListener("error", onGiveUp, { once: true });
+    stallTimeoutRef.current = setTimeout(onGiveUp, 8000);
+    return cleanup;
+  }, []);
+
+  useEffect(() => {
+    if (mode !== "play" || !content.url) return;
+    const el = videoRef.current;
+    if (!el) return;
+    return attemptAutoplay(el);
+  }, [mode, content.url, attemptAutoplay]);
+
+  const handleRetryLoad = () => {
+    const el = videoRef.current;
+    if (!el) return;
+    el.load();
+    attemptAutoplay(el);
+  };
 
   const togglePlay = () => {
     if (videoRef.current) {
@@ -234,6 +262,21 @@ export function VideoCard({
             {isBuffering && (
               <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/30 pointer-events-none">
                 <div className="h-10 w-10 rounded-full border-2 border-white border-t-transparent animate-spin" />
+              </div>
+            )}
+            {isStalled && (
+              <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 bg-black/50">
+                <p className="text-xs text-white/80 px-6 text-center">Video failed to load</p>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleRetryLoad();
+                  }}
+                  className="px-4 py-2 rounded-xl bg-white/90 text-[#1B2A6B] text-xs font-bold cursor-pointer no-swipe"
+                >
+                  Tap to Retry
+                </button>
               </div>
             )}
             <video

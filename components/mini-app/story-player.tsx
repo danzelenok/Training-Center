@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Award, Sparkles, RotateCcw, BookOpen } from "lucide-react";
 import { Slide } from "@/components/admin/course-editor/CardCanvas";
 import { slideRegistry } from "@/components/admin/course-editor/SlideFactory";
+import { fetchAvatarsList, CHAD_FALLBACK_IMAGE, FLORIN_FALLBACK_IMAGE } from "@/components/admin/course-editor/AvatarSelector";
 
 const CARD_WIDTH = 350;
 const CARD_HEIGHT = 620;
@@ -71,6 +72,82 @@ export function StoryPlayer({ slides, courseId, initData, themeType, themeValue 
       .catch(() => {})
       .finally(() => setProgressLoaded(true));
   }, [courseId, initData, slides.length]);
+
+  // Extracts the image/video/audio URLs a slide needs, so we can warm the browser's
+  // cache for the next slide ahead of time instead of only starting the fetch the
+  // moment the user swipes to it (which is what causes the visible pop-in/empty-circle lag).
+  const getSlideMedia = useCallback((s?: Slide) => {
+    const images: string[] = [];
+    const videos: string[] = [];
+    const audios: string[] = [];
+    if (!s) return { images, videos, audios };
+    const c = s.content || {};
+    if (s.type === "video") {
+      if (c.url) videos.push(c.url);
+    } else if (s.type === "audio") {
+      if (c.url) audios.push(c.url);
+    } else if (s.type === "dialogue") {
+      if (c.instructorVideoUrl) videos.push(c.instructorVideoUrl);
+      if (c.studentVideoUrl) videos.push(c.studentVideoUrl);
+    } else if (s.type === "chat" || s.type === "text") {
+      const img = c.imageUrl || c.url;
+      if (img) images.push(img);
+    }
+    return { images, videos, audios };
+  }, []);
+
+  const preloadedUrlsRef = useRef<Set<string>>(new Set());
+
+  // The Chad/Florin avatars are shared across every dialogue slide in the course (not
+  // per-slide media), so warm them once up front rather than waiting for the first
+  // dialogue slide's own component to fetch and swap them in.
+  useEffect(() => {
+    const preload = (url: string) => {
+      if (!url || preloadedUrlsRef.current.has(url)) return;
+      preloadedUrlsRef.current.add(url);
+      const img = new Image();
+      img.src = url;
+    };
+    preload(CHAD_FALLBACK_IMAGE);
+    preload(FLORIN_FALLBACK_IMAGE);
+    fetchAvatarsList().then((list) => {
+      const chad = list.find((a: any) => a.name?.toLowerCase() === "chad");
+      const florin = list.find((a: any) => a.name?.toLowerCase() === "florin");
+      if (chad?.preview_image_url) preload(chad.preview_image_url);
+      if (florin?.preview_image_url) preload(florin.preview_image_url);
+    });
+  }, []);
+
+  // Warm the cache for the current slide and the next one every time the index moves,
+  // so media is already (at least partially) downloaded before it's actually shown.
+  useEffect(() => {
+    if (!slides.length) return;
+    for (const idx of [currentIndex, currentIndex + 1]) {
+      const { images, videos, audios } = getSlideMedia(slides[idx]);
+      for (const url of images) {
+        if (preloadedUrlsRef.current.has(url)) continue;
+        preloadedUrlsRef.current.add(url);
+        const img = new Image();
+        img.src = url;
+      }
+      for (const url of videos) {
+        if (preloadedUrlsRef.current.has(url)) continue;
+        preloadedUrlsRef.current.add(url);
+        const video = document.createElement("video");
+        video.preload = "auto";
+        video.muted = true;
+        video.src = url;
+        video.load();
+      }
+      for (const url of audios) {
+        if (preloadedUrlsRef.current.has(url)) continue;
+        preloadedUrlsRef.current.add(url);
+        const audio = new Audio();
+        audio.preload = "auto";
+        audio.src = url;
+      }
+    }
+  }, [slides, currentIndex, getSlideMedia]);
 
   const saveProgress = useCallback(
     (slideIndex: number, status: "in_progress" | "completed", correct: number, total: number) => {

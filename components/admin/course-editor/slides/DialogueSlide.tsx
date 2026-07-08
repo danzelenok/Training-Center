@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from "react";
+import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { Card } from "@/components/ui/card";
 import { AlertTriangle, Loader2, Play, X, Sparkles, FileText } from "lucide-react";
 import { toast } from "sonner";
@@ -265,12 +265,70 @@ export function DialogueCard({
   const instructorVideoRef = useRef<HTMLVideoElement>(null);
   const studentVideoRef = useRef<HTMLVideoElement>(null);
   const secondVideoPlayedRef = useRef(false);
+  const stallTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const firstSpeaker = useMemo(() => {
     if (linesList.length === 0) return "instructor";
     const first = linesList[0];
     return (first.slotIndex === 1 || first.character === "student") ? "student" : "instructor";
   }, [linesList]);
+
+  // Plays a dialogue video but never waits forever: if "canplay" never fires (stalled
+  // network/webview) or the browser fires "error", give up and let the caller treat it
+  // the same as if the clip had ended — otherwise one bad clip permanently blocks the
+  // quiz/quest below it, with no way for the worker to recover short of reloading.
+  const playWithFallback = useCallback((el: HTMLVideoElement, onGiveUp: () => void) => {
+    const cleanup = () => {
+      el.removeEventListener("canplay", onCanPlay);
+      el.removeEventListener("error", onFail);
+      if (stallTimeoutRef.current) {
+        clearTimeout(stallTimeoutRef.current);
+        stallTimeoutRef.current = null;
+      }
+    };
+
+    const onCanPlay = () => {
+      cleanup();
+      el.play().then(() => setNeedsTapToPlay(false)).catch(() => setNeedsTapToPlay(true));
+    };
+
+    const onFail = () => {
+      cleanup();
+      onGiveUp();
+    };
+
+    if (el.readyState >= 3) {
+      onCanPlay();
+      return cleanup;
+    }
+
+    el.addEventListener("canplay", onCanPlay, { once: true });
+    el.addEventListener("error", onFail, { once: true });
+    stallTimeoutRef.current = setTimeout(onFail, 8000);
+    return cleanup;
+  }, []);
+
+  const handleVideoEnded = (who: "instructor" | "student") => {
+    if (secondVideoPlayedRef.current) {
+      setActivePlayer(null);
+      setDialogueCompleted(true);
+      return;
+    }
+
+    const other = who === "instructor" ? "student" : "instructor";
+    const otherUrl = other === "instructor" ? instructorVideoUrl : studentVideoUrl;
+    const otherRef = other === "instructor" ? instructorVideoRef : studentVideoRef;
+
+    if (otherUrl && otherRef.current) {
+      secondVideoPlayedRef.current = true;
+      setActivePlayer(other);
+      otherRef.current.currentTime = 0;
+      playWithFallback(otherRef.current, () => handleVideoEnded(other));
+    } else {
+      setActivePlayer(null);
+      setDialogueCompleted(true);
+    }
+  };
 
   useEffect(() => {
     if (mode !== "play") return;
@@ -290,40 +348,8 @@ export function DialogueCard({
 
     el.currentTime = 0;
 
-    const startPlay = () => el.play().then(() => setNeedsTapToPlay(false)).catch(() => setNeedsTapToPlay(true));
-
-    if (el.readyState >= 3) {
-      startPlay();
-    } else {
-      el.addEventListener("canplay", startPlay, { once: true });
-      return () => el.removeEventListener("canplay", startPlay);
-    }
-  }, [mode, instructorVideoUrl, studentVideoUrl, firstSpeaker]);
-
-  const handleVideoEnded = (who: "instructor" | "student") => {
-    if (secondVideoPlayedRef.current) {
-      setActivePlayer(null);
-      setDialogueCompleted(true);
-      return;
-    }
-
-    const other = who === "instructor" ? "student" : "instructor";
-    const otherUrl = other === "instructor" ? instructorVideoUrl : studentVideoUrl;
-    const otherRef = other === "instructor" ? instructorVideoRef : studentVideoRef;
-
-    if (otherUrl && otherRef.current) {
-      secondVideoPlayedRef.current = true;
-      setActivePlayer(other);
-      otherRef.current.currentTime = 0;
-      otherRef.current
-        .play()
-        .then(() => setNeedsTapToPlay(false))
-        .catch(() => setNeedsTapToPlay(true));
-    } else {
-      setActivePlayer(null);
-      setDialogueCompleted(true);
-    }
-  };
+    return playWithFallback(el, () => handleVideoEnded(startWith));
+  }, [mode, instructorVideoUrl, studentVideoUrl, firstSpeaker, playWithFallback]);
 
   const handleManualPlay = () => {
     const ref = activePlayer === "instructor" ? instructorVideoRef : activePlayer === "student" ? studentVideoRef : null;
