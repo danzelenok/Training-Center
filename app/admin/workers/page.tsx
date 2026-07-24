@@ -25,6 +25,8 @@ import {
   AlertTriangle,
   Pencil,
   X,
+  UserX,
+  UserCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -61,6 +63,7 @@ interface Worker {
   lastName: string | null;
   displayName: string | null;
   phone?: string | null;
+  active: boolean;
   createdAt: string;
   updatedAt: string;
   coursesAssigned: number;
@@ -137,6 +140,7 @@ export default function WorkersPage() {
   const [removingCourseId, setRemovingCourseId] = useState<string | null>(null);
   const [markingCompleted, setMarkingCompleted] = useState<string | null>(null);
   const [deletingWorker, setDeletingWorker] = useState(false);
+  const [togglingActiveId, setTogglingActiveId] = useState<string | null>(null);
 
   // Worker detail edit states
   const [editingWorker, setEditingWorker] = useState(false);
@@ -437,6 +441,32 @@ export default function WorkersPage() {
     }
   };
 
+  const handleToggleActive = async (worker: Worker) => {
+    const nextActive = !worker.active;
+    setTogglingActiveId(worker.id);
+    try {
+      const res = await fetch(`/api/workers/${worker.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ active: nextActive }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to update worker status");
+
+      setWorkersList((prev) =>
+        prev.map((w) => (w.id === worker.id ? { ...w, active: nextActive } : w))
+      );
+      if (selectedWorker?.id === worker.id) {
+        setSelectedWorker((prev) => (prev ? { ...prev, active: nextActive } : prev));
+      }
+      toast.success(nextActive ? "Worker reactivated" : "Worker deactivated");
+    } catch (err: any) {
+      toast.error(err.message || "Could not update worker status");
+    } finally {
+      setTogglingActiveId(null);
+    }
+  };
+
   const handleDeleteWorker = async () => {
     if (!selectedWorker) return;
     if (!window.confirm(`Delete ${workerDisplayName(selectedWorker)}? This cannot be undone.`)) return;
@@ -615,15 +645,22 @@ export default function WorkersPage() {
                       )}
                     </td>
                     <td className="px-6 py-4">
-                      {worker.telegramUserId ? (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 text-xs font-bold">
-                          <CheckCircle className="h-3 w-3" /> Connected
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-slate-500/10 text-slate-400 border border-slate-500/20 text-xs font-semibold">
-                          <Clock className="h-3 w-3" /> Not Connected
-                        </span>
-                      )}
+                      <div className="flex flex-col gap-1 items-start">
+                        {!worker.active && (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-destructive/10 text-destructive border border-destructive/20 text-xs font-bold">
+                            <UserX className="h-3 w-3" /> Deactivated
+                          </span>
+                        )}
+                        {worker.telegramUserId ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 text-xs font-bold">
+                            <CheckCircle className="h-3 w-3" /> Connected
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-slate-500/10 text-slate-400 border border-slate-500/20 text-xs font-semibold">
+                            <Clock className="h-3 w-3" /> Not Connected
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-6 py-4 text-muted-foreground text-xs">
                       {format(new Date(worker.createdAt), "yyyy-MM-dd HH:mm")}
@@ -685,6 +722,25 @@ export default function WorkersPage() {
                             className="cursor-pointer hover:bg-destructive/10 text-xs rounded-lg px-3 py-2 transition-colors font-semibold text-destructive gap-2"
                           >
                             <Unlink className="h-3.5 w-3.5" /> Reset Telegram Link
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => handleToggleActive(worker)}
+                            disabled={togglingActiveId === worker.id}
+                            className={`cursor-pointer text-xs rounded-lg px-3 py-2 transition-colors font-semibold gap-2 ${
+                              worker.active
+                                ? "hover:bg-destructive/10 text-destructive"
+                                : "hover:bg-emerald-500/10 text-emerald-500"
+                            }`}
+                          >
+                            {worker.active ? (
+                              <>
+                                <UserX className="h-3.5 w-3.5" /> Deactivate Worker
+                              </>
+                            ) : (
+                              <>
+                                <UserCheck className="h-3.5 w-3.5" /> Reactivate Worker
+                              </>
+                            )}
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -901,7 +957,12 @@ export default function WorkersPage() {
                 {selectedWorker.phone && (
                   <span className="block font-normal text-foreground">Phone: {selectedWorker.phone}</span>
                 )}
-                <div className="pt-1">
+                <div className="pt-1 flex flex-wrap gap-1.5">
+                  {!selectedWorker.active && (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-destructive/10 text-destructive border border-destructive/20 text-xs font-bold">
+                      <UserX className="h-3.5 w-3.5" /> Deactivated
+                    </span>
+                  )}
                   {selectedWorker.telegramUserId ? (
                     <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 text-xs font-bold">
                       <CheckCircle className="h-3.5 w-3.5" /> Connected
@@ -954,6 +1015,26 @@ export default function WorkersPage() {
                 >
                   <Unlink className="h-3.5 w-3.5" />
                   Reset Telegram
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleToggleActive(selectedWorker)}
+                  disabled={togglingActiveId === selectedWorker.id}
+                  className={`flex-1 font-bold text-xs gap-1.5 rounded-xl ${
+                    selectedWorker.active
+                      ? "text-destructive border-destructive/30 hover:bg-destructive/10"
+                      : "text-emerald-500 border-emerald-500/30 hover:bg-emerald-500/10"
+                  }`}
+                >
+                  {togglingActiveId === selectedWorker.id ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : selectedWorker.active ? (
+                    <UserX className="h-3.5 w-3.5" />
+                  ) : (
+                    <UserCheck className="h-3.5 w-3.5" />
+                  )}
+                  {selectedWorker.active ? "Deactivate" : "Reactivate"}
                 </Button>
               </div>
 

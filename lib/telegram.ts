@@ -142,6 +142,10 @@ export function withTelegramAuth<T = any>(
         return new NextResponse("Unauthorized: Worker account not linked. Please activate your invite link first.", { status: 403 });
       }
 
+      if (!worker.active) {
+        return new NextResponse("Unauthorized: This account has been deactivated.", { status: 403 });
+      }
+
       // Sync latest Telegram profile info
       await db
         .update(workers)

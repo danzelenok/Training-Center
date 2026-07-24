@@ -40,6 +40,7 @@ export const workers = pgTable("workers", {
   lastName: text("last_name"),
   displayName: text("display_name"),
   phone: text("phone"),
+  active: boolean("active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

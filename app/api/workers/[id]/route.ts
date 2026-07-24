@@ -148,6 +148,10 @@ export async function PATCH(
       updates.phone = phone || null;
     }
 
+    if (typeof body.active === "boolean") {
+      updates.active = body.active;
+    }
+
     if (Object.keys(updates).length === 0) {
       return NextResponse.json({ error: "No valid fields to update." }, { status: 400 });
     }
