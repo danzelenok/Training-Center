@@ -23,6 +23,8 @@ import {
   RefreshCw,
   Unlink,
   AlertTriangle,
+  Pencil,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -136,6 +138,12 @@ export default function WorkersPage() {
   const [markingCompleted, setMarkingCompleted] = useState<string | null>(null);
   const [deletingWorker, setDeletingWorker] = useState(false);
 
+  // Worker detail edit states
+  const [editingWorker, setEditingWorker] = useState(false);
+  const [editName, setEditName] = useState("");
+  const [editPhone, setEditPhone] = useState("");
+  const [savingWorkerEdit, setSavingWorkerEdit] = useState(false);
+
   // Worker creation modal states
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [newWorkerName, setNewWorkerName] = useState("");
@@ -189,6 +197,7 @@ export default function WorkersPage() {
     setSheetOpen(true);
     setLoadingDetail(true);
     setSelectedWorker(null);
+    setEditingWorker(false);
     try {
       const res = await fetch(`/api/workers/${worker.id}`);
       if (!res.ok) throw new Error("Failed to fetch worker details");
@@ -199,6 +208,40 @@ export default function WorkersPage() {
       setSheetOpen(false);
     } finally {
       setLoadingDetail(false);
+    }
+  };
+
+  const startEditingWorker = () => {
+    if (!selectedWorker) return;
+    setEditName(workerDisplayName(selectedWorker));
+    setEditPhone(selectedWorker.phone || "");
+    setEditingWorker(true);
+  };
+
+  const handleSaveWorkerEdit = async () => {
+    if (!selectedWorker) return;
+    if (!editName.trim()) {
+      toast.error("Please enter worker name");
+      return;
+    }
+    setSavingWorkerEdit(true);
+    try {
+      const res = await fetch(`/api/workers/${selectedWorker.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: editName.trim(), phone: editPhone.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to update worker");
+
+      setSelectedWorker((prev) => (prev ? { ...prev, ...data } : prev));
+      setEditingWorker(false);
+      await fetchWorkers();
+      toast.success("Worker updated");
+    } catch (err: any) {
+      toast.error(err.message || "Could not update worker");
+    } finally {
+      setSavingWorkerEdit(false);
     }
   };
 
@@ -793,10 +836,67 @@ export default function WorkersPage() {
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
         <SheetContent className="w-full sm:max-w-lg overflow-y-auto">
           <SheetHeader>
-            <SheetTitle className="text-xl font-extrabold text-[#1B2A6B] dark:text-[#C8D400]">
-              {selectedWorker ? workerDisplayName(selectedWorker) : "Loading..."}
-            </SheetTitle>
-            {selectedWorker && (
+            {editingWorker && selectedWorker ? (
+              <div className="space-y-2">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">
+                    Full Name
+                  </label>
+                  <Input
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    placeholder="e.g. John Doe"
+                    className="bg-background border-border text-foreground text-xs h-9 rounded-xl"
+                    autoFocus
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">
+                    Phone Number
+                  </label>
+                  <Input
+                    value={editPhone}
+                    onChange={(e) => setEditPhone(e.target.value)}
+                    placeholder="e.g. +1 555-0199"
+                    className="bg-background border-border text-foreground text-xs h-9 rounded-xl"
+                  />
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <Button
+                    size="sm"
+                    onClick={handleSaveWorkerEdit}
+                    disabled={savingWorkerEdit}
+                    className="flex-1 bg-[#C8D400] hover:bg-[#B6C200] text-[#1B2A6B] font-extrabold text-xs rounded-xl gap-1.5"
+                  >
+                    {savingWorkerEdit ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Save Changes"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setEditingWorker(false)}
+                    disabled={savingWorkerEdit}
+                    className="border-border text-muted-foreground text-xs rounded-xl gap-1.5"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <SheetTitle className="text-xl font-extrabold text-[#1B2A6B] dark:text-[#C8D400] flex items-center gap-2">
+                {selectedWorker ? workerDisplayName(selectedWorker) : "Loading..."}
+                {selectedWorker && (
+                  <button
+                    onClick={startEditingWorker}
+                    className="p-1 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                    title="Edit worker"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </button>
+                )}
+              </SheetTitle>
+            )}
+            {selectedWorker && !editingWorker && (
               <SheetDescription className="text-sm text-muted-foreground space-y-1">
                 {selectedWorker.phone && (
                   <span className="block font-normal text-foreground">Phone: {selectedWorker.phone}</span>

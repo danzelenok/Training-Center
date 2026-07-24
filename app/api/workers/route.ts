@@ -22,6 +22,7 @@ export async function GET() {
         firstName: workers.firstName,
         lastName: workers.lastName,
         displayName: workers.displayName,
+        phone: workers.phone,
         createdAt: workers.createdAt,
         updatedAt: workers.updatedAt,
         coursesAssigned: sql<number>`cast(count(${assignments.id}) as int)`,

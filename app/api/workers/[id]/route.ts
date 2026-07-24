@@ -106,6 +106,70 @@ export async function GET(
   }
 }
 
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { userId } = await auth();
+    if (!userId) return new NextResponse("Unauthorized", { status: 401 });
+
+    const { id } = await params;
+    const body = await req.json().catch(() => ({}));
+
+    const updates: Partial<typeof workers.$inferInsert> = {};
+
+    if (typeof body.name === "string") {
+      const name = body.name.trim();
+      if (!name) {
+        return NextResponse.json({ error: "Name is required." }, { status: 400 });
+      }
+      const nameParts = name.split(/\s+/);
+      updates.displayName = name;
+      updates.firstName = nameParts[0] || null;
+      updates.lastName = nameParts.length > 1 ? nameParts.slice(1).join(" ") : null;
+    }
+
+    if (typeof body.phone === "string") {
+      const phone = body.phone.trim();
+      if (phone) {
+        const [existingPhone] = await db
+          .select({ id: workers.id })
+          .from(workers)
+          .where(eq(workers.phone, phone))
+          .limit(1);
+        if (existingPhone && existingPhone.id !== id) {
+          return NextResponse.json(
+            { error: "A worker with this phone number already exists." },
+            { status: 400 }
+          );
+        }
+      }
+      updates.phone = phone || null;
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return NextResponse.json({ error: "No valid fields to update." }, { status: 400 });
+    }
+
+    const [updated] = await db
+      .update(workers)
+      .set(updates)
+      .where(eq(workers.id, id))
+      .returning();
+
+    if (!updated) return new NextResponse("Not found", { status: 404 });
+
+    return NextResponse.json({
+      ...updated,
+      telegramUserId: updated.telegramUserId?.toString() ?? null,
+    });
+  } catch (error: any) {
+    console.error("Error updating worker:", error);
+    return new NextResponse(error.message || "Internal Server Error", { status: 500 });
+  }
+}
+
 export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
