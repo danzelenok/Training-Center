@@ -707,7 +707,7 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
     setPublishDialogOpen(false);
     setPublishing(true);
     const toastMsg = publishNotifyTelegram
-      ? "Publishing & broadcasting to Telegram…"
+      ? "Publishing & sending direct messages to workers…"
       : "Publishing course…";
     const toastId = toast.loading(toastMsg);
     try {
@@ -717,15 +717,15 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
         body: JSON.stringify({
           assignTo: publishAssignTo,
           workerIds: publishAssignTo === "specific" ? publishWorkerIds : [],
-          notifyTelegram: publishNotifyTelegram,
+          notifyWorkers: publishNotifyTelegram,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Publishing failed");
 
       const successMsg = publishNotifyTelegram
-        ? "Course is LIVE! Announcement sent to Telegram group."
-        : "Course published. No Telegram announcement sent.";
+        ? "Course is LIVE! Direct messages sent to assigned workers."
+        : "Course published without announcements.";
       toast.success(successMsg, { id: toastId });
 
       if (course) {

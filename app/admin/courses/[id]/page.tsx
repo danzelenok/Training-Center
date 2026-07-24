@@ -694,9 +694,9 @@ function CourseEditorContent() {
             {/* Telegram notify */}
             <div className="flex items-center justify-between rounded-xl border border-border bg-muted/30 px-4 py-3">
               <div>
-                <p className="text-xs font-bold text-foreground">Post announcement to Telegram group</p>
+                <p className="text-xs font-bold text-foreground">Send announcement via DM to assigned workers</p>
                 <p className="text-[10px] text-muted-foreground mt-0.5">
-                  Sends a message with a "Start Learning" button to the group.
+                  Sends a direct Telegram message with a &ldquo;Start Learning&rdquo; button to each assigned worker.
                 </p>
               </div>
               <button

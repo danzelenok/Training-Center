@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { env } from "@/env";
 import { db } from "@/db";
 import { workers } from "@/db/schema";
+import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 export interface TelegramUser {
@@ -130,25 +131,27 @@ export function withTelegramAuth<T = any>(
         return new NextResponse("Unauthorized: Invalid signature", { status: 401 });
       }
 
-      // Upsert worker by telegramUserId
+      // Query existing worker by telegramUserId
       const [worker] = await db
-        .insert(workers)
-        .values({
-          telegramUserId: telegramUser.id,
-          telegramUsername: telegramUser.username || null,
-          firstName: telegramUser.first_name || null,
-          lastName: telegramUser.last_name || null,
+        .select()
+        .from(workers)
+        .where(eq(workers.telegramUserId, telegramUser.id))
+        .limit(1);
+
+      if (!worker) {
+        return new NextResponse("Unauthorized: Worker account not linked. Please activate your invite link first.", { status: 403 });
+      }
+
+      // Sync latest Telegram profile info
+      await db
+        .update(workers)
+        .set({
+          telegramUsername: telegramUser.username || worker.telegramUsername,
+          firstName: telegramUser.first_name || worker.firstName,
+          lastName: telegramUser.last_name || worker.lastName,
+          updatedAt: new Date(),
         })
-        .onConflictDoUpdate({
-          target: workers.telegramUserId,
-          set: {
-            telegramUsername: telegramUser.username || null,
-            firstName: telegramUser.first_name || null,
-            lastName: telegramUser.last_name || null,
-            updatedAt: new Date(),
-          },
-        })
-        .returning();
+        .where(eq(workers.id, worker.id));
 
       return await handler(req, { ...context, worker, telegramUser });
     } catch (error: any) {

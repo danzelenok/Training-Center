@@ -34,14 +34,33 @@ export const slides = pgTable("slides", {
 // 3. WORKERS TABLE
 export const workers = pgTable("workers", {
   id: uuid("id").defaultRandom().primaryKey(),
-  telegramUserId: bigint("telegram_user_id", { mode: "bigint" }).unique().notNull(),
+  telegramUserId: bigint("telegram_user_id", { mode: "bigint" }).unique(),
   telegramUsername: text("telegram_username"),
   firstName: text("first_name"),
   lastName: text("last_name"),
   displayName: text("display_name"),
+  phone: text("phone"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+// 3.5. INVITES TABLE
+export const invites = pgTable("invites", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  workerId: uuid("worker_id")
+    .references(() => workers.id, { onDelete: "cascade" })
+    .notNull(),
+  token: text("token").unique().notNull(),
+  status: text("status")
+    .$type<"pending" | "used" | "revoked" | "expired">()
+    .default("pending")
+    .notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  usedAt: timestamp("used_at"),
+  usedByTelegramId: bigint("used_by_telegram_id", { mode: "bigint" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 
 // 4. PROGRESS TABLE
 export const progress = pgTable("progress", {

@@ -20,74 +20,134 @@ if (process.env.NODE_ENV !== "production") {
   global.globalBot = bot;
 }
 
+import { db } from "@/db";
+import { invites, workers, assignments } from "@/db/schema";
+import { eq } from "drizzle-orm";
+
 // Initialize standard command/event handlers
 bot.command("start", async (ctx) => {
-  await ctx.reply(
-    "👋 *Welcome to the Safety Training Assistant!*\n\n" +
-      "Use our interactive courses directly inside Telegram to complete your micro-learning modules. " +
-      "Keep an eye out for course announcements in your team's group chat! 🚀",
-    { parse_mode: "Markdown" }
-  );
+  const token = ctx.match?.toString().trim();
+
+  if (!token) {
+    await ctx.reply("You do not have an active invitation link. Please contact your administrator.");
+    return;
+  }
+
+  const [invite] = await db
+    .select()
+    .from(invites)
+    .where(eq(invites.token, token))
+    .limit(1);
+
+  if (!invite || invite.status === "revoked" || invite.expiresAt < new Date()) {
+    await ctx.reply("This invitation link is invalid or has expired. Please contact your administrator.");
+    return;
+  }
+
+  const [worker] = await db
+    .select()
+    .from(workers)
+    .where(eq(workers.id, invite.workerId))
+    .limit(1);
+
+  if (!worker) {
+    await ctx.reply("Worker account not found. Please contact your administrator.");
+    return;
+  }
+
+  if (!ctx.from) {
+    await ctx.reply("Could not identify your Telegram user profile.");
+    return;
+  }
+
+  const incomingTelegramId = BigInt(ctx.from.id);
+
+  if (worker.telegramUserId !== null && worker.telegramUserId !== incomingTelegramId) {
+    await ctx.reply("This invite link is bound to another account.");
+    return;
+  }
+
+  await db
+    .update(workers)
+    .set({
+      telegramUserId: incomingTelegramId,
+      firstName: ctx.from.first_name || worker.firstName,
+      lastName: ctx.from.last_name || worker.lastName,
+      telegramUsername: ctx.from.username || worker.telegramUsername,
+      updatedAt: new Date(),
+    })
+    .where(eq(workers.id, worker.id));
+
+  await db
+    .update(invites)
+    .set({
+      status: "used",
+      usedAt: new Date(),
+      usedByTelegramId: incomingTelegramId,
+    })
+    .where(eq(invites.id, invite.id));
+
+  await ctx.reply("Welcome! Open the Mini App to start your training.");
 });
 
 /**
- * Sends a course announcement to the configured Telegram Group with a Mini App web_app button.
+ * Sends direct message course announcements to all workers assigned to this course who have a linked Telegram user ID.
  * @param courseId The unique identifier of the course.
  * @param courseTitle The title of the course.
- * @returns The message_id of the posted announcement.
  */
-export async function sendCourseAnnouncement(courseId: string, courseTitle: string): Promise<number> {
-  const groupId = process.env.TELEGRAM_GROUP_ID || env.TELEGRAM_GROUP_ID;
-  if (!groupId) {
-    throw new Error("TELEGRAM_GROUP_ID is not configured in environment variables.");
-  }
+export async function sendCourseAnnouncementDMs(courseId: string, courseTitle: string): Promise<void> {
+  const assignedWorkers = await db
+    .select({
+      id: workers.id,
+      telegramUserId: workers.telegramUserId,
+      displayName: workers.displayName,
+      firstName: workers.firstName,
+    })
+    .from(assignments)
+    .innerJoin(workers, eq(workers.id, assignments.workerId))
+    .where(eq(assignments.courseId, courseId));
 
-  const miniAppBaseUrl =
-    env.MINI_APP_URL ||
-    process.env.NEXT_PUBLIC_MINI_APP_URL ||
-    process.env.NEXT_PUBLIC_APP_URL;
-
-  if (!miniAppBaseUrl) {
-    throw new Error("Neither NEXT_PUBLIC_MINI_APP_URL nor NEXT_PUBLIC_APP_URL is configured.");
-  }
-
-  const courseUrl = `${miniAppBaseUrl}/mini-app/${courseId}`;
+  const botUsername = process.env.TELEGRAM_BOT_USERNAME || "CoolCatTraining_bot";
+  const courseUrl = `https://t.me/${botUsername}/CoolCatTraining?startapp=${courseId}`;
 
   const messageText =
-    `🚀 *New Safety Training Course Available!*\n\n` +
+    `🚀 *New Safety Training Course Assigned!*\n\n` +
     `📚 *Course Title:* ${courseTitle}\n\n` +
-    `Stay safe, stay compliant! Tap the button below to start this interactive micro-learning module directly within Telegram.`;
+    `Tap the button below to launch your interactive learning module directly inside Telegram.`;
 
-  const message = await bot.api.sendMessage(groupId, messageText, {
-    parse_mode: "Markdown",
-    reply_markup: {
-      inline_keyboard: [
-        [
-          {
-            text: "📖 Start Learning",
-            url: `https://t.me/CoolCatTraining_bot/CoolCatTraining?startapp=${courseId}`,
-          },
-        ],
-      ],
-    },
-  });
+  let sentCount = 0;
+  let skippedCount = 0;
 
-  return message.message_id;
-}
+  for (const worker of assignedWorkers) {
+    if (!worker.telegramUserId) {
+      skippedCount++;
+      continue;
+    }
 
-/**
- * Deletes a previously sent course announcement from the Telegram group.
- * Silently ignores errors (e.g. message already deleted or too old).
- */
-export async function deleteTelegramMessage(messageId: string | number | bigint, groupId: string | number | bigint): Promise<void> {
-  try {
-    const chatId = typeof groupId === "bigint" ? groupId.toString() : groupId;
-    const msgId = typeof messageId === "bigint" ? Number(messageId) : Number(messageId);
-    await bot.api.deleteMessage(chatId, msgId);
-  } catch (err: any) {
-    console.warn("Could not delete Telegram message (may already be deleted):", err?.message);
+    try {
+      await bot.api.sendMessage(worker.telegramUserId.toString(), messageText, {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [
+              {
+                text: "📖 Start Learning",
+                url: courseUrl,
+              },
+            ],
+          ],
+        },
+      });
+      sentCount++;
+    } catch (err: any) {
+      console.warn(`Failed to send DM announcement to worker ${worker.id}:`, err?.message);
+    }
   }
+
+  console.log(`Course announcement DMs summary for course ${courseId}: Sent = ${sentCount}, Skipped (unlinked) = ${skippedCount}`);
 }
+
+
 
 /**
  * Sends a direct message completion notification to the configured administrator.

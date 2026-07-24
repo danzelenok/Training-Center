@@ -17,6 +17,12 @@ import {
   MessageSquare,
   Trash2,
   Layers,
+  UserPlus,
+  Copy,
+  Check,
+  RefreshCw,
+  Unlink,
+  AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,6 +33,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import {
   Sheet,
@@ -35,14 +42,23 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 
 interface Worker {
   id: string;
-  telegramUserId: string;
+  telegramUserId: string | null;
   telegramUsername: string | null;
   firstName: string | null;
   lastName: string | null;
   displayName: string | null;
+  phone?: string | null;
   createdAt: string;
   updatedAt: string;
   coursesAssigned: number;
@@ -120,6 +136,24 @@ export default function WorkersPage() {
   const [markingCompleted, setMarkingCompleted] = useState<string | null>(null);
   const [deletingWorker, setDeletingWorker] = useState(false);
 
+  // Worker creation modal states
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [newWorkerName, setNewWorkerName] = useState("");
+  const [newWorkerPhone, setNewWorkerPhone] = useState("");
+  const [creatingWorker, setCreatingWorker] = useState(false);
+
+  // Generated Invite Link modal states
+  const [linkModalOpen, setLinkModalOpen] = useState(false);
+  const [activeInviteUrl, setActiveInviteUrl] = useState("");
+  const [activeInviteWorkerName, setActiveInviteWorkerName] = useState("");
+  const [copiedLink, setCopiedLink] = useState(false);
+
+  // Unbind warning modal states
+  const [unbindConfirmOpen, setUnbindConfirmOpen] = useState(false);
+  const [unbindTargetWorker, setUnbindTargetWorker] = useState<Worker | null>(null);
+  const [unbindingWorker, setUnbindingWorker] = useState(false);
+  const [reissuingWorkerId, setReissuingWorkerId] = useState<string | null>(null);
+
   const fetchWorkers = async () => {
     try {
       const res = await fetch("/api/workers");
@@ -177,6 +211,110 @@ export default function WorkersPage() {
     init();
   }, []);
 
+  // Handle manual worker creation (POST /api/admin/workers)
+  const handleCreateWorkerSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newWorkerName.trim()) {
+      toast.error("Please enter worker name");
+      return;
+    }
+
+    setCreatingWorker(true);
+    try {
+      const res = await fetch("/api/admin/workers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newWorkerName.trim(),
+          phone: newWorkerPhone.trim(),
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to create worker");
+
+      setCreateModalOpen(false);
+      setNewWorkerName("");
+      setNewWorkerPhone("");
+      await fetchWorkers();
+
+      // Show invite link popup
+      setActiveInviteWorkerName(data.worker.displayName || newWorkerName);
+      setActiveInviteUrl(data.inviteUrl);
+      setCopiedLink(false);
+      setLinkModalOpen(true);
+      toast.success("Worker created successfully!");
+    } catch (err: any) {
+      toast.error(err.message || "Error creating worker");
+    } finally {
+      setCreatingWorker(false);
+    }
+  };
+
+  // Handle invite link reissuance (POST /api/admin/workers/[id]/invites)
+  const handleReissueInvite = async (worker: Worker) => {
+    setReissuingWorkerId(worker.id);
+    const toastId = toast.loading("Generating new invite link...");
+    try {
+      const res = await fetch(`/api/admin/workers/${worker.id}/invites`, {
+        method: "POST",
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to reissue invite link");
+
+      setActiveInviteWorkerName(workerDisplayName(worker));
+      setActiveInviteUrl(data.inviteUrl);
+      setCopiedLink(false);
+      setLinkModalOpen(true);
+      toast.success("New invite link generated!", { id: toastId });
+    } catch (err: any) {
+      toast.error(err.message || "Could not reissue invite link", { id: toastId });
+    } finally {
+      setReissuingWorkerId(null);
+    }
+  };
+
+  // Handle Telegram unbind + link reissue (POST /api/admin/workers/[id]/unbind)
+  const handleConfirmUnbind = async () => {
+    if (!unbindTargetWorker) return;
+    setUnbindingWorker(true);
+    const toastId = toast.loading("Resetting Telegram connection...");
+    try {
+      const res = await fetch(`/api/admin/workers/${unbindTargetWorker.id}/unbind`, {
+        method: "POST",
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to reset Telegram connection");
+
+      setUnbindConfirmOpen(false);
+      await fetchWorkers();
+      if (selectedWorker?.id === unbindTargetWorker.id) {
+        setSelectedWorker((prev) => (prev ? { ...prev, telegramUserId: null } : prev));
+      }
+
+      setActiveInviteWorkerName(workerDisplayName(unbindTargetWorker));
+      setActiveInviteUrl(data.inviteUrl);
+      setCopiedLink(false);
+      setLinkModalOpen(true);
+      toast.success("Telegram connection reset. New invite link generated!", { id: toastId });
+    } catch (err: any) {
+      toast.error(err.message || "Could not reset Telegram connection", { id: toastId });
+    } finally {
+      setUnbindingWorker(false);
+      setUnbindTargetWorker(null);
+    }
+  };
+
+  const handleCopyLink = () => {
+    if (!activeInviteUrl) return;
+    navigator.clipboard.writeText(activeInviteUrl);
+    setCopiedLink(true);
+    toast.success("Invite link copied to clipboard!");
+    setTimeout(() => setCopiedLink(false), 3000);
+  };
+
   const handleAssignCourse = async (workerId: string, courseId: string) => {
     setAssigningWorkerId(workerId);
     const toastId = toast.loading("Assigning course...");
@@ -227,7 +365,6 @@ export default function WorkersPage() {
   };
 
   const handleMarkCompleted = async (progressId: string | null, assignmentId: string) => {
-    // Use progressId when it exists (fast path), assignmentId triggers upsert on the server
     const idToUse = progressId ?? assignmentId;
     setMarkingCompleted(assignmentId);
     try {
@@ -277,15 +414,15 @@ export default function WorkersPage() {
 
   const filteredWorkers = workersList.filter((w) => {
     const displayName = w.displayName?.toLowerCase() || "";
-    const username = w.telegramUsername?.toLowerCase() || "";
     const firstName = w.firstName?.toLowerCase() || "";
     const lastName = w.lastName?.toLowerCase() || "";
+    const phone = w.phone?.toLowerCase() || "";
     const query = search.toLowerCase();
     return (
       displayName.includes(query) ||
-      username.includes(query) ||
       firstName.includes(query) ||
-      lastName.includes(query)
+      lastName.includes(query) ||
+      phone.includes(query)
     );
   });
 
@@ -294,8 +431,7 @@ export default function WorkersPage() {
     if (w.displayName) return w.displayName;
     const name = [w.firstName, w.lastName].filter(Boolean).join(" ");
     if (name) return name;
-    if (w.telegramUsername) return w.telegramUsername;
-    return w.telegramUserId;
+    return "Unnamed Worker";
   };
 
   return (
@@ -309,9 +445,16 @@ export default function WorkersPage() {
             Workers Management
           </h1>
           <p className="mt-1.5 text-muted-foreground text-sm">
-            Monitor registered workers, inspect active Telegram session IDs, and assign safety training modules.
+            Manage worker records, generate personal Telegram invite links, and track course assignments.
           </p>
         </div>
+        <Button
+          onClick={() => setCreateModalOpen(true)}
+          className="bg-[#C8D400] hover:bg-[#B6C200] text-[#1B2A6B] font-extrabold shadow-lg shadow-[#C8D400]/10 rounded-xl text-xs h-10 px-4 gap-2 cursor-pointer shrink-0"
+        >
+          <UserPlus className="h-4 w-4" />
+          Add Worker
+        </Button>
       </div>
 
       {/* Analytics widgets */}
@@ -325,7 +468,7 @@ export default function WorkersPage() {
               {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : totalEnrolled}
             </p>
             <p className="text-xs text-muted-foreground font-bold uppercase tracking-wider mt-0.5">
-              Total Enrolled
+              Total Workers
             </p>
           </div>
         </div>
@@ -367,8 +510,8 @@ export default function WorkersPage() {
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by username, first or last name..."
-              className="pl-9 bg-background border-border text-foreground rounded-xl placeholder-muted-foreground focus-visible:ring-primary h-10"
+              placeholder="Search worker by name or phone..."
+              className="pl-9 bg-background border-border text-foreground rounded-xl placeholder-muted-foreground focus-visible:ring-primary h-10 text-xs"
             />
           </div>
         </div>
@@ -386,10 +529,10 @@ export default function WorkersPage() {
                 <Users className="h-7 w-7" />
               </div>
               <h3 className="text-lg font-bold text-[#1B2A6B] dark:text-[#C8D400] mb-1">
-                No workers have opened the Mini App yet
+                No workers created yet
               </h3>
               <p className="text-muted-foreground text-sm max-w-md">
-                Once workers launch the Telegram Mini App, they will automatically appear here.
+                Click &ldquo;Add Worker&rdquo; above to create a worker record and generate an invite link.
               </p>
             </div>
           ) : filteredWorkers.length === 0 ? (
@@ -401,7 +544,7 @@ export default function WorkersPage() {
                 No results found
               </h3>
               <p className="text-muted-foreground text-sm max-w-md">
-                Try searching for another name or username.
+                Try searching for another name or phone number.
               </p>
             </div>
           ) : (
@@ -409,8 +552,8 @@ export default function WorkersPage() {
               <thead>
                 <tr className="border-b border-border bg-muted/30 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                   <th className="px-6 py-4">Name</th>
-                  <th className="px-6 py-4">Telegram Username</th>
-                  <th className="px-6 py-4">Joined Date</th>
+                  <th className="px-6 py-4">Status</th>
+                  <th className="px-6 py-4">Created Date</th>
                   <th className="px-6 py-4">Courses Assigned</th>
                   <th className="px-6 py-4 text-right">Actions</th>
                 </tr>
@@ -424,9 +567,20 @@ export default function WorkersPage() {
                   >
                     <td className="px-6 py-4 text-sm font-semibold text-foreground">
                       {workerDisplayName(worker)}
+                      {worker.phone && (
+                        <p className="text-xs text-muted-foreground font-normal">{worker.phone}</p>
+                      )}
                     </td>
-                    <td className="px-6 py-4 font-mono text-xs font-semibold text-[#1B2A6B] dark:text-white">
-                      {worker.telegramUsername ? `@${worker.telegramUsername}` : "—"}
+                    <td className="px-6 py-4">
+                      {worker.telegramUserId ? (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 text-xs font-bold">
+                          <CheckCircle className="h-3 w-3" /> Connected
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-slate-500/10 text-slate-400 border border-slate-500/20 text-xs font-semibold">
+                          <Clock className="h-3 w-3" /> Not Connected
+                        </span>
+                      )}
                     </td>
                     <td className="px-6 py-4 text-muted-foreground text-xs">
                       {format(new Date(worker.createdAt), "yyyy-MM-dd HH:mm")}
@@ -442,21 +596,24 @@ export default function WorkersPage() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            disabled={assigningWorkerId === worker.id}
+                            disabled={assigningWorkerId === worker.id || reissuingWorkerId === worker.id}
                             className="text-[#C8D400] hover:bg-[#C8D400]/10 hover:text-[#B6C200] text-xs font-bold rounded-lg cursor-pointer h-9 px-3 gap-1"
                           >
-                            {assigningWorkerId === worker.id ? (
+                            {reissuingWorkerId === worker.id ? (
                               <Loader2 className="h-3.5 w-3.5 animate-spin" />
                             ) : (
                               <>
-                                Assign Course <ChevronDown className="h-3 w-3" />
+                                Actions <ChevronDown className="h-3 w-3" />
                               </>
                             )}
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="w-56 bg-card border border-border text-foreground rounded-xl shadow-lg p-1 z-50">
+                          <div className="px-2 py-1.5 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                            Course Assignment
+                          </div>
                           {publishedCourses.length === 0 ? (
-                            <div className="p-3 text-xs text-muted-foreground text-center">
+                            <div className="p-2 text-xs text-muted-foreground text-center">
                               No published courses available
                             </div>
                           ) : (
@@ -470,6 +627,22 @@ export default function WorkersPage() {
                               </DropdownMenuItem>
                             ))
                           )}
+                          <DropdownMenuSeparator className="bg-border" />
+                          <DropdownMenuItem
+                            onClick={() => handleReissueInvite(worker)}
+                            className="cursor-pointer hover:bg-muted text-xs rounded-lg px-3 py-2 transition-colors font-semibold text-blue-400 gap-2"
+                          >
+                            <RefreshCw className="h-3.5 w-3.5" /> Reissue Link
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => {
+                              setUnbindTargetWorker(worker);
+                              setUnbindConfirmOpen(true);
+                            }}
+                            className="cursor-pointer hover:bg-destructive/10 text-xs rounded-lg px-3 py-2 transition-colors font-semibold text-destructive gap-2"
+                          >
+                            <Unlink className="h-3.5 w-3.5" /> Reset Telegram Link
+                          </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </td>
@@ -481,6 +654,141 @@ export default function WorkersPage() {
         </div>
       </div>
 
+      {/* Add Worker Modal */}
+      <Dialog open={createModalOpen} onOpenChange={setCreateModalOpen}>
+        <DialogContent className="sm:max-w-[420px]">
+          <form onSubmit={handleCreateWorkerSubmit}>
+            <DialogHeader>
+              <DialogTitle className="text-lg font-bold text-[#1B2A6B] dark:text-[#C8D400]">
+                Add New Worker
+              </DialogTitle>
+              <DialogDescription className="text-muted-foreground text-xs mt-1">
+                Enter worker details to create a record and generate a unique Telegram invite link.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 py-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">
+                  Full Name <span className="text-red-400">*</span>
+                </label>
+                <Input
+                  value={newWorkerName}
+                  onChange={(e) => setNewWorkerName(e.target.value)}
+                  placeholder="e.g. John Doe"
+                  className="bg-background border-border text-foreground text-xs h-10 rounded-xl"
+                  required
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">
+                  Phone Number
+                </label>
+                <Input
+                  value={newWorkerPhone}
+                  onChange={(e) => setNewWorkerPhone(e.target.value)}
+                  placeholder="e.g. +1 555-0199"
+                  className="bg-background border-border text-foreground text-xs h-10 rounded-xl"
+                />
+              </div>
+            </div>
+
+            <DialogFooter className="gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setCreateModalOpen(false)}
+                className="border-border text-muted-foreground text-xs rounded-xl"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={creatingWorker}
+                className="bg-[#C8D400] hover:bg-[#B6C200] text-[#1B2A6B] font-extrabold text-xs px-4 rounded-xl"
+              >
+                {creatingWorker ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create & Generate Link"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Display Generated Invite Link Modal */}
+      <Dialog open={linkModalOpen} onOpenChange={setLinkModalOpen}>
+        <DialogContent className="sm:max-w-[460px]">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold text-[#1B2A6B] dark:text-[#C8D400] flex items-center gap-2">
+              <CheckCircle className="h-5 w-5 text-emerald-400" />
+              Invite Link Ready
+            </DialogTitle>
+            <DialogDescription className="text-muted-foreground text-xs mt-1">
+              Send this link to <strong className="text-foreground">{activeInviteWorkerName}</strong>. Valid for 14 days.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-3">
+            <div className="p-3 bg-muted/40 border border-border rounded-xl font-mono text-xs break-all text-foreground select-all">
+              {activeInviteUrl}
+            </div>
+
+            <Button
+              onClick={handleCopyLink}
+              className="w-full bg-[#C8D400] hover:bg-[#B6C200] text-[#1B2A6B] font-extrabold text-xs h-10 rounded-xl gap-2 cursor-pointer"
+            >
+              {copiedLink ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+              {copiedLink ? "Link Copied!" : "Copy Invite Link"}
+            </Button>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setLinkModalOpen(false)}
+              className="border-border text-muted-foreground text-xs w-full rounded-xl"
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Telegram Unbind Confirmation Warning Modal */}
+      <Dialog open={unbindConfirmOpen} onOpenChange={setUnbindConfirmOpen}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold text-amber-500 flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-500" />
+              Reset Telegram Connection?
+            </DialogTitle>
+            <DialogDescription className="text-muted-foreground text-xs mt-2 leading-relaxed">
+              Worker <strong className="text-foreground">{unbindTargetWorker ? workerDisplayName(unbindTargetWorker) : ""}</strong> will lose access under their current Telegram account until they click the newly generated invite link.
+            </DialogDescription>
+          </DialogHeader>
+
+          <DialogFooter className="gap-2 pt-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setUnbindConfirmOpen(false);
+                setUnbindTargetWorker(null);
+              }}
+              className="border-border text-muted-foreground text-xs rounded-xl"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleConfirmUnbind}
+              disabled={unbindingWorker}
+              className="bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs px-4 rounded-xl"
+            >
+              {unbindingWorker ? <Loader2 className="h-4 w-4 animate-spin" /> : "Reset & Generate New Link"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Worker Detail Sheet */}
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
         <SheetContent className="w-full sm:max-w-lg overflow-y-auto">
@@ -490,11 +798,22 @@ export default function WorkersPage() {
             </SheetTitle>
             {selectedWorker && (
               <SheetDescription className="text-sm text-muted-foreground space-y-1">
-                {selectedWorker.telegramUsername && (
-                  <span className="font-mono">@{selectedWorker.telegramUsername}</span>
+                {selectedWorker.phone && (
+                  <span className="block font-normal text-foreground">Phone: {selectedWorker.phone}</span>
                 )}
-                <span className="block">
-                  Joined {format(new Date(selectedWorker.createdAt), "dd MMM yyyy")}
+                <div className="pt-1">
+                  {selectedWorker.telegramUserId ? (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 text-xs font-bold">
+                      <CheckCircle className="h-3.5 w-3.5" /> Connected
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-slate-500/10 text-slate-400 border border-slate-500/20 text-xs font-semibold">
+                      <Clock className="h-3.5 w-3.5" /> Not Connected
+                    </span>
+                  )}
+                </div>
+                <span className="block text-xs pt-1">
+                  Created {format(new Date(selectedWorker.createdAt), "dd MMM yyyy")}
                 </span>
               </SheetDescription>
             )}
@@ -506,7 +825,37 @@ export default function WorkersPage() {
               <p className="text-sm">Loading worker details...</p>
             </div>
           ) : selectedWorker ? (
-            <div className="flex flex-col gap-6 mt-2">
+            <div className="flex flex-col gap-6 mt-4">
+
+              {/* Action bar for invites */}
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleReissueInvite(selectedWorker)}
+                  disabled={reissuingWorkerId === selectedWorker.id}
+                  className="flex-1 text-blue-400 border-blue-500/30 hover:bg-blue-500/10 font-bold text-xs gap-1.5 rounded-xl"
+                >
+                  {reissuingWorkerId === selectedWorker.id ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-3.5 w-3.5" />
+                  )}
+                  Reissue Link
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setUnbindTargetWorker(selectedWorker);
+                    setUnbindConfirmOpen(true);
+                  }}
+                  className="flex-1 text-amber-500 border-amber-500/30 hover:bg-amber-500/10 font-bold text-xs gap-1.5 rounded-xl"
+                >
+                  <Unlink className="h-3.5 w-3.5" />
+                  Reset Telegram
+                </Button>
+              </div>
 
               {/* Summary stats */}
               <div className="grid grid-cols-3 gap-3">
@@ -674,7 +1023,7 @@ export default function WorkersPage() {
                       variant="outline"
                       size="sm"
                       disabled={assigningWorkerId === selectedWorker.id}
-                      className="w-full text-[#C8D400] border-[#C8D400]/40 hover:bg-[#C8D400]/10 font-bold text-xs gap-2"
+                      className="w-full text-[#C8D400] border-[#C8D400]/40 hover:bg-[#C8D400]/10 font-bold text-xs gap-2 rounded-xl"
                     >
                       {assigningWorkerId === selectedWorker.id ? (
                         <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -712,7 +1061,7 @@ export default function WorkersPage() {
                   size="sm"
                   onClick={handleDeleteWorker}
                   disabled={deletingWorker}
-                  className="w-full text-destructive border-destructive/30 hover:bg-destructive/10 font-bold text-xs gap-2"
+                  className="w-full text-destructive border-destructive/30 hover:bg-destructive/10 font-bold text-xs gap-2 rounded-xl"
                 >
                   {deletingWorker ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />

@@ -64,3 +64,5 @@ export async function GET() {
     return new NextResponse(error.message || "Internal Server Error", { status: 500 });
   }
 }
+
+export { POST } from "../admin/workers/route";

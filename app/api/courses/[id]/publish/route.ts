@@ -3,8 +3,7 @@ import { courses, slides, workers, assignments } from "@/db/schema";
 import { auth } from "@clerk/nextjs/server";
 import { eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
-import { sendCourseAnnouncement, deleteTelegramMessage } from "@/lib/bot";
-import { env } from "@/env";
+import { sendCourseAnnouncementDMs } from "@/lib/bot";
 
 export async function POST(
   req: Request,
@@ -20,7 +19,7 @@ export async function POST(
     const body = await req.json().catch(() => ({}));
     const assignTo: "all" | "specific" = body.assignTo === "specific" ? "specific" : "all";
     const workerIds: string[] = Array.isArray(body.workerIds) ? body.workerIds : [];
-    const notifyTelegram: boolean = body.notifyTelegram !== false;
+    const notifyWorkers: boolean = body.notifyWorkers ?? body.notifyTelegram ?? true;
 
     // 1. Fetch the course
     const [course] = await db
@@ -49,35 +48,7 @@ export async function POST(
 
     const isFirstPublish = course.status !== "published";
 
-    // 3. Broadcast to Telegram, unless the caller opted out
-    let telegramMessageId: bigint | null = course.telegramMessageId;
-    let telegramGroupId: bigint | null = course.telegramGroupId;
-
-    if (notifyTelegram) {
-      // Delete previous Telegram message if republishing
-      if (course.telegramMessageId && course.telegramGroupId) {
-        await deleteTelegramMessage(course.telegramMessageId, course.telegramGroupId);
-      }
-
-      try {
-        const messageId = await sendCourseAnnouncement(course.id, course.title);
-        telegramMessageId = BigInt(messageId);
-
-        const groupIdStr = env.TELEGRAM_GROUP_ID || process.env.TELEGRAM_GROUP_ID;
-        telegramGroupId = groupIdStr ? BigInt(groupIdStr) : null;
-      } catch (botError: any) {
-        console.error("Failed to post course announcement on Telegram bot:", botError);
-        return new NextResponse(
-          JSON.stringify({
-            error: "Failed to broadcast course announcement to Telegram. Check bot configuration & group permissions.",
-            details: botError.message,
-          }),
-          { status: 502, headers: { "Content-Type": "application/json" } }
-        );
-      }
-    }
-
-    // 4. On first publish, create assignments according to the chosen scope
+    // 3. On first publish, create assignments according to the chosen scope
     if (isFirstPublish) {
       if (assignTo === "all") {
         const allWorkers = await db.select({ id: workers.id }).from(workers);
@@ -95,13 +66,27 @@ export async function POST(
       }
     }
 
-    // 5. Update status and message details in the database
+    // 4. Send direct message announcements to assigned workers if requested
+    if (notifyWorkers) {
+      try {
+        await sendCourseAnnouncementDMs(course.id, course.title);
+      } catch (botError: any) {
+        console.error("Failed to send course DMs to workers:", botError);
+        return new NextResponse(
+          JSON.stringify({
+            error: "Failed to send course direct messages to assigned workers.",
+            details: botError.message,
+          }),
+          { status: 502, headers: { "Content-Type": "application/json" } }
+        );
+      }
+    }
+
+    // 5. Update course status in the database
     const [updatedCourse] = await db
       .update(courses)
       .set({
         status: "published",
-        telegramMessageId,
-        telegramGroupId,
         ...(isFirstPublish && assignTo === "all" ? { autoAssignNewWorkers: true } : {}),
         updatedAt: new Date(),
       })
@@ -110,8 +95,8 @@ export async function POST(
 
     return NextResponse.json({
       ...updatedCourse,
-      telegramMessageId: updatedCourse.telegramMessageId ? updatedCourse.telegramMessageId.toString() : null,
-      telegramGroupId: updatedCourse.telegramGroupId ? updatedCourse.telegramGroupId.toString() : null,
+      telegramMessageId: null,
+      telegramGroupId: null,
     });
   } catch (error: any) {
     console.error("Error publishing course:", error);
@@ -122,7 +107,7 @@ export async function POST(
   }
 }
 
-// DELETE /api/courses/[id]/publish — revoke: delete Telegram message and reset to draft
+// DELETE /api/courses/[id]/publish — revoke: reset to draft
 export async function DELETE(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -142,10 +127,6 @@ export async function DELETE(
 
     if (!course) {
       return new NextResponse("Course not found", { status: 404 });
-    }
-
-    if (course.telegramMessageId && course.telegramGroupId) {
-      await deleteTelegramMessage(course.telegramMessageId, course.telegramGroupId);
     }
 
     const [updatedCourse] = await db
