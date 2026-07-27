@@ -191,6 +191,9 @@ export default function WorkersPage() {
   const [unbindingWorker, setUnbindingWorker] = useState(false);
   const [reissuingWorkerId, setReissuingWorkerId] = useState<string | null>(null);
 
+  // Team picker dialog (opened on demand from the worker detail panel)
+  const [teamPickerOpen, setTeamPickerOpen] = useState(false);
+
   const fetchWorkers = async () => {
     try {
       const res = await fetch("/api/workers");
@@ -1216,9 +1219,63 @@ export default function WorkersPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Team Picker Modal */}
+      <Dialog open={teamPickerOpen} onOpenChange={setTeamPickerOpen}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold text-[#1B2A6B] dark:text-[#C8D400]">
+              Edit Teams
+            </DialogTitle>
+            <DialogDescription className="text-muted-foreground text-xs mt-1">
+              Choose which teams {selectedWorker ? workerDisplayName(selectedWorker) : "this worker"} belongs to.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="max-h-80 overflow-y-auto space-y-2 py-2">
+            {teamsList.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+                No teams yet. Create one from the Teams page.
+              </div>
+            ) : (
+              teamsList.map((team) => {
+                const checked = selectedWorker?.teams.some((t) => t.id === team.id) ?? false;
+                return (
+                  <label
+                    key={team.id}
+                    className={`flex items-center gap-2 rounded-xl border px-3 py-2 cursor-pointer transition-colors ${
+                      checked ? "border-[#C8D400]/50 bg-[#C8D400]/10" : "border-border hover:bg-muted/30"
+                    }`}
+                  >
+                    <Checkbox
+                      checked={checked}
+                      disabled={savingWorkerTeams}
+                      onCheckedChange={(v) => handleToggleWorkerTeam(team.id, v === true)}
+                    />
+                    <span className="text-xs font-medium text-foreground">{team.name}</span>
+                  </label>
+                );
+              })
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              onClick={() => setTeamPickerOpen(false)}
+              className="w-full bg-[#C8D400] hover:bg-[#B6C200] text-[#1B2A6B] font-extrabold text-xs rounded-xl"
+            >
+              Done
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Worker Detail Sheet */}
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-        <SheetContent className="w-full sm:max-w-lg overflow-y-auto">
+        <SheetContent
+          className="w-full sm:max-w-lg overflow-y-auto"
+          onOpenAutoFocus={(e) => e.preventDefault()}
+        >
           <SheetHeader>
             {editingWorker && selectedWorker ? (
               <div className="space-y-2">
@@ -1278,6 +1335,15 @@ export default function WorkersPage() {
                     <Pencil className="h-4 w-4" />
                   </button>
                 )}
+                {selectedWorker && (
+                  <button
+                    onClick={() => handlePrintWorkerReport(selectedWorker)}
+                    className="p-1 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                    title="Print / save worker report"
+                  >
+                    <Printer className="h-4 w-4" />
+                  </button>
+                )}
               </SheetTitle>
             )}
             {selectedWorker && !editingWorker && (
@@ -1320,7 +1386,7 @@ export default function WorkersPage() {
             <div className="flex flex-col gap-6 mt-4 px-4 pb-6">
 
               {/* Action bar for invites */}
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <Button
                   variant="outline"
                   size="sm"
@@ -1367,15 +1433,6 @@ export default function WorkersPage() {
                   )}
                   {selectedWorker.active ? "Deactivate" : "Reactivate"}
                 </Button>
-                <Button
-                  variant="outline"
-                  size="icon-sm"
-                  onClick={() => handlePrintWorkerReport(selectedWorker)}
-                  className="text-muted-foreground border-border hover:bg-muted rounded-xl shrink-0"
-                  title="Print / save worker report"
-                >
-                  <Printer className="h-3.5 w-3.5" />
-                </Button>
               </div>
 
               {/* Summary stats */}
@@ -1401,36 +1458,34 @@ export default function WorkersPage() {
 
               {/* Teams */}
               <div className="space-y-3">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                  <Users className="h-3.5 w-3.5" />
-                  Teams
-                </h3>
-                {teamsList.length === 0 ? (
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                    <Users className="h-3.5 w-3.5" />
+                    Teams
+                  </h3>
+                  <button
+                    onClick={() => setTeamPickerOpen(true)}
+                    className="p-1 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                    title="Edit teams"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                {selectedWorker.teams.length === 0 ? (
                   <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-                    No teams yet. Create one from the Teams page.
+                    No team assigned yet.
                   </div>
                 ) : (
                   <div className="flex flex-wrap gap-2">
-                    {teamsList.map((team) => {
-                      const checked = selectedWorker.teams.some((t) => t.id === team.id);
-                      return (
-                        <label
-                          key={team.id}
-                          className={`flex items-center gap-2 rounded-xl border px-3 py-1.5 cursor-pointer transition-colors ${
-                            checked
-                              ? "border-[#C8D400]/50 bg-[#C8D400]/10"
-                              : "border-border hover:bg-muted/30"
-                          }`}
-                        >
-                          <Checkbox
-                            checked={checked}
-                            disabled={savingWorkerTeams}
-                            onCheckedChange={(v) => handleToggleWorkerTeam(team.id, v === true)}
-                          />
-                          <span className="text-xs font-medium text-foreground">{team.name}</span>
-                        </label>
-                      );
-                    })}
+                    {selectedWorker.teams.map((team) => (
+                      <span
+                        key={team.id}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-muted/30 px-3 py-1.5 text-xs font-medium text-foreground"
+                      >
+                        <Users className="h-3 w-3 text-muted-foreground" />
+                        {team.name}
+                      </span>
+                    ))}
                   </div>
                 )}
               </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Users2, Plus, Loader2, Pencil, Trash2, X, Check, UsersRound } from "lucide-react";
+import { Users2, Plus, Loader2, Pencil, Trash2, X, Check, UsersRound, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -59,6 +59,7 @@ export default function TeamsPage() {
   const [rosterMemberIds, setRosterMemberIds] = useState<string[]>([]);
   const [loadingRoster, setLoadingRoster] = useState(false);
   const [savingRoster, setSavingRoster] = useState(false);
+  const [rosterSearch, setRosterSearch] = useState("");
 
   const workerName = (w: WorkerOption) =>
     w.displayName || [w.firstName, w.lastName].filter(Boolean).join(" ") || "Unnamed Worker";
@@ -114,6 +115,7 @@ export default function TeamsPage() {
       setNewTeamName("");
       await fetchTeams();
       toast.success("Team created");
+      await openRoster(data);
     } catch (err: any) {
       toast.error(err.message || "Error creating team");
     } finally {
@@ -170,6 +172,7 @@ export default function TeamsPage() {
   const openRoster = async (team: Team) => {
     setRosterTeam(team);
     setRosterSheetOpen(true);
+    setRosterSearch("");
     setLoadingRoster(true);
     try {
       const res = await fetch(`/api/teams/${team.id}`);
@@ -207,6 +210,10 @@ export default function TeamsPage() {
       setSavingRoster(false);
     }
   };
+
+  const filteredRosterWorkers = activeWorkers.filter((w) =>
+    workerName(w).toLowerCase().includes(rosterSearch.toLowerCase())
+  );
 
   return (
     <div className="space-y-6">
@@ -340,7 +347,7 @@ export default function TeamsPage() {
                 New Team
               </DialogTitle>
               <DialogDescription className="text-muted-foreground text-xs mt-1">
-                Give the team a name. You can add workers once it&apos;s created.
+                Give the team a name, then add its members on the next step.
               </DialogDescription>
             </DialogHeader>
 
@@ -412,7 +419,10 @@ export default function TeamsPage() {
 
       {/* Roster Sheet */}
       <Sheet open={rosterSheetOpen} onOpenChange={setRosterSheetOpen}>
-        <SheetContent className="w-full sm:max-w-lg overflow-y-auto">
+        <SheetContent
+          className="w-full sm:max-w-lg overflow-y-auto"
+          onOpenAutoFocus={(e) => e.preventDefault()}
+        >
           <SheetHeader>
             <SheetTitle className="text-xl font-extrabold text-[#1B2A6B] dark:text-[#C8D400]">
               {rosterTeam?.name}
@@ -424,36 +434,53 @@ export default function TeamsPage() {
           </SheetHeader>
 
           {loadingRoster ? (
-            <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground">
+            <div className="flex flex-col items-center justify-center h-full gap-3 px-4 text-muted-foreground">
               <Loader2 className="h-8 w-8 animate-spin text-[#C8D400]" />
               <p className="text-sm">Loading roster...</p>
             </div>
           ) : (
-            <div className="mt-4 space-y-2">
-              {activeWorkers.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-                  No active workers to add.
+            <div className="mt-4 px-4 pb-6 space-y-3">
+              {activeWorkers.length > 0 && (
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                  <Input
+                    value={rosterSearch}
+                    onChange={(e) => setRosterSearch(e.target.value)}
+                    placeholder="Search workers..."
+                    className="bg-background border-border text-foreground text-xs h-9 rounded-xl pl-8"
+                  />
                 </div>
-              ) : (
-                activeWorkers.map((w) => {
-                  const checked = rosterMemberIds.includes(w.id);
-                  return (
-                    <label
-                      key={w.id}
-                      className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 cursor-pointer transition-colors ${
-                        checked ? "border-[#C8D400]/50 bg-[#C8D400]/10" : "border-border hover:bg-muted/30"
-                      }`}
-                    >
-                      <Checkbox
-                        checked={checked}
-                        disabled={savingRoster}
-                        onCheckedChange={(v) => handleToggleRosterMember(w.id, v === true)}
-                      />
-                      <span className="text-xs font-medium text-foreground">{workerName(w)}</span>
-                    </label>
-                  );
-                })
               )}
+              <div className="space-y-2">
+                {activeWorkers.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+                    No active workers to add.
+                  </div>
+                ) : filteredRosterWorkers.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+                    No workers match your search.
+                  </div>
+                ) : (
+                  filteredRosterWorkers.map((w) => {
+                    const checked = rosterMemberIds.includes(w.id);
+                    return (
+                      <label
+                        key={w.id}
+                        className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 cursor-pointer transition-colors ${
+                          checked ? "border-[#C8D400]/50 bg-[#C8D400]/10" : "border-border hover:bg-muted/30"
+                        }`}
+                      >
+                        <Checkbox
+                          checked={checked}
+                          disabled={savingRoster}
+                          onCheckedChange={(v) => handleToggleRosterMember(w.id, v === true)}
+                        />
+                        <span className="text-xs font-medium text-foreground">{workerName(w)}</span>
+                      </label>
+                    );
+                  })
+                )}
+              </div>
             </div>
           )}
         </SheetContent>
