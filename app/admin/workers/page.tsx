@@ -27,6 +27,7 @@ import {
   X,
   UserX,
   UserCheck,
+  Printer,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -56,6 +57,7 @@ import {
 } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
+import { normalizePhone, formatPhoneDisplay, formatPhoneInput } from "@/lib/phone";
 
 interface TeamRef {
   id: string;
@@ -71,6 +73,7 @@ interface Worker {
   displayName: string | null;
   phone?: string | null;
   active: boolean;
+  deactivatedAt: string | null;
   createdAt: string;
   updatedAt: string;
   coursesAssigned: number;
@@ -107,9 +110,16 @@ interface WorkerPollResponse {
   question: string | null;
 }
 
+interface WorkerStatusEvent {
+  id: string;
+  status: "active" | "deactivated";
+  changedAt: string;
+}
+
 interface WorkerDetail extends Worker {
   courses: WorkerCourseProgress[];
   pollResponses: WorkerPollResponse[];
+  statusHistory: WorkerStatusEvent[];
 }
 
 const STATUS_CONFIG = {
@@ -165,6 +175,9 @@ export default function WorkersPage() {
   const [newWorkerName, setNewWorkerName] = useState("");
   const [newWorkerPhone, setNewWorkerPhone] = useState("");
   const [creatingWorker, setCreatingWorker] = useState(false);
+
+  // Possible-duplicate warning shown before creating a new worker
+  const [duplicateCandidate, setDuplicateCandidate] = useState<Worker | null>(null);
 
   // Generated Invite Link modal states
   const [linkModalOpen, setLinkModalOpen] = useState(false);
@@ -237,7 +250,7 @@ export default function WorkersPage() {
   const startEditingWorker = () => {
     if (!selectedWorker) return;
     setEditName(workerDisplayName(selectedWorker));
-    setEditPhone(selectedWorker.phone || "");
+    setEditPhone(selectedWorker.phone ? formatPhoneInput(selectedWorker.phone) : "");
     setEditingWorker(true);
   };
 
@@ -278,13 +291,24 @@ export default function WorkersPage() {
   }, []);
 
   // Handle manual worker creation (POST /api/admin/workers)
-  const handleCreateWorkerSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newWorkerName.trim()) {
-      toast.error("Please enter worker name");
-      return;
-    }
+  // Loosely matches on name (token order ignored) or normalized phone, so a
+  // returning worker re-entered as "Last First" instead of "First Last" is still caught.
+  const findPossibleDuplicate = (name: string, phone: string): Worker | null => {
+    const inputTokens = name.toLowerCase().split(/\s+/).filter(Boolean).sort().join(" ");
+    const normalizedPhone = phone ? normalizePhone(phone) : null;
+    if (!inputTokens && !normalizedPhone) return null;
 
+    return (
+      workersList.find((w) => {
+        const wTokens = workerDisplayName(w).toLowerCase().split(/\s+/).filter(Boolean).sort().join(" ");
+        const nameMatches = inputTokens.length > 0 && wTokens === inputTokens;
+        const phoneMatches = normalizedPhone !== null && w.phone === normalizedPhone;
+        return nameMatches || phoneMatches;
+      }) ?? null
+    );
+  };
+
+  const performCreateWorker = async () => {
     setCreatingWorker(true);
     try {
       const res = await fetch("/api/admin/workers", {
@@ -315,6 +339,44 @@ export default function WorkersPage() {
     } finally {
       setCreatingWorker(false);
     }
+  };
+
+  const handleCreateWorkerSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newWorkerName.trim()) {
+      toast.error("Please enter worker name");
+      return;
+    }
+
+    const duplicate = findPossibleDuplicate(newWorkerName.trim(), newWorkerPhone.trim());
+    if (duplicate) {
+      setDuplicateCandidate(duplicate);
+      return;
+    }
+
+    await performCreateWorker();
+  };
+
+  const handleCreateAnyway = async () => {
+    setDuplicateCandidate(null);
+    await performCreateWorker();
+  };
+
+  const handleReactivateDuplicate = async () => {
+    if (!duplicateCandidate) return;
+    await handleToggleActive(duplicateCandidate);
+    setDuplicateCandidate(null);
+    setCreateModalOpen(false);
+    setNewWorkerName("");
+    setNewWorkerPhone("");
+  };
+
+  const handleViewDuplicate = () => {
+    if (!duplicateCandidate) return;
+    const worker = duplicateCandidate;
+    setDuplicateCandidate(null);
+    setCreateModalOpen(false);
+    openWorkerDetail(worker);
   };
 
   // Handle invite link reissuance (POST /api/admin/workers/[id]/invites)
@@ -473,10 +535,14 @@ export default function WorkersPage() {
       if (!res.ok) throw new Error(data.error || "Failed to update worker status");
 
       setWorkersList((prev) =>
-        prev.map((w) => (w.id === worker.id ? { ...w, active: nextActive } : w))
+        prev.map((w) =>
+          w.id === worker.id ? { ...w, active: nextActive, deactivatedAt: data.deactivatedAt ?? null } : w
+        )
       );
       if (selectedWorker?.id === worker.id) {
-        setSelectedWorker((prev) => (prev ? { ...prev, active: nextActive } : prev));
+        setSelectedWorker((prev) =>
+          prev ? { ...prev, active: nextActive, deactivatedAt: data.deactivatedAt ?? null } : prev
+        );
       }
       toast.success(nextActive ? "Worker reactivated" : "Worker deactivated");
     } catch (err: any) {
@@ -545,13 +611,14 @@ export default function WorkersPage() {
     const displayName = w.displayName?.toLowerCase() || "";
     const firstName = w.firstName?.toLowerCase() || "";
     const lastName = w.lastName?.toLowerCase() || "";
-    const phone = w.phone?.toLowerCase() || "";
+    const phoneDigits = w.phone?.replace(/\D/g, "") || "";
     const query = search.toLowerCase();
+    const queryDigits = search.replace(/\D/g, "");
     return (
       displayName.includes(query) ||
       firstName.includes(query) ||
       lastName.includes(query) ||
-      phone.includes(query)
+      (queryDigits.length > 0 && phoneDigits.includes(queryDigits))
     );
   });
 
@@ -561,6 +628,102 @@ export default function WorkersPage() {
     const name = [w.firstName, w.lastName].filter(Boolean).join(" ");
     if (name) return name;
     return "Unnamed Worker";
+  };
+
+  const escapeHtml = (value: string) =>
+    value
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+
+  const handlePrintWorkerReport = (worker: WorkerDetail) => {
+    const name = escapeHtml(workerDisplayName(worker));
+    const created = format(new Date(worker.createdAt), "dd MMM yyyy");
+    const deactivated = worker.deactivatedAt
+      ? format(new Date(worker.deactivatedAt), "dd MMM yyyy")
+      : null;
+    const completedCount = worker.courses.filter((c) => c.status === "completed").length;
+
+    const historyRows = [
+      `<tr><td>Hired</td><td>${created}</td></tr>`,
+      ...worker.statusHistory.map(
+        (e) =>
+          `<tr><td>${e.status === "deactivated" ? "Deactivated" : "Reactivated"}</td><td>${format(
+            new Date(e.changedAt),
+            "dd MMM yyyy"
+          )}</td></tr>`
+      ),
+    ].join("");
+
+    const rows = worker.courses
+      .map((c) => {
+        const cfg = STATUS_CONFIG[c.status];
+        return `<tr>
+          <td>${escapeHtml(c.courseTitle)}</td>
+          <td>${cfg.label}</td>
+          <td>${format(new Date(c.assignedAt), "dd MMM yyyy")}</td>
+          <td>${c.completedAt ? format(new Date(c.completedAt), "dd MMM yyyy") : "—"}</td>
+          <td>${c.quizScore !== null ? `${c.quizScore}%` : "—"}</td>
+        </tr>`;
+      })
+      .join("");
+
+    const html = `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Worker Report - ${name}</title>
+<style>
+  body { font-family: Arial, Helvetica, sans-serif; color: #1a1a1a; padding: 32px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 14px; margin: 24px 0 4px; }
+  .meta { color: #555; font-size: 13px; margin-bottom: 24px; }
+  .meta div { margin-bottom: 2px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+  th, td { border: 1px solid #ccc; padding: 6px 10px; font-size: 12px; text-align: left; }
+  th { background: #f2f2f2; }
+</style>
+</head>
+<body>
+  <h1>Worker Report — ${name}</h1>
+  <div class="meta">
+    <div>Created: ${created}</div>
+    <div>Status: ${worker.active ? "Active" : `Deactivated${deactivated ? ` on ${deactivated}` : ""}`}</div>
+    <div>Courses assigned: ${worker.courses.length} &middot; Completed: ${completedCount}</div>
+  </div>
+  <h2>Employment History</h2>
+  <table>
+    <thead>
+      <tr><th>Event</th><th>Date</th></tr>
+    </thead>
+    <tbody>
+      ${historyRows}
+    </tbody>
+  </table>
+  <h2>Courses</h2>
+  <table>
+    <thead>
+      <tr><th>Course</th><th>Status</th><th>Assigned</th><th>Completed</th><th>Quiz Score</th></tr>
+    </thead>
+    <tbody>
+      ${rows || `<tr><td colspan="5" style="text-align:center;color:#888;">No courses assigned</td></tr>`}
+    </tbody>
+  </table>
+</body>
+</html>`;
+
+    const reportWindow = window.open("", "_blank", "width=800,height=900");
+    if (!reportWindow) {
+      toast.error("Please allow pop-ups to print the worker report.");
+      return;
+    }
+    reportWindow.document.open();
+    reportWindow.document.write(html);
+    reportWindow.document.close();
+    reportWindow.focus();
+    setTimeout(() => reportWindow.print(), 250);
   };
 
   return (
@@ -713,7 +876,7 @@ export default function WorkersPage() {
                     <td className="px-6 py-4 text-sm font-semibold text-foreground">
                       {workerDisplayName(worker)}
                       {worker.phone && (
-                        <p className="text-xs text-muted-foreground font-normal">{worker.phone}</p>
+                        <p className="text-xs text-muted-foreground font-normal">{formatPhoneDisplay(worker.phone)}</p>
                       )}
                     </td>
                     <td className="px-6 py-4">
@@ -878,8 +1041,8 @@ export default function WorkersPage() {
                 </label>
                 <Input
                   value={newWorkerPhone}
-                  onChange={(e) => setNewWorkerPhone(e.target.value)}
-                  placeholder="e.g. +1 555-0199"
+                  onChange={(e) => setNewWorkerPhone(formatPhoneInput(e.target.value))}
+                  placeholder="(555) 123-4567"
                   className="bg-background border-border text-foreground text-xs h-10 rounded-xl"
                 />
               </div>
@@ -903,6 +1066,79 @@ export default function WorkersPage() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Possible Duplicate Warning Modal */}
+      <Dialog open={!!duplicateCandidate} onOpenChange={(open) => !open && setDuplicateCandidate(null)}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold text-amber-500 flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5" />
+              Possible Duplicate
+            </DialogTitle>
+            <DialogDescription className="text-muted-foreground text-xs mt-1">
+              A worker with a matching name or phone number already exists.
+            </DialogDescription>
+          </DialogHeader>
+
+          {duplicateCandidate && (
+            <div className="rounded-xl border border-border bg-muted/30 p-3 space-y-1">
+              <p className="text-sm font-bold text-foreground">{workerDisplayName(duplicateCandidate)}</p>
+              <p className="text-xs text-muted-foreground">
+                {duplicateCandidate.active ? (
+                  "Active"
+                ) : (
+                  <>
+                    Deactivated
+                    {duplicateCandidate.deactivatedAt &&
+                      ` on ${format(new Date(duplicateCandidate.deactivatedAt), "dd MMM yyyy")}`}
+                  </>
+                )}
+                {duplicateCandidate.phone && ` · ${formatPhoneDisplay(duplicateCandidate.phone)}`}
+              </p>
+            </div>
+          )}
+
+          <DialogFooter className="flex-col gap-2 sm:flex-col">
+            {duplicateCandidate && !duplicateCandidate.active && (
+              <Button
+                type="button"
+                onClick={handleReactivateDuplicate}
+                className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-xs rounded-xl gap-1.5"
+              >
+                <UserCheck className="h-3.5 w-3.5" />
+                Reactivate This Worker Instead
+              </Button>
+            )}
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleViewDuplicate}
+              className="w-full border-border text-foreground text-xs rounded-xl"
+            >
+              View Existing Worker
+            </Button>
+            <div className="flex gap-2 w-full">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setDuplicateCandidate(null)}
+                className="flex-1 border-border text-muted-foreground text-xs rounded-xl"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleCreateAnyway}
+                disabled={creatingWorker}
+                className="flex-1 text-destructive border-destructive/30 hover:bg-destructive/10 text-xs rounded-xl"
+              >
+                {creatingWorker ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Create New Anyway"}
+              </Button>
+            </div>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -1004,8 +1240,8 @@ export default function WorkersPage() {
                   </label>
                   <Input
                     value={editPhone}
-                    onChange={(e) => setEditPhone(e.target.value)}
-                    placeholder="e.g. +1 555-0199"
+                    onChange={(e) => setEditPhone(formatPhoneInput(e.target.value))}
+                    placeholder="(555) 123-4567"
                     className="bg-background border-border text-foreground text-xs h-9 rounded-xl"
                   />
                 </div>
@@ -1047,7 +1283,7 @@ export default function WorkersPage() {
             {selectedWorker && !editingWorker && (
               <SheetDescription className="text-sm text-muted-foreground space-y-1">
                 {selectedWorker.phone && (
-                  <span className="block font-normal text-foreground">Phone: {selectedWorker.phone}</span>
+                  <span className="block font-normal text-foreground">Phone: {formatPhoneDisplay(selectedWorker.phone)}</span>
                 )}
                 <div className="pt-1 flex flex-wrap gap-1.5">
                   {!selectedWorker.active && (
@@ -1067,18 +1303,21 @@ export default function WorkersPage() {
                 </div>
                 <span className="block text-xs pt-1">
                   Created {format(new Date(selectedWorker.createdAt), "dd MMM yyyy")}
+                  {!selectedWorker.active && selectedWorker.deactivatedAt && (
+                    <> &middot; Deactivated {format(new Date(selectedWorker.deactivatedAt), "dd MMM yyyy")}</>
+                  )}
                 </span>
               </SheetDescription>
             )}
           </SheetHeader>
 
           {loadingDetail ? (
-            <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground">
+            <div className="flex flex-col items-center justify-center h-full gap-3 px-4 text-muted-foreground">
               <Loader2 className="h-8 w-8 animate-spin text-[#C8D400]" />
               <p className="text-sm">Loading worker details...</p>
             </div>
           ) : selectedWorker ? (
-            <div className="flex flex-col gap-6 mt-4">
+            <div className="flex flex-col gap-6 mt-4 px-4 pb-6">
 
               {/* Action bar for invites */}
               <div className="flex gap-2">
@@ -1128,6 +1367,15 @@ export default function WorkersPage() {
                   )}
                   {selectedWorker.active ? "Deactivate" : "Reactivate"}
                 </Button>
+                <Button
+                  variant="outline"
+                  size="icon-sm"
+                  onClick={() => handlePrintWorkerReport(selectedWorker)}
+                  className="text-muted-foreground border-border hover:bg-muted rounded-xl shrink-0"
+                  title="Print / save worker report"
+                >
+                  <Printer className="h-3.5 w-3.5" />
+                </Button>
               </div>
 
               {/* Summary stats */}
@@ -1158,7 +1406,7 @@ export default function WorkersPage() {
                   Teams
                 </h3>
                 {teamsList.length === 0 ? (
-                  <div className="rounded-xl border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
+                  <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
                     No teams yet. Create one from the Teams page.
                   </div>
                 ) : (

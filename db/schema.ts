@@ -42,8 +42,17 @@ export const workers = pgTable("workers", {
   displayName: text("display_name"),
   phone: text("phone"),
   active: boolean("active").default(true).notNull(),
+  deactivatedAt: timestamp("deactivated_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// 3.05. WORKER_STATUS_EVENTS TABLE (audit trail of active/deactivated transitions)
+export const workerStatusEvents = pgTable("worker_status_events", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  workerId: uuid("worker_id").notNull().references(() => workers.id, { onDelete: "cascade" }),
+  status: text("status").$type<"active" | "deactivated">().notNull(),
+  changedAt: timestamp("changed_at").defaultNow().notNull(),
 });
 
 // 3.1. TEAMS TABLE

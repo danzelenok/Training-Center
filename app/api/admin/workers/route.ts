@@ -5,6 +5,7 @@ import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { autoAssignTeamCoursesForNewMemberships } from "@/lib/teamAutoAssign";
+import { normalizePhone } from "@/lib/phone";
 
 export const dynamic = "force-dynamic";
 
@@ -32,7 +33,7 @@ export async function POST(req: Request) {
 
     const body = await req.json().catch(() => ({}));
     const name = typeof body.name === "string" ? body.name.trim() : "";
-    const phone = typeof body.phone === "string" ? body.phone.trim() : "";
+    const rawPhone = typeof body.phone === "string" ? body.phone.trim() : "";
 
     if (!name) {
       return new NextResponse(
@@ -41,7 +42,16 @@ export async function POST(req: Request) {
       );
     }
 
-    if (phone) {
+    let phone: string | null = null;
+    if (rawPhone) {
+      phone = normalizePhone(rawPhone);
+      if (!phone) {
+        return new NextResponse(
+          JSON.stringify({ error: "Please enter a valid 10-digit US phone number." }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
       const [existingPhone] = await db
         .select({ id: workers.id })
         .from(workers)

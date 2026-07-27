@@ -1,9 +1,10 @@
 import { db } from "@/db";
-import { workers, progress, courses, pollResponses, slides, assignments, workerTeams, teams } from "@/db/schema";
+import { workers, progress, courses, pollResponses, slides, assignments, workerTeams, teams, workerStatusEvents } from "@/db/schema";
 import { auth } from "@clerk/nextjs/server";
 import { and, count, eq, inArray, sql } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { autoAssignTeamCoursesForNewMemberships } from "@/lib/teamAutoAssign";
+import { normalizePhone } from "@/lib/phone";
 
 export const dynamic = "force-dynamic";
 
@@ -89,10 +90,17 @@ export async function GET(
       .innerJoin(teams, eq(teams.id, workerTeams.teamId))
       .where(eq(workerTeams.workerId, id));
 
+    const statusHistory = await db
+      .select({ id: workerStatusEvents.id, status: workerStatusEvents.status, changedAt: workerStatusEvents.changedAt })
+      .from(workerStatusEvents)
+      .where(eq(workerStatusEvents.workerId, id))
+      .orderBy(workerStatusEvents.changedAt);
+
     return NextResponse.json({
       ...worker[0],
       telegramUserId: worker[0].telegramUserId?.toString() ?? null,
       teams: workerTeamsList,
+      statusHistory,
       courses: courseProgress.map((r) => ({
         assignmentId: r.assignmentId,
         progressId: r.progressId ?? null,
@@ -139,8 +147,16 @@ export async function PATCH(
     }
 
     if (typeof body.phone === "string") {
-      const phone = body.phone.trim();
-      if (phone) {
+      const rawPhone = body.phone.trim();
+      let phone: string | null = null;
+      if (rawPhone) {
+        phone = normalizePhone(rawPhone);
+        if (!phone) {
+          return NextResponse.json(
+            { error: "Please enter a valid 10-digit US phone number." },
+            { status: 400 }
+          );
+        }
         const [existingPhone] = await db
           .select({ id: workers.id })
           .from(workers)
@@ -153,11 +169,23 @@ export async function PATCH(
           );
         }
       }
-      updates.phone = phone || null;
+      updates.phone = phone;
     }
 
+    let statusChanged = false;
+    let statusChangedAt: Date | null = null;
     if (typeof body.active === "boolean") {
+      const [current] = await db
+        .select({ active: workers.active })
+        .from(workers)
+        .where(eq(workers.id, id))
+        .limit(1);
+      if (!current) return new NextResponse("Not found", { status: 404 });
+
+      statusChanged = current.active !== body.active;
+      statusChangedAt = new Date();
       updates.active = body.active;
+      updates.deactivatedAt = body.active ? null : statusChangedAt;
     }
 
     const teamIds: string[] | null = Array.isArray(body.teamIds) ? body.teamIds : null;
@@ -177,6 +205,14 @@ export async function PATCH(
     } else {
       [updated] = await db.select().from(workers).where(eq(workers.id, id)).limit(1);
       if (!updated) return new NextResponse("Not found", { status: 404 });
+    }
+
+    if (statusChanged && statusChangedAt) {
+      await db.insert(workerStatusEvents).values({
+        workerId: id,
+        status: body.active ? "active" : "deactivated",
+        changedAt: statusChangedAt,
+      });
     }
 
     if (teamIds !== null) {
