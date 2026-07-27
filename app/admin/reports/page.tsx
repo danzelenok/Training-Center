@@ -27,8 +27,8 @@ import {
 
 interface Report {
   id: string;
+  workerId: string;
   workerName: string;
-  telegramUsername: string | null;
   courseName: string;
   status: "not_started" | "in_progress" | "completed";
   completedAt: string | null;
@@ -50,7 +50,6 @@ interface PollResponse {
   workerId: string;
   courseName: string;
   workerName: string;
-  telegramUsername: string | null;
   question: string | null;
 }
 
@@ -415,7 +414,6 @@ export default function ReportsPage() {
               <thead>
                 <tr className="border-b border-border bg-muted/30 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                   <th className="px-6 py-4">Worker Name</th>
-                  <th className="px-6 py-4">Telegram</th>
                   <th className="px-6 py-4">Course</th>
                   <th className="px-6 py-4">Status</th>
                   <th className="px-6 py-4">Completion Date</th>
@@ -428,9 +426,6 @@ export default function ReportsPage() {
                   <tr key={index} className="hover:bg-muted/20 transition-colors group">
                     <td className="px-6 py-4 font-semibold text-[#1B2A6B] dark:text-white">
                       {report.workerName}
-                    </td>
-                    <td className="px-6 py-4 font-mono text-xs text-muted-foreground">
-                      {report.telegramUsername ? `@${report.telegramUsername}` : "—"}
                     </td>
                     <td className="px-6 py-4 text-sm text-foreground">
                       {report.courseName}
@@ -513,9 +508,6 @@ export default function ReportsPage() {
                     <tr key={pr.id} className="hover:bg-muted/20 transition-colors">
                       <td className="px-6 py-4">
                         <p className="font-semibold text-sm text-[#1B2A6B] dark:text-white">{pr.workerName}</p>
-                        {pr.telegramUsername && (
-                          <p className="font-mono text-xs text-muted-foreground">@{pr.telegramUsername}</p>
-                        )}
                       </td>
                       <td className="px-6 py-4 text-sm text-foreground">{pr.courseName}</td>
                       <td className="px-6 py-4 text-sm text-muted-foreground max-w-[180px] truncate">

@@ -12,6 +12,7 @@ export const courses = pgTable("courses", {
   themeType: text("theme_type").default("preset").notNull(),
   themeValue: text("theme_value").default("linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)").notNull(),
   autoAssignNewWorkers: boolean("auto_assign_new_workers").notNull().default(false),
+  publishedAt: timestamp("published_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

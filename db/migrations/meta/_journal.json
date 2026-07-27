@@ -64,6 +64,13 @@
       "when": 1784931609478,
       "tag": "0008_add_worker_active_flag",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1785181123554,
+      "tag": "0009_add_course_published_at",
+      "breakpoints": true
     }
   ]
 }

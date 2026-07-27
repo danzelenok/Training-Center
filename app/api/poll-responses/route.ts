@@ -73,9 +73,9 @@ export async function GET(req: NextRequest) {
         courseId: pollResponses.courseId,
         workerId: pollResponses.workerId,
         courseName: courses.title,
+        displayName: workers.displayName,
         firstName: workers.firstName,
         lastName: workers.lastName,
-        telegramUsername: workers.telegramUsername,
         question: sql<string>`cast(${slides.content}->>'heading' as text)`,
       })
       .from(pollResponses)
@@ -94,7 +94,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(
       results.map((r) => ({
         ...r,
-        workerName: [r.firstName, r.lastName].filter(Boolean).join(" ") || r.telegramUsername || "Unknown",
+        workerName: r.displayName || [r.firstName, r.lastName].filter(Boolean).join(" ") || "Unnamed Worker",
       }))
     );
   } catch (error: any) {

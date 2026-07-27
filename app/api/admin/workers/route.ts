@@ -1,11 +1,16 @@
 import { db } from "@/db";
 import { workers, invites, courses, assignments } from "@/db/schema";
 import { auth } from "@clerk/nextjs/server";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 
 export const dynamic = "force-dynamic";
+
+// A course only counts as "this week's training" for a brand-new worker if it
+// was published within a week of the worker's hire date in either direction.
+// Older courses are picked up later through a regular re-assignment cycle instead.
+const AUTO_ASSIGN_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 function generateInviteToken(): string {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -66,17 +71,23 @@ export async function POST(req: Request) {
       })
       .returning();
 
-    // 2. Auto-assign published courses that have autoAssignNewWorkers = true
+    // 2. Auto-assign published courses that have autoAssignNewWorkers = true,
+    // but only ones published within a week of this worker's hire date.
     const autoAssignCourses = await db
-      .select({ id: courses.id })
+      .select({ id: courses.id, publishedAt: courses.publishedAt, createdAt: courses.createdAt })
       .from(courses)
-      .where(eq(courses.autoAssignNewWorkers, true));
+      .where(and(eq(courses.autoAssignNewWorkers, true), eq(courses.status, "published")));
 
-    if (autoAssignCourses.length > 0) {
+    const eligibleCourses = autoAssignCourses.filter((c) => {
+      const publishDate = c.publishedAt ?? c.createdAt;
+      return Math.abs(worker.createdAt.getTime() - new Date(publishDate).getTime()) <= AUTO_ASSIGN_WINDOW_MS;
+    });
+
+    if (eligibleCourses.length > 0) {
       await db
         .insert(assignments)
         .values(
-          autoAssignCourses.map((c) => ({
+          eligibleCourses.map((c) => ({
             workerId: worker.id,
             courseId: c.id,
           }))

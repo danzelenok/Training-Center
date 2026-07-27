@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { progress, workers, courses } from "@/db/schema";
+import { progress, workers, courses, assignments } from "@/db/schema";
 import { auth } from "@clerk/nextjs/server";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, or, isNull, sql } from "drizzle-orm";
 
 export const dynamic = "force-dynamic";
 
@@ -19,38 +19,48 @@ export async function GET(req: NextRequest) {
 
     const conditions = [];
     if (courseId) {
-      conditions.push(eq(progress.courseId, courseId));
+      conditions.push(eq(assignments.courseId, courseId));
     }
-    if (status) {
-      conditions.push(eq(progress.status, status as "not_started" | "in_progress" | "completed"));
+    if (status === "not_started") {
+      conditions.push(or(isNull(progress.status), eq(progress.status, "not_started")));
+    } else if (status) {
+      conditions.push(eq(progress.status, status as "in_progress" | "completed"));
     }
 
+    // Base the report on assignments (left-joined with progress) rather than
+    // progress alone, so workers who were assigned a course but haven't
+    // started it yet still show up here — matching what the Workers page shows.
     const results = await db
       .select({
-        id: progress.id,
+        id: assignments.id,
+        workerId: workers.id,
+        displayName: workers.displayName,
         firstName: workers.firstName,
         lastName: workers.lastName,
-        telegramUsername: workers.telegramUsername,
         courseName: courses.title,
         status: progress.status,
         completedAt: progress.completedAt,
         quizScore: progress.quizScore,
       })
-      .from(progress)
-      .innerJoin(workers, eq(progress.workerId, workers.id))
-      .innerJoin(courses, eq(progress.courseId, courses.id))
+      .from(assignments)
+      .innerJoin(workers, eq(assignments.workerId, workers.id))
+      .innerJoin(courses, eq(assignments.courseId, courses.id))
+      .leftJoin(
+        progress,
+        and(eq(progress.workerId, assignments.workerId), eq(progress.courseId, assignments.courseId))
+      )
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(sql`${progress.completedAt} DESC NULLS LAST`);
 
     const formatted = results.map((row) => {
       const nameParts = [row.firstName, row.lastName].filter(Boolean);
-      const workerName = nameParts.length > 0 ? nameParts.join(" ") : "Unknown";
+      const workerName = row.displayName || (nameParts.length > 0 ? nameParts.join(" ") : "Unnamed Worker");
       return {
         id: row.id,
+        workerId: row.workerId,
         workerName,
-        telegramUsername: row.telegramUsername,
         courseName: row.courseName,
-        status: row.status,
+        status: row.status ?? "not_started",
         completedAt: row.completedAt,
         quizScore: row.quizScore,
       };

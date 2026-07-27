@@ -87,6 +87,7 @@ export async function POST(
       .update(courses)
       .set({
         status: "published",
+        ...(isFirstPublish ? { publishedAt: new Date() } : {}),
         ...(isFirstPublish && assignTo === "all" ? { autoAssignNewWorkers: true } : {}),
         updatedAt: new Date(),
       })
