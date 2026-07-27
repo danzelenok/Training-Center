@@ -101,9 +101,12 @@ function CourseEditorContent() {
     setPublishAssignTo,
     publishWorkerIds,
     setPublishWorkerIds,
+    publishTeamIds,
+    setPublishTeamIds,
     publishNotifyTelegram,
     setPublishNotifyTelegram,
     publishWorkersList,
+    publishTeamsList,
     publishWorkersLoading,
     confirmPublish,
 
@@ -644,7 +647,7 @@ function CourseEditorContent() {
               </p>
               <RadioGroup
                 value={publishAssignTo}
-                onValueChange={(v) => setPublishAssignTo(v as "all" | "specific")}
+                onValueChange={(v) => setPublishAssignTo(v as "all" | "teams" | "specific")}
                 className="space-y-2"
               >
                 <label className="flex items-start gap-3 rounded-xl border border-border p-3 cursor-pointer hover:bg-muted/30 transition-colors">
@@ -654,6 +657,44 @@ function CourseEditorContent() {
                     <p className="text-[10px] text-muted-foreground mt-0.5">
                       Every registered worker gets access immediately. Future workers will also be auto-assigned.
                     </p>
+                  </div>
+                </label>
+                <label className="flex items-start gap-3 rounded-xl border border-border p-3 cursor-pointer hover:bg-muted/30 transition-colors">
+                  <RadioGroupItem value="teams" className="mt-0.5" />
+                  <div className="w-full">
+                    <p className="text-xs font-bold text-foreground">Team(s)</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">
+                      Only members of the selected team(s) will see this course. Workers added to
+                      these teams later will get it automatically too.
+                    </p>
+                    {publishAssignTo === "teams" && (
+                      <div className="mt-3 max-h-40 overflow-y-auto space-y-1 pr-1">
+                        {publishWorkersLoading ? (
+                          <p className="text-[10px] text-muted-foreground">Loading teams…</p>
+                        ) : publishTeamsList.length === 0 ? (
+                          <p className="text-[10px] text-muted-foreground">
+                            No teams yet — create one from the Teams page first.
+                          </p>
+                        ) : (
+                          publishTeamsList.map((t) => (
+                            <label key={t.id} className="flex items-center gap-2 cursor-pointer">
+                              <Checkbox
+                                checked={publishTeamIds.includes(t.id)}
+                                onCheckedChange={(checked) =>
+                                  setPublishTeamIds((prev) =>
+                                    checked ? [...prev, t.id] : prev.filter((x) => x !== t.id)
+                                  )
+                                }
+                              />
+                              <span className="text-xs text-foreground">
+                                {t.label}{" "}
+                                <span className="text-muted-foreground">({t.memberCount})</span>
+                              </span>
+                            </label>
+                          ))
+                        )}
+                      </div>
+                    )}
                   </div>
                 </label>
                 <label className="flex items-start gap-3 rounded-xl border border-border p-3 cursor-pointer hover:bg-muted/30 transition-colors">
@@ -727,7 +768,10 @@ function CourseEditorContent() {
             </Button>
             <Button
               onClick={confirmPublish}
-              disabled={publishAssignTo === "specific" && publishWorkerIds.length === 0}
+              disabled={
+                (publishAssignTo === "specific" && publishWorkerIds.length === 0) ||
+                (publishAssignTo === "teams" && publishTeamIds.length === 0)
+              }
               className="bg-[#C8D400] hover:bg-[#B6C200] text-[#1B2A6B] font-extrabold border-0 text-xs px-4"
             >
               <Send className="h-4 w-4 mr-1.5" />

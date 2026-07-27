@@ -55,10 +55,12 @@ interface CourseEditorContextType {
   aiGenerating: boolean;
 
   publishDialogOpen: boolean;
-  publishAssignTo: "all" | "specific";
+  publishAssignTo: "all" | "teams" | "specific";
   publishWorkerIds: string[];
+  publishTeamIds: string[];
   publishNotifyTelegram: boolean;
   publishWorkersList: { id: string; label: string }[];
+  publishTeamsList: { id: string; label: string; memberCount: number }[];
   publishWorkersLoading: boolean;
 
   setSlidesList: React.Dispatch<React.SetStateAction<Slide[]>>;
@@ -77,8 +79,9 @@ interface CourseEditorContextType {
   setAiUseLNI: (value: boolean) => void;
 
   setPublishDialogOpen: (open: boolean) => void;
-  setPublishAssignTo: (value: "all" | "specific") => void;
+  setPublishAssignTo: (value: "all" | "teams" | "specific") => void;
   setPublishWorkerIds: React.Dispatch<React.SetStateAction<string[]>>;
+  setPublishTeamIds: React.Dispatch<React.SetStateAction<string[]>>;
   setPublishNotifyTelegram: (value: boolean) => void;
   confirmPublish: () => Promise<void>;
 
@@ -237,10 +240,12 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
 
   // Publish dialog states
   const [publishDialogOpen, setPublishDialogOpen] = useState(false);
-  const [publishAssignTo, setPublishAssignTo] = useState<"all" | "specific">("all");
+  const [publishAssignTo, setPublishAssignTo] = useState<"all" | "teams" | "specific">("all");
   const [publishWorkerIds, setPublishWorkerIds] = useState<string[]>([]);
+  const [publishTeamIds, setPublishTeamIds] = useState<string[]>([]);
   const [publishNotifyTelegram, setPublishNotifyTelegram] = useState(true);
   const [publishWorkersList, setPublishWorkersList] = useState<{ id: string; label: string }[]>([]);
+  const [publishTeamsList, setPublishTeamsList] = useState<{ id: string; label: string; memberCount: number }[]>([]);
   const [publishWorkersLoading, setPublishWorkersLoading] = useState(false);
 
   // Fetch Course details & slides
@@ -679,24 +684,36 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
     // Reset dialog state
     setPublishAssignTo("all");
     setPublishWorkerIds([]);
+    setPublishTeamIds([]);
     setPublishNotifyTelegram(true);
 
-    // Fetch workers list for the "specific" picker
+    // Fetch workers (for "specific") and teams (for "teams") pickers
     setPublishWorkersLoading(true);
     setPublishDialogOpen(true);
     try {
-      const res = await fetch("/api/workers");
-      if (res.ok) {
-        const data = await res.json();
+      const [workersRes, teamsRes] = await Promise.all([
+        fetch("/api/workers"),
+        fetch("/api/teams"),
+      ]);
+      if (workersRes.ok) {
+        const data = await workersRes.json();
         setPublishWorkersList(
-          data.map((w: any) => ({
-            id: w.id,
-            label: w.displayName || [w.firstName, w.lastName].filter(Boolean).join(" ") || w.telegramUsername || w.telegramUserId,
-          }))
+          (data.workers || [])
+            .filter((w: any) => w.active)
+            .map((w: any) => ({
+              id: w.id,
+              label: w.displayName || [w.firstName, w.lastName].filter(Boolean).join(" ") || w.telegramUsername || w.telegramUserId,
+            }))
+        );
+      }
+      if (teamsRes.ok) {
+        const data = await teamsRes.json();
+        setPublishTeamsList(
+          data.map((t: any) => ({ id: t.id, label: t.name, memberCount: t.memberCount }))
         );
       }
     } catch {
-      // Non-fatal — worker list just stays empty, user can still use "all"
+      // Non-fatal — pickers just stay empty, user can still use "all"
     } finally {
       setPublishWorkersLoading(false);
     }
@@ -717,6 +734,7 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
         body: JSON.stringify({
           assignTo: publishAssignTo,
           workerIds: publishAssignTo === "specific" ? publishWorkerIds : [],
+          teamIds: publishAssignTo === "teams" ? publishTeamIds : [],
           notifyWorkers: publishNotifyTelegram,
         }),
       });
@@ -879,12 +897,15 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
         publishDialogOpen,
         publishAssignTo,
         publishWorkerIds,
+        publishTeamIds,
         publishNotifyTelegram,
         publishWorkersList,
+        publishTeamsList,
         publishWorkersLoading,
         setPublishDialogOpen,
         setPublishAssignTo,
         setPublishWorkerIds,
+        setPublishTeamIds,
         setPublishNotifyTelegram,
         confirmPublish,
       }}

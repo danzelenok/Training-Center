@@ -1,8 +1,9 @@
 import { db } from "@/db";
-import { workers, progress, courses, pollResponses, slides, assignments } from "@/db/schema";
+import { workers, progress, courses, pollResponses, slides, assignments, workerTeams, teams } from "@/db/schema";
 import { auth } from "@clerk/nextjs/server";
-import { and, count, eq, sql } from "drizzle-orm";
+import { and, count, eq, inArray, sql } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
+import { autoAssignTeamCoursesForNewMemberships } from "@/lib/teamAutoAssign";
 
 export const dynamic = "force-dynamic";
 
@@ -82,9 +83,16 @@ export async function GET(
       .where(eq(pollResponses.workerId, id))
       .orderBy(pollResponses.courseId, pollResponses.slideIndex);
 
+    const workerTeamsList = await db
+      .select({ id: teams.id, name: teams.name })
+      .from(workerTeams)
+      .innerJoin(teams, eq(teams.id, workerTeams.teamId))
+      .where(eq(workerTeams.workerId, id));
+
     return NextResponse.json({
       ...worker[0],
       telegramUserId: worker[0].telegramUserId?.toString() ?? null,
+      teams: workerTeamsList,
       courses: courseProgress.map((r) => ({
         assignmentId: r.assignmentId,
         progressId: r.progressId ?? null,
@@ -152,17 +160,52 @@ export async function PATCH(
       updates.active = body.active;
     }
 
-    if (Object.keys(updates).length === 0) {
+    const teamIds: string[] | null = Array.isArray(body.teamIds) ? body.teamIds : null;
+
+    if (Object.keys(updates).length === 0 && teamIds === null) {
       return NextResponse.json({ error: "No valid fields to update." }, { status: 400 });
     }
 
-    const [updated] = await db
-      .update(workers)
-      .set(updates)
-      .where(eq(workers.id, id))
-      .returning();
+    let updated = null;
+    if (Object.keys(updates).length > 0) {
+      [updated] = await db
+        .update(workers)
+        .set(updates)
+        .where(eq(workers.id, id))
+        .returning();
+      if (!updated) return new NextResponse("Not found", { status: 404 });
+    } else {
+      [updated] = await db.select().from(workers).where(eq(workers.id, id)).limit(1);
+      if (!updated) return new NextResponse("Not found", { status: 404 });
+    }
 
-    if (!updated) return new NextResponse("Not found", { status: 404 });
+    if (teamIds !== null) {
+      const existing = await db
+        .select({ teamId: workerTeams.teamId })
+        .from(workerTeams)
+        .where(eq(workerTeams.workerId, id));
+      const existingIds = new Set(existing.map((r) => r.teamId));
+
+      const toAdd = teamIds.filter((tid) => !existingIds.has(tid));
+      const toRemove = [...existingIds].filter((tid) => !teamIds.includes(tid));
+
+      if (toRemove.length > 0) {
+        await db
+          .delete(workerTeams)
+          .where(and(eq(workerTeams.workerId, id), inArray(workerTeams.teamId, toRemove)));
+      }
+
+      if (toAdd.length > 0) {
+        await db
+          .insert(workerTeams)
+          .values(toAdd.map((teamId) => ({ workerId: id, teamId })))
+          .onConflictDoNothing({ target: [workerTeams.workerId, workerTeams.teamId] });
+
+        await autoAssignTeamCoursesForNewMemberships(
+          toAdd.map((teamId) => ({ workerId: id, teamId }))
+        );
+      }
+    }
 
     return NextResponse.json({
       ...updated,

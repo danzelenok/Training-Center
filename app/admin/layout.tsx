@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   BookOpen,
   Users,
+  Users2,
   FileBarChart2,
   FolderOpen,
   Menu,
@@ -21,6 +22,7 @@ const navigation = [
   { name: "Courses", href: "/admin/courses", icon: BookOpen },
   { name: "Media Library", href: "/admin/media", icon: FolderOpen },
   { name: "Workers", href: "/admin/workers", icon: Users },
+  { name: "Teams", href: "/admin/teams", icon: Users2 },
   { name: "Reports", href: "/admin/reports", icon: FileBarChart2 },
 ];
 

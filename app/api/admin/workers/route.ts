@@ -1,9 +1,10 @@
 import { db } from "@/db";
-import { workers, invites, courses, assignments } from "@/db/schema";
+import { workers, invites, courses, assignments, workerTeams } from "@/db/schema";
 import { auth } from "@clerk/nextjs/server";
 import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import crypto from "crypto";
+import { autoAssignTeamCoursesForNewMemberships } from "@/lib/teamAutoAssign";
 
 export const dynamic = "force-dynamic";
 
@@ -58,6 +59,7 @@ export async function POST(req: Request) {
     const nameParts = name.split(/\s+/);
     const firstName = nameParts[0] || null;
     const lastName = nameParts.length > 1 ? nameParts.slice(1).join(" ") : null;
+    const teamIds: string[] = Array.isArray(body.teamIds) ? body.teamIds : [];
 
     // 1. Create worker
     const [worker] = await db
@@ -70,6 +72,18 @@ export async function POST(req: Request) {
         phone: phone || null,
       })
       .returning();
+
+    // 1.5. Assign to teams, and auto-assign any courses those teams grant new members
+    if (teamIds.length > 0) {
+      await db
+        .insert(workerTeams)
+        .values(teamIds.map((teamId) => ({ workerId: worker.id, teamId })))
+        .onConflictDoNothing({ target: [workerTeams.workerId, workerTeams.teamId] });
+
+      await autoAssignTeamCoursesForNewMemberships(
+        teamIds.map((teamId) => ({ workerId: worker.id, teamId }))
+      );
+    }
 
     // 2. Auto-assign published courses that have autoAssignNewWorkers = true,
     // but only ones published within a week of this worker's hire date.

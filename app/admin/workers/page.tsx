@@ -54,6 +54,13 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Checkbox } from "@/components/ui/checkbox";
+
+interface TeamRef {
+  id: string;
+  name: string;
+}
 
 interface Worker {
   id: string;
@@ -67,6 +74,7 @@ interface Worker {
   createdAt: string;
   updatedAt: string;
   coursesAssigned: number;
+  teams: TeamRef[];
 }
 
 interface Course {
@@ -125,12 +133,16 @@ const STATUS_CONFIG = {
 export default function WorkersPage() {
   const [workersList, setWorkersList] = useState<Worker[]>([]);
   const [publishedCourses, setPublishedCourses] = useState<Course[]>([]);
+  const [teamsList, setTeamsList] = useState<TeamRef[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [statusTab, setStatusTab] = useState<"active" | "deactivated">("active");
 
   const [totalEnrolled, setTotalEnrolled] = useState(0);
   const [activeThisWeek, setActiveThisWeek] = useState(0);
   const [pendingModules, setPendingModules] = useState(0);
+  const [deactivatedCount, setDeactivatedCount] = useState(0);
+  const [savingWorkerTeams, setSavingWorkerTeams] = useState(false);
 
   const [assigningWorkerId, setAssigningWorkerId] = useState<string | null>(null);
 
@@ -171,16 +183,12 @@ export default function WorkersPage() {
       const res = await fetch("/api/workers");
       if (!res.ok) throw new Error("Failed to fetch workers");
 
-      const total = res.headers.get("x-total-count");
-      const active = res.headers.get("x-active-this-week");
-      const pending = res.headers.get("x-pending-modules");
-
-      if (total !== null) setTotalEnrolled(parseInt(total, 10));
-      if (active !== null) setActiveThisWeek(parseInt(active, 10));
-      if (pending !== null) setPendingModules(parseInt(pending, 10));
-
       const data = await res.json();
-      setWorkersList(data);
+      setWorkersList(data.workers);
+      setTotalEnrolled(data.totalCount ?? 0);
+      setActiveThisWeek(data.activeThisWeek ?? 0);
+      setPendingModules(data.pendingModules ?? 0);
+      setDeactivatedCount(data.deactivatedCount ?? 0);
     } catch (err: any) {
       toast.error(err.message || "Could not load workers");
     }
@@ -194,6 +202,17 @@ export default function WorkersPage() {
       setPublishedCourses(data.filter((c: any) => c.status === "published"));
     } catch (err: any) {
       toast.error(err.message || "Could not load courses");
+    }
+  };
+
+  const fetchTeams = async () => {
+    try {
+      const res = await fetch("/api/teams");
+      if (!res.ok) throw new Error("Failed to fetch teams");
+      const data = await res.json();
+      setTeamsList(data);
+    } catch (err: any) {
+      toast.error(err.message || "Could not load teams");
     }
   };
 
@@ -252,7 +271,7 @@ export default function WorkersPage() {
   useEffect(() => {
     const init = async () => {
       setLoading(true);
-      await Promise.all([fetchWorkers(), fetchCourses()]);
+      await Promise.all([fetchWorkers(), fetchCourses(), fetchTeams()]);
       setLoading(false);
     };
     init();
@@ -467,6 +486,40 @@ export default function WorkersPage() {
     }
   };
 
+  const handleToggleWorkerTeam = async (teamId: string, checked: boolean) => {
+    if (!selectedWorker) return;
+    const currentIds = selectedWorker.teams.map((t) => t.id);
+    const nextIds = checked ? [...currentIds, teamId] : currentIds.filter((id) => id !== teamId);
+
+    setSavingWorkerTeams(true);
+    try {
+      const res = await fetch(`/api/workers/${selectedWorker.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ teamIds: nextIds }),
+      });
+      if (!res.ok) throw new Error("Failed to update teams");
+
+      const team = teamsList.find((t) => t.id === teamId);
+      setSelectedWorker((prev) =>
+        prev
+          ? {
+              ...prev,
+              teams: checked
+                ? [...prev.teams, team ?? { id: teamId, name: "" }]
+                : prev.teams.filter((t) => t.id !== teamId),
+            }
+          : prev
+      );
+      await fetchWorkers();
+      toast.success(checked ? "Added to team" : "Removed from team");
+    } catch (err: any) {
+      toast.error(err.message || "Could not update teams");
+    } finally {
+      setSavingWorkerTeams(false);
+    }
+  };
+
   const handleDeleteWorker = async () => {
     if (!selectedWorker) return;
     if (!window.confirm(`Delete ${workerDisplayName(selectedWorker)}? This cannot be undone.`)) return;
@@ -486,6 +539,9 @@ export default function WorkersPage() {
   };
 
   const filteredWorkers = workersList.filter((w) => {
+    if (statusTab === "active" && !w.active) return false;
+    if (statusTab === "deactivated" && w.active) return false;
+
     const displayName = w.displayName?.toLowerCase() || "";
     const firstName = w.firstName?.toLowerCase() || "";
     const lastName = w.lastName?.toLowerCase() || "";
@@ -587,6 +643,21 @@ export default function WorkersPage() {
               className="pl-9 bg-background border-border text-foreground rounded-xl placeholder-muted-foreground focus-visible:ring-primary h-10 text-xs"
             />
           </div>
+          <Tabs value={statusTab} onValueChange={(v) => setStatusTab(v as "active" | "deactivated")}>
+            <TabsList>
+              <TabsTrigger value="active" className="text-xs gap-1.5">
+                Active
+              </TabsTrigger>
+              <TabsTrigger value="deactivated" className="text-xs gap-1.5">
+                Deactivated
+                {deactivatedCount > 0 && (
+                  <span className="inline-flex items-center justify-center rounded-full bg-muted-foreground/20 px-1.5 text-[10px] font-bold">
+                    {deactivatedCount}
+                  </span>
+                )}
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
         </div>
 
         {/* Workers Table */}
@@ -626,6 +697,7 @@ export default function WorkersPage() {
                 <tr className="border-b border-border bg-muted/30 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                   <th className="px-6 py-4">Name</th>
                   <th className="px-6 py-4">Status</th>
+                  <th className="px-6 py-4">Teams</th>
                   <th className="px-6 py-4">Created Date</th>
                   <th className="px-6 py-4">Courses Assigned</th>
                   <th className="px-6 py-4 text-right">Actions</th>
@@ -662,6 +734,22 @@ export default function WorkersPage() {
                         )}
                       </div>
                     </td>
+                    <td className="px-6 py-4">
+                      <div className="flex flex-wrap gap-1 max-w-[160px]">
+                        {worker.teams.length === 0 ? (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        ) : (
+                          worker.teams.map((t) => (
+                            <span
+                              key={t.id}
+                              className="inline-flex items-center px-2 py-0.5 rounded-full bg-[#1B2A6B]/10 text-[#1B2A6B] dark:bg-[#C8D400]/10 dark:text-[#C8D400] text-[10px] font-semibold border border-border"
+                            >
+                              {t.name}
+                            </span>
+                          ))
+                        )}
+                      </div>
+                    </td>
                     <td className="px-6 py-4 text-muted-foreground text-xs">
                       {format(new Date(worker.createdAt), "yyyy-MM-dd HH:mm")}
                     </td>
@@ -689,25 +777,29 @@ export default function WorkersPage() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="w-56 bg-card border border-border text-foreground rounded-xl shadow-lg p-1 z-50">
-                          <div className="px-2 py-1.5 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-                            Course Assignment
-                          </div>
-                          {publishedCourses.length === 0 ? (
-                            <div className="p-2 text-xs text-muted-foreground text-center">
-                              No published courses available
-                            </div>
-                          ) : (
-                            publishedCourses.map((course) => (
-                              <DropdownMenuItem
-                                key={course.id}
-                                onClick={() => handleAssignCourse(worker.id, course.id)}
-                                className="cursor-pointer hover:bg-muted text-xs rounded-lg px-3 py-2 transition-colors font-medium"
-                              >
-                                {course.title}
-                              </DropdownMenuItem>
-                            ))
+                          {worker.active && (
+                            <>
+                              <div className="px-2 py-1.5 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                                Course Assignment
+                              </div>
+                              {publishedCourses.length === 0 ? (
+                                <div className="p-2 text-xs text-muted-foreground text-center">
+                                  No published courses available
+                                </div>
+                              ) : (
+                                publishedCourses.map((course) => (
+                                  <DropdownMenuItem
+                                    key={course.id}
+                                    onClick={() => handleAssignCourse(worker.id, course.id)}
+                                    className="cursor-pointer hover:bg-muted text-xs rounded-lg px-3 py-2 transition-colors font-medium"
+                                  >
+                                    {course.title}
+                                  </DropdownMenuItem>
+                                ))
+                              )}
+                              <DropdownMenuSeparator className="bg-border" />
+                            </>
                           )}
-                          <DropdownMenuSeparator className="bg-border" />
                           <DropdownMenuItem
                             onClick={() => handleReissueInvite(worker)}
                             className="cursor-pointer hover:bg-muted text-xs rounded-lg px-3 py-2 transition-colors font-semibold text-blue-400 gap-2"
@@ -1059,6 +1151,42 @@ export default function WorkersPage() {
                 })}
               </div>
 
+              {/* Teams */}
+              <div className="space-y-3">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                  <Users className="h-3.5 w-3.5" />
+                  Teams
+                </h3>
+                {teamsList.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
+                    No teams yet. Create one from the Teams page.
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {teamsList.map((team) => {
+                      const checked = selectedWorker.teams.some((t) => t.id === team.id);
+                      return (
+                        <label
+                          key={team.id}
+                          className={`flex items-center gap-2 rounded-xl border px-3 py-1.5 cursor-pointer transition-colors ${
+                            checked
+                              ? "border-[#C8D400]/50 bg-[#C8D400]/10"
+                              : "border-border hover:bg-muted/30"
+                          }`}
+                        >
+                          <Checkbox
+                            checked={checked}
+                            disabled={savingWorkerTeams}
+                            onCheckedChange={(v) => handleToggleWorkerTeam(team.id, v === true)}
+                          />
+                          <span className="text-xs font-medium text-foreground">{team.name}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
               {/* Courses list */}
               <div className="space-y-3">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
@@ -1197,44 +1325,46 @@ export default function WorkersPage() {
               </div>
 
               {/* Assign new course from sheet */}
-              <div className="pt-2 border-t border-border">
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={assigningWorkerId === selectedWorker.id}
-                      className="w-full text-[#C8D400] border-[#C8D400]/40 hover:bg-[#C8D400]/10 font-bold text-xs gap-2 rounded-xl"
-                    >
-                      {assigningWorkerId === selectedWorker.id ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              {selectedWorker.active && (
+                <div className="pt-2 border-t border-border">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={assigningWorkerId === selectedWorker.id}
+                        className="w-full text-[#C8D400] border-[#C8D400]/40 hover:bg-[#C8D400]/10 font-bold text-xs gap-2 rounded-xl"
+                      >
+                        {assigningWorkerId === selectedWorker.id ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <>
+                            <BookOpen className="h-3.5 w-3.5" />
+                            Assign Course <ChevronDown className="h-3 w-3" />
+                          </>
+                        )}
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent className="w-56 bg-card border border-border text-foreground rounded-xl shadow-lg p-1 z-50">
+                      {publishedCourses.length === 0 ? (
+                        <div className="p-3 text-xs text-muted-foreground text-center">
+                          No published courses available
+                        </div>
                       ) : (
-                        <>
-                          <BookOpen className="h-3.5 w-3.5" />
-                          Assign Course <ChevronDown className="h-3 w-3" />
-                        </>
+                        publishedCourses.map((course) => (
+                          <DropdownMenuItem
+                            key={course.id}
+                            onClick={() => handleAssignCourse(selectedWorker.id, course.id)}
+                            className="cursor-pointer hover:bg-muted text-xs rounded-lg px-3 py-2 transition-colors font-medium"
+                          >
+                            {course.title}
+                          </DropdownMenuItem>
+                        ))
                       )}
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent className="w-56 bg-card border border-border text-foreground rounded-xl shadow-lg p-1 z-50">
-                    {publishedCourses.length === 0 ? (
-                      <div className="p-3 text-xs text-muted-foreground text-center">
-                        No published courses available
-                      </div>
-                    ) : (
-                      publishedCourses.map((course) => (
-                        <DropdownMenuItem
-                          key={course.id}
-                          onClick={() => handleAssignCourse(selectedWorker.id, course.id)}
-                          className="cursor-pointer hover:bg-muted text-xs rounded-lg px-3 py-2 transition-colors font-medium"
-                        >
-                          {course.title}
-                        </DropdownMenuItem>
-                      ))
-                    )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              )}
 
               <div className="pt-2 border-t border-border">
                 <Button

@@ -1,7 +1,7 @@
 import { db } from "@/db";
-import { courses, slides, workers, assignments } from "@/db/schema";
+import { courses, slides, workers, assignments, workerTeams, courseAutoAssignTeams } from "@/db/schema";
 import { auth } from "@clerk/nextjs/server";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { sendCourseAnnouncementDMs } from "@/lib/bot";
 
@@ -17,8 +17,10 @@ export async function POST(
     }
 
     const body = await req.json().catch(() => ({}));
-    const assignTo: "all" | "specific" = body.assignTo === "specific" ? "specific" : "all";
+    const assignTo: "all" | "teams" | "specific" =
+      body.assignTo === "specific" ? "specific" : body.assignTo === "teams" ? "teams" : "all";
     const workerIds: string[] = Array.isArray(body.workerIds) ? body.workerIds : [];
+    const teamIds: string[] = Array.isArray(body.teamIds) ? body.teamIds : [];
     const notifyWorkers: boolean = body.notifyWorkers ?? body.notifyTelegram ?? true;
 
     // 1. Fetch the course
@@ -58,6 +60,25 @@ export async function POST(
             .values(allWorkers.map((w) => ({ workerId: w.id, courseId: id })))
             .onConflictDoNothing({ target: [assignments.workerId, assignments.courseId] });
         }
+      } else if (assignTo === "teams" && teamIds.length > 0) {
+        const teamWorkers = await db
+          .selectDistinct({ id: workers.id })
+          .from(workerTeams)
+          .innerJoin(workers, eq(workers.id, workerTeams.workerId))
+          .where(and(inArray(workerTeams.teamId, teamIds), eq(workers.active, true)));
+
+        if (teamWorkers.length > 0) {
+          await db
+            .insert(assignments)
+            .values(teamWorkers.map((w) => ({ workerId: w.id, courseId: id })))
+            .onConflictDoNothing({ target: [assignments.workerId, assignments.courseId] });
+        }
+
+        // Remember these teams so workers added to them later auto-assign too.
+        await db
+          .insert(courseAutoAssignTeams)
+          .values(teamIds.map((teamId) => ({ courseId: id, teamId })))
+          .onConflictDoNothing({ target: [courseAutoAssignTeams.courseId, courseAutoAssignTeams.teamId] });
       } else if (workerIds.length > 0) {
         await db
           .insert(assignments)
