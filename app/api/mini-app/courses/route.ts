@@ -16,7 +16,13 @@ export const GET = withTelegramAuth(async (_req, { worker }) => {
   const autoAssignCourses = await db
     .select({ id: courses.id, publishedAt: courses.publishedAt, createdAt: courses.createdAt })
     .from(courses)
-    .where(and(eq(courses.autoAssignNewWorkers, true), eq(courses.status, "published")));
+    .where(
+      and(
+        eq(courses.organizationId, worker.organizationId),
+        eq(courses.autoAssignNewWorkers, true),
+        eq(courses.status, "published")
+      )
+    );
 
   const eligibleCourses = autoAssignCourses.filter((c) => {
     const publishDate = c.publishedAt ?? c.createdAt;
@@ -39,7 +45,14 @@ export const GET = withTelegramAuth(async (_req, { worker }) => {
       currentSlideIndex: progress.currentSlideIndex,
     })
     .from(assignments)
-    .innerJoin(courses, and(eq(courses.id, assignments.courseId), eq(courses.status, "published")))
+    .innerJoin(
+      courses,
+      and(
+        eq(courses.id, assignments.courseId),
+        eq(courses.status, "published"),
+        eq(courses.organizationId, worker.organizationId)
+      )
+    )
     .leftJoin(
       progress,
       and(eq(progress.courseId, assignments.courseId), eq(progress.workerId, worker.id))

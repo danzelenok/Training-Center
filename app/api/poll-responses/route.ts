@@ -1,7 +1,7 @@
 import { db } from "@/db";
 import { pollResponses, workers, courses, slides } from "@/db/schema";
 import { withTelegramAuth } from "@/lib/telegram";
-import { auth } from "@clerk/nextjs/server";
+import { requireOrgId } from "@/lib/org";
 import { and, eq, sql } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -13,6 +13,14 @@ export const POST = withTelegramAuth(async (req, { worker }) => {
 
     if (!courseId) return new NextResponse("Missing courseId", { status: 400 });
     if (slideIndex === undefined) return new NextResponse("Missing slideIndex", { status: 400 });
+
+    // Write-time invariant: never record a poll response against a course outside the worker's organization
+    const [course] = await db
+      .select({ id: courses.id })
+      .from(courses)
+      .where(and(eq(courses.id, courseId), eq(courses.organizationId, worker.organizationId)))
+      .limit(1);
+    if (!course) return new NextResponse("Course not found", { status: 404 });
 
     const [existing] = await db
       .select({ id: pollResponses.id })
@@ -52,14 +60,14 @@ export const POST = withTelegramAuth(async (req, { worker }) => {
 // Query params: ?courseId=, ?workerId=
 export async function GET(req: NextRequest) {
   try {
-    const { userId } = await auth();
-    if (!userId) return new NextResponse("Unauthorized", { status: 401 });
+    const orgId = await requireOrgId().catch(() => null);
+    if (!orgId) return new NextResponse("Unauthorized", { status: 401 });
 
     const { searchParams } = new URL(req.url);
     const courseId = searchParams.get("courseId");
     const workerId = searchParams.get("workerId");
 
-    const conditions = [];
+    const conditions = [eq(workers.organizationId, orgId)];
     if (courseId) conditions.push(eq(pollResponses.courseId, courseId));
     if (workerId) conditions.push(eq(pollResponses.workerId, workerId));
 
@@ -88,7 +96,7 @@ export async function GET(req: NextRequest) {
           eq(slides.order, pollResponses.slideIndex)
         )
       )
-      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .where(and(...conditions))
       .orderBy(sql`${pollResponses.createdAt} DESC`);
 
     return NextResponse.json(

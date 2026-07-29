@@ -1,7 +1,7 @@
 import { db } from "@/db";
 import { courses, slides } from "@/db/schema";
-import { auth } from "@clerk/nextjs/server";
-import { eq, asc } from "drizzle-orm";
+import { requireOrgId } from "@/lib/org";
+import { eq, and, asc } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 export async function GET(
@@ -12,8 +12,8 @@ export async function GET(
     const { id } = await params;
 
     // Auth Check
-    const { userId } = await auth();
-    if (!userId) {
+    const orgId = await requireOrgId().catch(() => null);
+    if (!orgId) {
       return new NextResponse("Unauthorized", { status: 401 });
     }
 
@@ -21,7 +21,7 @@ export async function GET(
     const [course] = await db
       .select()
       .from(courses)
-      .where(eq(courses.id, id))
+      .where(and(eq(courses.id, id), eq(courses.organizationId, orgId)))
       .limit(1);
 
     if (!course) {

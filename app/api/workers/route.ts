@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { workers, assignments, progress, workerTeams, teams } from "@/db/schema";
-import { auth } from "@clerk/nextjs/server";
+import { requireOrgId } from "@/lib/org";
 import { desc, eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
@@ -8,8 +8,8 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const { userId } = await auth();
-    if (!userId) {
+    const orgId = await requireOrgId().catch(() => null);
+    if (!orgId) {
       return new NextResponse("Unauthorized", { status: 401 });
     }
 
@@ -31,13 +31,15 @@ export async function GET() {
       })
       .from(workers)
       .leftJoin(assignments, sql`${assignments.workerId} = ${workers.id}`)
+      .where(eq(workers.organizationId, orgId))
       .groupBy(workers.id)
       .orderBy(desc(workers.createdAt));
 
     const teamMemberships = await db
       .select({ workerId: workerTeams.workerId, teamId: teams.id, teamName: teams.name })
       .from(workerTeams)
-      .innerJoin(teams, eq(teams.id, workerTeams.teamId));
+      .innerJoin(teams, eq(teams.id, workerTeams.teamId))
+      .where(eq(teams.organizationId, orgId));
 
     const teamsByWorker = new Map<string, { id: string; name: string }[]>();
     for (const m of teamMemberships) {
@@ -60,7 +62,7 @@ export async function GET() {
       .select({ count: sql<number>`cast(count(distinct ${progress.workerId}) as int)` })
       .from(progress)
       .innerJoin(workers, eq(workers.id, progress.workerId))
-      .where(sql`${workers.active} = true and ${progress.updatedAt} >= now() - interval '7 days'`);
+      .where(sql`${workers.organizationId} = ${orgId} and ${workers.active} = true and ${progress.updatedAt} >= now() - interval '7 days'`);
 
     const activeThisWeek = activeThisWeekResult[0]?.count || 0;
 
@@ -75,7 +77,7 @@ export async function GET() {
         progress,
         sql`${progress.workerId} = ${assignments.workerId} and ${progress.courseId} = ${assignments.courseId}`
       )
-      .where(sql`${workers.active} = true and coalesce(${progress.status}, 'not_started') != 'completed'`);
+      .where(sql`${workers.organizationId} = ${orgId} and ${workers.active} = true and coalesce(${progress.status}, 'not_started') != 'completed'`);
 
     const pendingModules = pendingModulesResult[0]?.count || 0;
 

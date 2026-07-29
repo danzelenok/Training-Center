@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { progress, workers, courses, assignments } from "@/db/schema";
-import { auth } from "@clerk/nextjs/server";
+import { requireOrgId } from "@/lib/org";
 import { eq, and, or, isNull, sql } from "drizzle-orm";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   try {
-    const { userId } = await auth();
-    if (!userId) {
+    const orgId = await requireOrgId().catch(() => null);
+    if (!orgId) {
       return new NextResponse("Unauthorized", { status: 401 });
     }
 
@@ -17,12 +17,12 @@ export async function GET(req: NextRequest) {
     const courseId = searchParams.get("courseId");
     const status = searchParams.get("status");
 
-    const conditions = [];
+    const conditions = [eq(workers.organizationId, orgId)];
     if (courseId) {
       conditions.push(eq(assignments.courseId, courseId));
     }
     if (status === "not_started") {
-      conditions.push(or(isNull(progress.status), eq(progress.status, "not_started")));
+      conditions.push(or(isNull(progress.status), eq(progress.status, "not_started"))!);
     } else if (status) {
       conditions.push(eq(progress.status, status as "in_progress" | "completed"));
     }
@@ -49,7 +49,7 @@ export async function GET(req: NextRequest) {
         progress,
         and(eq(progress.workerId, assignments.workerId), eq(progress.courseId, assignments.courseId))
       )
-      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .where(and(...conditions)!)
       .orderBy(sql`${progress.completedAt} DESC NULLS LAST`);
 
     const formatted = results.map((row) => {

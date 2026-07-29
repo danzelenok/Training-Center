@@ -1,7 +1,7 @@
 import { db } from "@/db";
 import { teams, workerTeams, workers } from "@/db/schema";
-import { auth } from "@clerk/nextjs/server";
-import { eq } from "drizzle-orm";
+import { requireOrgId } from "@/lib/org";
+import { and, eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -11,12 +11,12 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { userId } = await auth();
-    if (!userId) return new NextResponse("Unauthorized", { status: 401 });
+    const orgId = await requireOrgId().catch(() => null);
+    if (!orgId) return new NextResponse("Unauthorized", { status: 401 });
 
     const { id } = await params;
 
-    const [team] = await db.select().from(teams).where(eq(teams.id, id)).limit(1);
+    const [team] = await db.select().from(teams).where(and(eq(teams.id, id), eq(teams.organizationId, orgId))).limit(1);
     if (!team) return new NextResponse("Not found", { status: 404 });
 
     const members = await db
@@ -43,8 +43,8 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { userId } = await auth();
-    if (!userId) return new NextResponse("Unauthorized", { status: 401 });
+    const orgId = await requireOrgId().catch(() => null);
+    if (!orgId) return new NextResponse("Unauthorized", { status: 401 });
 
     const { id } = await params;
     const body = await req.json().catch(() => ({}));
@@ -57,7 +57,7 @@ export async function PATCH(
     const [updated] = await db
       .update(teams)
       .set({ name, updatedAt: new Date() })
-      .where(eq(teams.id, id))
+      .where(and(eq(teams.id, id), eq(teams.organizationId, orgId)))
       .returning();
 
     if (!updated) return new NextResponse("Not found", { status: 404 });
@@ -76,14 +76,14 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { userId } = await auth();
-  if (!userId) return new NextResponse("Unauthorized", { status: 401 });
+  const orgId = await requireOrgId().catch(() => null);
+  if (!orgId) return new NextResponse("Unauthorized", { status: 401 });
 
   const { id } = await params;
 
   // Cascades worker_teams / course_auto_assign_teams rows only — assignments
   // and progress history for former members are untouched.
-  await db.delete(teams).where(eq(teams.id, id));
+  await db.delete(teams).where(and(eq(teams.id, id), eq(teams.organizationId, orgId)));
 
   return NextResponse.json({ success: true });
 }

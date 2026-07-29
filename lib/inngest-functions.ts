@@ -50,6 +50,16 @@ function splitDialogueLinesBySlot(allLines: any[]): { slot0: any[]; slot1: any[]
   };
 }
 
+async function getCourseOrganizationId(courseId: string): Promise<string> {
+  const [course] = await db
+    .select({ organizationId: courses.organizationId })
+    .from(courses)
+    .where(eq(courses.id, courseId))
+    .limit(1);
+  if (!course) throw new Error(`Course ${courseId} not found`);
+  return course.organizationId;
+}
+
 async function checkAndFinalizeCourse(courseId: string) {
   await db
     .update(courses)
@@ -258,6 +268,7 @@ export const generateSlideAssets = inngest.createFunction(
                 const publicUrl = await uploadToR2(buffer, r2Key, "audio/mpeg");
 
                 await db.insert(mediaFiles).values({
+                  organizationId: await getCourseOrganizationId(courseId),
                   r2Key,
                   url: publicUrl,
                   fileName,
@@ -476,6 +487,7 @@ export const regenerateSingleSlideAsset = inngest.createFunction(
             const publicUrl = await uploadToR2(buffer, r2Key, "audio/mpeg");
 
             await db.insert(mediaFiles).values({
+              organizationId: await getCourseOrganizationId(courseId),
               r2Key,
               url: publicUrl,
               fileName,
@@ -605,6 +617,7 @@ export const pollHeygenJobStatus = inngest.createFunction(
         console.log(`[HeyGen Poll] R2 upload for role=${role ?? "legacy"} took ${Date.now() - uploadStart}ms → ${publicUrl}`);
 
         await db.insert(mediaFiles).values({
+          organizationId: await getCourseOrganizationId(courseId),
           r2Key,
           url: publicUrl,
           fileName,

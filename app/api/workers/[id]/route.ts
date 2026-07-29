@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { workers, progress, courses, pollResponses, slides, assignments, workerTeams, teams, workerStatusEvents } from "@/db/schema";
-import { auth } from "@clerk/nextjs/server";
+import { requireOrgId } from "@/lib/org";
 import { and, count, eq, inArray, sql } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { autoAssignTeamCoursesForNewMemberships } from "@/lib/teamAutoAssign";
@@ -13,15 +13,15 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { userId } = await auth();
-    if (!userId) return new NextResponse("Unauthorized", { status: 401 });
+    const orgId = await requireOrgId().catch(() => null);
+    if (!orgId) return new NextResponse("Unauthorized", { status: 401 });
 
     const { id } = await params;
 
     const worker = await db
       .select()
       .from(workers)
-      .where(eq(workers.id, id))
+      .where(and(eq(workers.id, id), eq(workers.organizationId, orgId)))
       .limit(1);
 
     if (!worker[0]) return new NextResponse("Not found", { status: 404 });
@@ -127,10 +127,17 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { userId } = await auth();
-    if (!userId) return new NextResponse("Unauthorized", { status: 401 });
+    const orgId = await requireOrgId().catch(() => null);
+    if (!orgId) return new NextResponse("Unauthorized", { status: 401 });
 
     const { id } = await params;
+    const [ownedWorker] = await db
+      .select({ id: workers.id })
+      .from(workers)
+      .where(and(eq(workers.id, id), eq(workers.organizationId, orgId)))
+      .limit(1);
+    if (!ownedWorker) return new NextResponse("Not found", { status: 404 });
+
     const body = await req.json().catch(() => ({}));
 
     const updates: Partial<typeof workers.$inferInsert> = {};
@@ -160,7 +167,7 @@ export async function PATCH(
         const [existingPhone] = await db
           .select({ id: workers.id })
           .from(workers)
-          .where(eq(workers.phone, phone))
+          .where(and(eq(workers.organizationId, orgId), eq(workers.phone, phone)))
           .limit(1);
         if (existingPhone && existingPhone.id !== id) {
           return NextResponse.json(
@@ -188,7 +195,15 @@ export async function PATCH(
       updates.deactivatedAt = body.active ? null : statusChangedAt;
     }
 
-    const teamIds: string[] | null = Array.isArray(body.teamIds) ? body.teamIds : null;
+    const requestedTeamIds: string[] | null = Array.isArray(body.teamIds) ? body.teamIds : null;
+    const teamIds: string[] | null = requestedTeamIds
+      ? (
+          await db
+            .select({ id: teams.id })
+            .from(teams)
+            .where(and(inArray(teams.id, requestedTeamIds), eq(teams.organizationId, orgId)))
+        ).map((t) => t.id)
+      : null;
 
     if (Object.keys(updates).length === 0 && teamIds === null) {
       return NextResponse.json({ error: "No valid fields to update." }, { status: 400 });
@@ -257,12 +272,12 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { userId } = await auth();
-  if (!userId) return new NextResponse("Unauthorized", { status: 401 });
+  const orgId = await requireOrgId().catch(() => null);
+  if (!orgId) return new NextResponse("Unauthorized", { status: 401 });
 
   const { id } = await params;
 
-  await db.delete(workers).where(eq(workers.id, id));
+  await db.delete(workers).where(and(eq(workers.id, id), eq(workers.organizationId, orgId)));
 
   return NextResponse.json({ success: true });
 }

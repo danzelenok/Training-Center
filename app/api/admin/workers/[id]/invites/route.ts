@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { workers, invites } from "@/db/schema";
-import { auth } from "@clerk/nextjs/server";
+import { requireOrgId } from "@/lib/org";
 import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import crypto from "crypto";
@@ -22,8 +22,8 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { userId } = await auth();
-    if (!userId) {
+    const orgId = await requireOrgId().catch(() => null);
+    if (!orgId) {
       return new NextResponse("Unauthorized", { status: 401 });
     }
 
@@ -32,7 +32,7 @@ export async function POST(
     const [worker] = await db
       .select()
       .from(workers)
-      .where(eq(workers.id, id))
+      .where(and(eq(workers.id, id), eq(workers.organizationId, orgId)))
       .limit(1);
 
     if (!worker) {

@@ -14,6 +14,15 @@ export const GET = withTelegramAuth(async (req, { worker }) => {
       return new NextResponse("Missing courseId parameter", { status: 400 });
     }
 
+    const [course] = await db
+      .select({ id: courses.id })
+      .from(courses)
+      .where(and(eq(courses.id, courseId), eq(courses.organizationId, worker.organizationId)))
+      .limit(1);
+    if (!course) {
+      return new NextResponse("Course not found", { status: 404 });
+    }
+
     const [prog] = await db
       .select()
       .from(progress)
@@ -58,6 +67,16 @@ export const POST = withTelegramAuth(async (req, { worker }) => {
       return new NextResponse("Missing status parameter", { status: 400 });
     }
 
+    // Write-time invariant: never create progress for a course outside the worker's organization
+    const [course] = await db
+      .select({ id: courses.id, title: courses.title })
+      .from(courses)
+      .where(and(eq(courses.id, courseId), eq(courses.organizationId, worker.organizationId)))
+      .limit(1);
+    if (!course) {
+      return new NextResponse("Course not found", { status: 404 });
+    }
+
     // Check if progress already exists
     const [existing] = await db
       .select()
@@ -100,13 +119,7 @@ export const POST = withTelegramAuth(async (req, { worker }) => {
       // Notify admin if transitioned to completed
       if (isCompleted && !wasCompleted) {
         try {
-          const [course] = await db
-            .select({ title: courses.title })
-            .from(courses)
-            .where(eq(courses.id, courseId))
-            .limit(1);
-
-          const courseTitle = course?.title || "Unknown Course";
+          const courseTitle = course.title || "Unknown Course";
           const workerName = [worker.firstName, worker.lastName]
             .filter(Boolean)
             .join(" ")
@@ -134,13 +147,7 @@ export const POST = withTelegramAuth(async (req, { worker }) => {
 
       if (isCompleted) {
         try {
-          const [course] = await db
-            .select({ title: courses.title })
-            .from(courses)
-            .where(eq(courses.id, courseId))
-            .limit(1);
-
-          const courseTitle = course?.title || "Unknown Course";
+          const courseTitle = course.title || "Unknown Course";
           const workerName = [worker.firstName, worker.lastName]
             .filter(Boolean)
             .join(" ")

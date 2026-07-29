@@ -1,6 +1,6 @@
 import { db } from "@/db";
-import { workerTeams } from "@/db/schema";
-import { auth } from "@clerk/nextjs/server";
+import { workerTeams, teams, workers } from "@/db/schema";
+import { requireOrgId } from "@/lib/org";
 import { and, eq, inArray } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { autoAssignTeamCoursesForNewMemberships } from "@/lib/teamAutoAssign";
@@ -14,12 +14,29 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { userId } = await auth();
-    if (!userId) return new NextResponse("Unauthorized", { status: 401 });
+    const orgId = await requireOrgId().catch(() => null);
+    if (!orgId) return new NextResponse("Unauthorized", { status: 401 });
 
     const { id: teamId } = await params;
+
+    const [team] = await db
+      .select({ id: teams.id })
+      .from(teams)
+      .where(and(eq(teams.id, teamId), eq(teams.organizationId, orgId)))
+      .limit(1);
+    if (!team) return new NextResponse("Not found", { status: 404 });
+
     const body = await req.json().catch(() => ({}));
-    const workerIds: string[] = Array.isArray(body.workerIds) ? body.workerIds : [];
+    const requestedWorkerIds: string[] = Array.isArray(body.workerIds) ? body.workerIds : [];
+    // Write-time invariant: only ever add workers that belong to this organization.
+    const workerIds = requestedWorkerIds.length
+      ? (
+          await db
+            .select({ id: workers.id })
+            .from(workers)
+            .where(and(inArray(workers.id, requestedWorkerIds), eq(workers.organizationId, orgId)))
+        ).map((w) => w.id)
+      : [];
 
     const existing = await db
       .select({ workerId: workerTeams.workerId })

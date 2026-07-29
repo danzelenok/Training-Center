@@ -1,7 +1,7 @@
 import { db } from "@/db";
 import { courses, slides } from "@/db/schema";
-import { auth } from "@clerk/nextjs/server";
-import { eq, asc, sql, inArray } from "drizzle-orm";
+import { requireOrgId } from "@/lib/org";
+import { eq, and, asc, sql, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 // 1. GET /api/courses/[id] - Fetch a course and all its slides ordered by 'order'
@@ -11,15 +11,15 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const { userId } = await auth();
-    if (!userId) {
+    const orgId = await requireOrgId().catch(() => null);
+    if (!orgId) {
       return new NextResponse("Unauthorized", { status: 401 });
     }
 
     const [course] = await db
       .select()
       .from(courses)
-      .where(eq(courses.id, id))
+      .where(and(eq(courses.id, id), eq(courses.organizationId, orgId)))
       .limit(1);
 
     if (!course) {
@@ -53,8 +53,8 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
-    const { userId } = await auth();
-    if (!userId) {
+    const orgId = await requireOrgId().catch(() => null);
+    if (!orgId) {
       return new NextResponse("Unauthorized", { status: 401 });
     }
 
@@ -73,7 +73,7 @@ export async function PATCH(
         generationStatus: generationStatus !== undefined ? generationStatus : undefined,
         updatedAt: new Date(),
       })
-      .where(eq(courses.id, id))
+      .where(and(eq(courses.id, id), eq(courses.organizationId, orgId)))
       .returning();
 
     if (!updatedCourse) {
@@ -210,14 +210,14 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
-    const { userId } = await auth();
-    if (!userId) {
+    const orgId = await requireOrgId().catch(() => null);
+    if (!orgId) {
       return new NextResponse("Unauthorized", { status: 401 });
     }
 
     const [deletedCourse] = await db
       .delete(courses)
-      .where(eq(courses.id, id))
+      .where(and(eq(courses.id, id), eq(courses.organizationId, orgId)))
       .returning();
 
     if (!deletedCourse) {

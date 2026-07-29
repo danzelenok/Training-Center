@@ -1,8 +1,17 @@
 import { pgTable, uuid, text, integer, bigint, timestamp, boolean, jsonb, unique } from "drizzle-orm/pg-core";
 
+// 0. ORGANIZATIONS TABLE
+export const organizations = pgTable("organizations", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  clerkOrgId: text("clerk_org_id").notNull().unique(),
+  name: text("name").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // 1. COURSES TABLE
 export const courses = pgTable("courses", {
   id: uuid("id").defaultRandom().primaryKey(),
+  organizationId: uuid("organization_id").notNull().references(() => organizations.id),
   title: text("title").notNull(),
   description: text("description"),
   status: text("status").$type<"draft" | "published">().default("draft").notNull(),
@@ -35,6 +44,7 @@ export const slides = pgTable("slides", {
 // 3. WORKERS TABLE
 export const workers = pgTable("workers", {
   id: uuid("id").defaultRandom().primaryKey(),
+  organizationId: uuid("organization_id").notNull().references(() => organizations.id),
   telegramUserId: bigint("telegram_user_id", { mode: "bigint" }).unique(),
   telegramUsername: text("telegram_username"),
   firstName: text("first_name"),
@@ -58,10 +68,13 @@ export const workerStatusEvents = pgTable("worker_status_events", {
 // 3.1. TEAMS TABLE
 export const teams = pgTable("teams", {
   id: uuid("id").defaultRandom().primaryKey(),
-  name: text("name").notNull().unique(),
+  organizationId: uuid("organization_id").notNull().references(() => organizations.id),
+  name: text("name").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  uniqueOrgTeamName: unique().on(table.organizationId, table.name),
+}));
 
 // 3.2. WORKER_TEAMS TABLE (many-to-many)
 export const workerTeams = pgTable("worker_teams", {
@@ -162,6 +175,7 @@ export const reminders = pgTable("reminders", {
 // 8. MEDIA_FILES TABLE
 export const mediaFiles = pgTable("media_files", {
   id: uuid("id").defaultRandom().primaryKey(),
+  organizationId: uuid("organization_id").notNull().references(() => organizations.id),
   r2Key: text("r2_key").notNull(),
   url: text("url").notNull(),
   fileName: text("file_name").notNull(),

@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { courses, slides } from "@/db/schema";
-import { auth } from "@clerk/nextjs/server";
+import { requireOrgId } from "@/lib/org";
 import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { generateCourseStructure } from "@/lib/gemini";
@@ -13,18 +13,18 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    
+
     // Auth Check
-    const { userId } = await auth();
-    if (!userId) {
+    const orgId = await requireOrgId().catch(() => null);
+    if (!orgId) {
       return new NextResponse("Unauthorized", { status: 401 });
     }
 
-    // Verify course exists
+    // Verify course exists and belongs to this organization
     const [course] = await db
       .select()
       .from(courses)
-      .where(eq(courses.id, id))
+      .where(and(eq(courses.id, id), eq(courses.organizationId, orgId)))
       .limit(1);
 
     if (!course) {
@@ -127,7 +127,7 @@ export async function POST(
     // 4. Trigger background asset generation event
     await inngest.send({
       name: "course/generate.assets",
-      data: { courseId: id },
+      data: { courseId: id, organizationId: orgId },
     });
 
     return NextResponse.json(finalSlides);

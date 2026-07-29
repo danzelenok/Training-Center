@@ -5,14 +5,17 @@ import { and, eq, asc } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 export const GET = withTelegramAuth<{ params: Promise<{ id: string }> }>(
-  async (req, { params }) => {
+  async (req, { params, worker }) => {
     try {
       const { id } = await params;
       if (!id) {
         return new NextResponse("Missing course ID", { status: 400 });
       }
+      if (!worker.organizationId) {
+        return new NextResponse("Unauthorized", { status: 401 });
+      }
 
-      // Fetch course details
+      // Fetch course details, scoped to the worker's organization
       const [course] = await db
         .select({
           title: courses.title,
@@ -20,7 +23,7 @@ export const GET = withTelegramAuth<{ params: Promise<{ id: string }> }>(
           themeValue: courses.themeValue,
         })
         .from(courses)
-        .where(eq(courses.id, id))
+        .where(and(eq(courses.id, id), eq(courses.organizationId, worker.organizationId)))
         .limit(1);
 
       if (!course) {

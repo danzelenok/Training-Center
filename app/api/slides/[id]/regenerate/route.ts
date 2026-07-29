@@ -1,7 +1,7 @@
 import { db } from "@/db";
 import { courses, slides } from "@/db/schema";
-import { eq } from "drizzle-orm";
-import { auth } from "@clerk/nextjs/server";
+import { eq, and } from "drizzle-orm";
+import { requireOrgId } from "@/lib/org";
 import { NextResponse } from "next/server";
 import { inngest } from "@/lib/inngest";
 
@@ -13,8 +13,8 @@ export async function POST(
     const { id } = await params;
 
     // Check user authentication
-    const { userId } = await auth();
-    if (!userId) {
+    const orgId = await requireOrgId().catch(() => null);
+    if (!orgId) {
       return new NextResponse("Unauthorized", { status: 401 });
     }
 
@@ -29,12 +29,14 @@ export async function POST(
       return new NextResponse("Invalid asset type. Must be 'audio' or 'video'", { status: 400 });
     }
 
-    // Verify slide exists
+    // Verify slide exists and belongs to this organization (via its course)
     const [slide] = await db
-      .select()
+      .select({ slide: slides })
       .from(slides)
-      .where(eq(slides.id, id))
-      .limit(1);
+      .innerJoin(courses, eq(courses.id, slides.courseId))
+      .where(and(eq(slides.id, id), eq(courses.organizationId, orgId)))
+      .limit(1)
+      .then((rows) => rows.map((r) => r.slide));
 
     if (!slide) {
       return new NextResponse("Slide not found", { status: 404 });
@@ -105,6 +107,7 @@ export async function POST(
       data: {
         slideId: id,
         assetType: asset,
+        organizationId: orgId,
         ...(targetSlot !== null ? { targetSlot } : {}),
       },
     });

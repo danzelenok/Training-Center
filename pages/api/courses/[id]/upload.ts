@@ -1,8 +1,9 @@
 import { db } from "@/db";
 import { courses, slides } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { NextApiRequest, NextApiResponse } from "next";
 import { parseOffice } from "officeparser";
+import { decodeClerkSessionCookie, resolveOrgId } from "@/lib/org";
 
 export const config = {
   api: {
@@ -51,32 +52,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const { id } = req.query as { id: string };
 
     // Decode Clerk session cookie manually to verify auth since this route bypasses Next.js middleware 10MB limit
-    const cookies = req.headers.cookie || "";
-    const sessionCookie = cookies
-      .split(";")
-      .find((c) => c.trim().startsWith("__session="))
-      ?.split("=")[1];
-
-    let userId = null;
-    if (sessionCookie) {
-      try {
-        const payloadBase64 = sessionCookie.split(".")[1];
-        const payload = JSON.parse(Buffer.from(payloadBase64, "base64").toString());
-        userId = payload.sub;
-      } catch (e) {
-        console.error("Failed to decode Clerk __session cookie:", e);
-      }
-    }
-
+    const { userId, clerkOrgId } = decodeClerkSessionCookie(req.headers.cookie || "");
     if (!userId) {
       return res.status(401).json({ error: "Unauthorized" });
     }
+    const orgId = await resolveOrgId(clerkOrgId);
+    if (!orgId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
 
-    // 1. Fetch course details
+    // 1. Fetch course details, scoped to this organization
     const [course] = await db
       .select()
       .from(courses)
-      .where(eq(courses.id, id))
+      .where(and(eq(courses.id, id), eq(courses.organizationId, orgId)))
       .limit(1);
 
     if (!course) {

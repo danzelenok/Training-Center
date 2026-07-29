@@ -1,14 +1,14 @@
 import { db } from "@/db";
 import { courses, slides } from "@/db/schema";
-import { auth } from "@clerk/nextjs/server";
-import { desc, sql } from "drizzle-orm";
+import { requireOrgId } from "@/lib/org";
+import { desc, eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 // 1. GET /api/courses - List all courses with slide count
 export async function GET() {
   try {
-    const { userId } = await auth();
-    if (!userId) {
+    const orgId = await requireOrgId().catch(() => null);
+    if (!orgId) {
       return new NextResponse("Unauthorized", { status: 401 });
     }
 
@@ -27,6 +27,7 @@ export async function GET() {
       })
       .from(courses)
       .leftJoin(slides, sql`${slides.courseId} = ${courses.id}`)
+      .where(eq(courses.organizationId, orgId))
       .groupBy(courses.id)
       .orderBy(desc(courses.createdAt));
 
@@ -47,8 +48,8 @@ export async function GET() {
 // 2. POST /api/courses - Create a new draft course
 export async function POST(req: Request) {
   try {
-    const { userId } = await auth();
-    if (!userId) {
+    const orgId = await requireOrgId().catch(() => null);
+    if (!orgId) {
       return new NextResponse("Unauthorized", { status: 401 });
     }
 
@@ -62,6 +63,7 @@ export async function POST(req: Request) {
     const [newCourse] = await db
       .insert(courses)
       .values({
+        organizationId: orgId,
         title,
         description: description || "",
         status: "draft",

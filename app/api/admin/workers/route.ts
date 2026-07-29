@@ -1,7 +1,7 @@
 import { db } from "@/db";
-import { workers, invites, courses, assignments, workerTeams } from "@/db/schema";
-import { auth } from "@clerk/nextjs/server";
-import { and, eq } from "drizzle-orm";
+import { workers, invites, courses, teams, assignments, workerTeams } from "@/db/schema";
+import { requireOrgId } from "@/lib/org";
+import { and, eq, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { autoAssignTeamCoursesForNewMemberships } from "@/lib/teamAutoAssign";
@@ -26,8 +26,8 @@ function generateInviteToken(): string {
 
 export async function POST(req: Request) {
   try {
-    const { userId } = await auth();
-    if (!userId) {
+    const orgId = await requireOrgId().catch(() => null);
+    if (!orgId) {
       return new NextResponse("Unauthorized", { status: 401 });
     }
 
@@ -55,7 +55,7 @@ export async function POST(req: Request) {
       const [existingPhone] = await db
         .select({ id: workers.id })
         .from(workers)
-        .where(eq(workers.phone, phone))
+        .where(and(eq(workers.organizationId, orgId), eq(workers.phone, phone)))
         .limit(1);
 
       if (existingPhone) {
@@ -69,12 +69,22 @@ export async function POST(req: Request) {
     const nameParts = name.split(/\s+/);
     const firstName = nameParts[0] || null;
     const lastName = nameParts.length > 1 ? nameParts.slice(1).join(" ") : null;
-    const teamIds: string[] = Array.isArray(body.teamIds) ? body.teamIds : [];
+    const requestedTeamIds: string[] = Array.isArray(body.teamIds) ? body.teamIds : [];
+    // Write-time invariant: only ever link teams that belong to this organization.
+    const teamIds = requestedTeamIds.length
+      ? (
+          await db
+            .select({ id: teams.id })
+            .from(teams)
+            .where(and(inArray(teams.id, requestedTeamIds), eq(teams.organizationId, orgId)))
+        ).map((t) => t.id)
+      : [];
 
     // 1. Create worker
     const [worker] = await db
       .insert(workers)
       .values({
+        organizationId: orgId,
         telegramUserId: null,
         displayName: name,
         firstName,
@@ -100,7 +110,7 @@ export async function POST(req: Request) {
     const autoAssignCourses = await db
       .select({ id: courses.id, publishedAt: courses.publishedAt, createdAt: courses.createdAt })
       .from(courses)
-      .where(and(eq(courses.autoAssignNewWorkers, true), eq(courses.status, "published")));
+      .where(and(eq(courses.organizationId, orgId), eq(courses.autoAssignNewWorkers, true), eq(courses.status, "published")));
 
     const eligibleCourses = autoAssignCourses.filter((c) => {
       const publishDate = c.publishedAt ?? c.createdAt;

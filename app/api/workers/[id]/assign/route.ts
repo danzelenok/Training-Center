@@ -1,6 +1,6 @@
 import { db } from "@/db";
-import { assignments, workers } from "@/db/schema";
-import { auth } from "@clerk/nextjs/server";
+import { assignments, workers, courses } from "@/db/schema";
+import { requireOrgId } from "@/lib/org";
 import { eq, and } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
@@ -9,8 +9,8 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { userId } = await auth();
-    if (!userId) {
+    const orgId = await requireOrgId().catch(() => null);
+    if (!orgId) {
       return new NextResponse("Unauthorized", { status: 401 });
     }
 
@@ -22,15 +22,26 @@ export async function POST(
       return new NextResponse("Course ID is required", { status: 400 });
     }
 
-    // 1. Verify worker exists
+    // 1. Verify worker and course both exist and belong to this organization
+    // (write-time invariant: never create an assignment across organizations)
     const [worker] = await db
       .select()
       .from(workers)
-      .where(eq(workers.id, workerId))
+      .where(and(eq(workers.id, workerId), eq(workers.organizationId, orgId)))
       .limit(1);
 
     if (!worker) {
       return new NextResponse("Worker not found", { status: 404 });
+    }
+
+    const [course] = await db
+      .select({ id: courses.id })
+      .from(courses)
+      .where(and(eq(courses.id, courseId), eq(courses.organizationId, orgId)))
+      .limit(1);
+
+    if (!course) {
+      return new NextResponse("Course not found", { status: 404 });
     }
 
     // 2. Insert the assignment; no-op if this worker/course pair already exists

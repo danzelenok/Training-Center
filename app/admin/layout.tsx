@@ -13,6 +13,7 @@ import {
   FileBarChart2,
   FolderOpen,
   Menu,
+  Settings,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -24,6 +25,7 @@ const navigation = [
   { name: "Workers", href: "/admin/workers", icon: Users },
   { name: "Teams", href: "/admin/teams", icon: Users2 },
   { name: "Reports", href: "/admin/reports", icon: FileBarChart2 },
+  { name: "Settings", href: "/admin/settings/team", icon: Settings },
 ];
 
 export default function AdminLayout({

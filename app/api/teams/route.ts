@@ -1,15 +1,15 @@
 import { db } from "@/db";
 import { teams, workerTeams } from "@/db/schema";
-import { auth } from "@clerk/nextjs/server";
-import { desc, sql } from "drizzle-orm";
+import { requireOrgId } from "@/lib/org";
+import { desc, eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const { userId } = await auth();
-    if (!userId) {
+    const orgId = await requireOrgId().catch(() => null);
+    if (!orgId) {
       return new NextResponse("Unauthorized", { status: 401 });
     }
 
@@ -23,6 +23,7 @@ export async function GET() {
       })
       .from(teams)
       .leftJoin(workerTeams, sql`${workerTeams.teamId} = ${teams.id}`)
+      .where(eq(teams.organizationId, orgId))
       .groupBy(teams.id)
       .orderBy(desc(teams.createdAt));
 
@@ -35,8 +36,8 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
-    const { userId } = await auth();
-    if (!userId) {
+    const orgId = await requireOrgId().catch(() => null);
+    if (!orgId) {
       return new NextResponse("Unauthorized", { status: 401 });
     }
 
@@ -47,7 +48,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Team name is required." }, { status: 400 });
     }
 
-    const [team] = await db.insert(teams).values({ name }).returning();
+    const [team] = await db.insert(teams).values({ organizationId: orgId, name }).returning();
 
     return NextResponse.json({ ...team, memberCount: 0 });
   } catch (error: any) {

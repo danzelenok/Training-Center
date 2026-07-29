@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { courses, slides } from "@/db/schema";
-import { auth } from "@clerk/nextjs/server";
+import { requireOrgId } from "@/lib/org";
 import { eq, and, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { inngest } from "@/lib/inngest";
@@ -11,10 +11,10 @@ export async function POST(
 ) {
   const { id } = await params;
 
-  const { userId } = await auth();
-  if (!userId) return new NextResponse("Unauthorized", { status: 401 });
+  const orgId = await requireOrgId().catch(() => null);
+  if (!orgId) return new NextResponse("Unauthorized", { status: 401 });
 
-  const [course] = await db.select().from(courses).where(eq(courses.id, id)).limit(1);
+  const [course] = await db.select().from(courses).where(and(eq(courses.id, id), eq(courses.organizationId, orgId))).limit(1);
   if (!course) return new NextResponse("Course not found", { status: 404 });
 
   // Find all slides that are not yet finished
@@ -66,7 +66,7 @@ export async function POST(
 
     return {
       name: "slide/regenerate" as const,
-      data: { slideId: slide.id, assetType, courseId: id },
+      data: { slideId: slide.id, assetType, courseId: id, organizationId: orgId },
     };
   });
 

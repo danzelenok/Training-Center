@@ -1,6 +1,6 @@
 import { db } from "@/db";
-import { courses, slides, workers, assignments, workerTeams, courseAutoAssignTeams } from "@/db/schema";
-import { auth } from "@clerk/nextjs/server";
+import { courses, slides, workers, teams, assignments, workerTeams, courseAutoAssignTeams } from "@/db/schema";
+import { requireOrgId } from "@/lib/org";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { sendCourseAnnouncementDMs } from "@/lib/bot";
@@ -11,28 +11,47 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const { userId } = await auth();
-    if (!userId) {
+    const orgId = await requireOrgId().catch(() => null);
+    if (!orgId) {
       return new NextResponse("Unauthorized", { status: 401 });
     }
 
     const body = await req.json().catch(() => ({}));
     const assignTo: "all" | "teams" | "specific" =
       body.assignTo === "specific" ? "specific" : body.assignTo === "teams" ? "teams" : "all";
-    const workerIds: string[] = Array.isArray(body.workerIds) ? body.workerIds : [];
-    const teamIds: string[] = Array.isArray(body.teamIds) ? body.teamIds : [];
+    const requestedWorkerIds: string[] = Array.isArray(body.workerIds) ? body.workerIds : [];
+    const requestedTeamIds: string[] = Array.isArray(body.teamIds) ? body.teamIds : [];
     const notifyWorkers: boolean = body.notifyWorkers ?? body.notifyTelegram ?? true;
 
-    // 1. Fetch the course
+    // 1. Fetch the course, scoped to this organization
     const [course] = await db
       .select()
       .from(courses)
-      .where(eq(courses.id, id))
+      .where(and(eq(courses.id, id), eq(courses.organizationId, orgId)))
       .limit(1);
 
     if (!course) {
       return new NextResponse("Course not found", { status: 404 });
     }
+
+    // Write-time invariant: only ever assign workers/teams that belong to the
+    // same organization as the course, even if the client passed foreign ids.
+    const teamIds = requestedTeamIds.length
+      ? (
+          await db
+            .select({ id: teams.id })
+            .from(teams)
+            .where(and(inArray(teams.id, requestedTeamIds), eq(teams.organizationId, orgId)))
+        ).map((t) => t.id)
+      : [];
+    const workerIds = requestedWorkerIds.length
+      ? (
+          await db
+            .select({ id: workers.id })
+            .from(workers)
+            .where(and(inArray(workers.id, requestedWorkerIds), eq(workers.organizationId, orgId)))
+        ).map((w) => w.id)
+      : [];
 
     // 2. Enforce slide existence before publishing
     const [countResult] = await db
@@ -53,7 +72,7 @@ export async function POST(
     // 3. On first publish, create assignments according to the chosen scope
     if (isFirstPublish) {
       if (assignTo === "all") {
-        const allWorkers = await db.select({ id: workers.id }).from(workers);
+        const allWorkers = await db.select({ id: workers.id }).from(workers).where(eq(workers.organizationId, orgId));
         if (allWorkers.length > 0) {
           await db
             .insert(assignments)
@@ -136,15 +155,15 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
-    const { userId } = await auth();
-    if (!userId) {
+    const orgId = await requireOrgId().catch(() => null);
+    if (!orgId) {
       return new NextResponse("Unauthorized", { status: 401 });
     }
 
     const [course] = await db
       .select()
       .from(courses)
-      .where(eq(courses.id, id))
+      .where(and(eq(courses.id, id), eq(courses.organizationId, orgId)))
       .limit(1);
 
     if (!course) {
@@ -159,7 +178,7 @@ export async function DELETE(
         telegramGroupId: null,
         updatedAt: new Date(),
       })
-      .where(eq(courses.id, id))
+      .where(and(eq(courses.id, id), eq(courses.organizationId, orgId)))
       .returning();
 
     return NextResponse.json({

@@ -2,31 +2,13 @@ import { NextApiRequest, NextApiResponse } from "next";
 import { uploadToR2 } from "@/lib/r2";
 import { db } from "@/db";
 import { mediaFiles } from "@/db/schema";
+import { decodeClerkSessionCookie, resolveOrgId } from "@/lib/org";
 
 export const config = {
   api: {
     bodyParser: false, // Bypasses all Next.js request body size limits completely
   },
 };
-
-// Manual Clerk session verification (same pattern as pages/api/courses/[id]/upload.ts)
-function getUserIdFromRequest(req: NextApiRequest): string | null {
-  const cookies = req.headers.cookie || "";
-  const sessionCookie = cookies
-    .split(";")
-    .find((c) => c.trim().startsWith("__session="))
-    ?.split("=")[1];
-
-  if (!sessionCookie) return null;
-
-  try {
-    const payloadBase64 = sessionCookie.split(".")[1];
-    const payload = JSON.parse(Buffer.from(payloadBase64, "base64").toString());
-    return payload.sub || null;
-  } catch {
-    return null;
-  }
-}
 
 // Read entire raw request body into a Buffer (same helper as PPTX upload)
 function getRawBody(req: NextApiRequest): Promise<Buffer> {
@@ -82,8 +64,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: "Method Not Allowed" });
   }
 
-  const userId = getUserIdFromRequest(req);
+  const { userId, clerkOrgId } = decodeClerkSessionCookie(req.headers.cookie || "");
   if (!userId) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  const orgId = await resolveOrgId(clerkOrgId);
+  if (!orgId) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
@@ -127,6 +113,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const publicUrl = await uploadToR2(parsed.buffer, r2Key, mimeType);
 
       const [inserted] = await db.insert(mediaFiles).values({
+        organizationId: orgId,
         r2Key,
         url: publicUrl,
         fileName: parsed.filename,

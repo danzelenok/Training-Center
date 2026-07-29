@@ -1,10 +1,17 @@
-import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { clerkClient, clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
+import { db } from "@/db";
+import { organizations } from "@/db/schema";
+import { eq } from "drizzle-orm";
+import { env } from "@/env";
 
 // Match public routes that should not be protected
 const isPublicRoute = createRouteMatcher([
   "/sign-in(.*)",
   "/sign-up(.*)",
+  "/onboarding(.*)",
+  "/invite(.*)",
+  "/access-denied(.*)",
   "/api/bot(.*)",
   "/api/inngest(.*)",
   "/mini-app(.*)"
@@ -19,9 +26,42 @@ const clerkAuthMiddleware = clerkMiddleware(async (auth, req) => {
     return NextResponse.next();
   }
 
-  // If it's an admin route, protect it
+  // If it's an admin route, resolve which organization (if any) the signed-in
+  // user belongs to and route them accordingly.
   if (isAdminRoute(req)) {
     await auth.protect();
+
+    if (env.NODE_ENV === "development" && env.MOCK_ORG_ID) {
+      return NextResponse.next();
+    }
+
+    const { userId, orgId } = await auth();
+
+    if (orgId) {
+      const [org] = await db
+        .select({ id: organizations.id })
+        .from(organizations)
+        .where(eq(organizations.clerkOrgId, orgId))
+        .limit(1);
+
+      if (!org) {
+        return NextResponse.redirect(new URL("/access-denied", req.url));
+      }
+
+      return NextResponse.next();
+    }
+
+    const client = await clerkClient();
+    const pendingInvitations = await client.users.getOrganizationInvitationList({
+      userId: userId!,
+      status: "pending",
+    });
+
+    if (pendingInvitations.data.length > 0) {
+      return NextResponse.redirect(new URL("/invite", req.url));
+    }
+
+    return NextResponse.redirect(new URL("/onboarding", req.url));
   }
 
   // Allow all other requests to continue normally

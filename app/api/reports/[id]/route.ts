@@ -1,19 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { progress, assignments } from "@/db/schema";
-import { auth } from "@clerk/nextjs/server";
+import { progress, assignments, workers } from "@/db/schema";
+import { requireOrgId } from "@/lib/org";
 import { and, eq } from "drizzle-orm";
 
 // PATCH /api/reports/[id] — mark as completed.
 // id can be a progress.id (fast path) or an assignments.id (upsert path, for not-yet-started courses).
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const { userId } = await auth();
-    if (!userId) return new NextResponse("Unauthorized", { status: 401 });
+    const orgId = await requireOrgId().catch(() => null);
+    if (!orgId) return new NextResponse("Unauthorized", { status: 401 });
 
     const { id } = await params;
 
-    const [existingProgress] = await db.select().from(progress).where(eq(progress.id, id)).limit(1);
+    const [existingProgress] = await db
+      .select({ progress })
+      .from(progress)
+      .innerJoin(workers, and(eq(workers.id, progress.workerId), eq(workers.organizationId, orgId)))
+      .where(eq(progress.id, id))
+      .limit(1)
+      .then((rows) => rows.map((r) => r.progress));
 
     if (existingProgress) {
       const [updated] = await db
@@ -29,7 +35,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
 
     // No progress row — id must be an assignmentId; upsert progress as completed
-    const [assignment] = await db.select().from(assignments).where(eq(assignments.id, id)).limit(1);
+    const [assignment] = await db
+      .select({ assignments })
+      .from(assignments)
+      .innerJoin(workers, and(eq(workers.id, assignments.workerId), eq(workers.organizationId, orgId)))
+      .where(eq(assignments.id, id))
+      .limit(1)
+      .then((rows) => rows.map((r) => r.assignments));
     if (!assignment) return new NextResponse("Not found", { status: 404 });
 
     // Check if a progress row already exists for this worker+course (via a different path)
@@ -62,10 +74,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 // DELETE /api/reports/[id] — remove a course assignment (id = assignments.id).
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const { userId } = await auth();
-    if (!userId) return new NextResponse("Unauthorized", { status: 401 });
+    const orgId = await requireOrgId().catch(() => null);
+    if (!orgId) return new NextResponse("Unauthorized", { status: 401 });
 
     const { id } = await params;
+
+    const [ownedAssignment] = await db
+      .select({ id: assignments.id })
+      .from(assignments)
+      .innerJoin(workers, and(eq(workers.id, assignments.workerId), eq(workers.organizationId, orgId)))
+      .where(eq(assignments.id, id))
+      .limit(1);
+    if (!ownedAssignment) return new NextResponse("Not found", { status: 404 });
 
     await db.delete(assignments).where(eq(assignments.id, id));
 
