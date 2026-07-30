@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Users2, Plus, Loader2, Pencil, Trash2, X, Check, UsersRound, Search } from "lucide-react";
+import { Users2, Plus, Loader2, Pencil, Trash2, X, Check, UsersRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { SearchInput } from "@/components/ui/search-input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast, Toaster } from "sonner";
 import { format } from "date-fns";
@@ -441,15 +442,13 @@ export default function TeamsPage() {
           ) : (
             <div className="mt-4 px-4 pb-6 space-y-3">
               {activeWorkers.length > 0 && (
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                  <Input
-                    value={rosterSearch}
-                    onChange={(e) => setRosterSearch(e.target.value)}
-                    placeholder="Search workers..."
-                    className="bg-background border-border text-foreground text-xs h-9 rounded-xl pl-8"
-                  />
-                </div>
+                <SearchInput
+                  value={rosterSearch}
+                  onChange={(e) => setRosterSearch(e.target.value)}
+                  onClear={() => setRosterSearch("")}
+                  placeholder="Search workers..."
+                  className="bg-background border-border text-foreground text-xs h-9 rounded-xl"
+                />
               )}
               <div className="space-y-2">
                 {activeWorkers.length === 0 ? (

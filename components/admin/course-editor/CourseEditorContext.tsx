@@ -522,7 +522,8 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
       newContent = {
         heading: "",
         options: ["", ""],
-        correctIndex: 0,
+        quizType: "single",
+        correctIndices: [0],
         correctAnswer: "",
         explanation: ""
       };

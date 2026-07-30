@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect } from "react";
-import { GripVertical, X } from "lucide-react";
+import { GripVertical, X, Check } from "lucide-react";
 
 interface QuizContainerProps {
   questionText: string;
   options: string[];
-  correctIndex: number;
+  quizType?: "single" | "multiple";
+  correctIndices?: number[];
   explanation: string;
   isActive: boolean;
   onUpdateContent: (fields: {
@@ -12,20 +13,37 @@ interface QuizContainerProps {
     question?: string;
     title?: string;
     options?: string[];
-    correctIndex?: number;
+    quizType?: "single" | "multiple";
+    correctIndices?: number[];
     correctAnswer?: string;
     explanation?: string;
   }) => void;
   onDisableDrag?: () => void;
   onEnableDrag?: () => void;
   mode?: "edit" | "play";
-  onAnswered?: (isCorrect: boolean) => void;
+  onAnswered?: (selectedIndices: number[]) => void;
+}
+
+function correctAnswerLabel(options: string[], indices: number[]): string {
+  return indices
+    .map((i) => options[i] || `Option ${String.fromCharCode(65 + i)}`)
+    .join(", ");
+}
+
+// Given a splice-move of one option from index `from` to index `to`, returns where
+// `idx` ends up. Mirrors what Array.splice(from,1) + splice(to,0,item) does to indices.
+function remapIndexOnMove(idx: number, from: number, to: number): number {
+  if (idx === from) return to;
+  if (from < idx && idx <= to) return idx - 1;
+  if (to <= idx && idx < from) return idx + 1;
+  return idx;
 }
 
 export function QuizContainer({
   questionText,
   options,
-  correctIndex,
+  quizType,
+  correctIndices,
   explanation,
   isActive,
   onUpdateContent,
@@ -34,11 +52,11 @@ export function QuizContainer({
   mode,
   onAnswered,
 }: QuizContainerProps) {
-  const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
+  const [selectedIndices, setSelectedIndices] = useState<number[]>([]);
   const [answered, setAnswered] = useState(false);
 
   useEffect(() => {
-    setSelectedIdx(null);
+    setSelectedIndices([]);
     setAnswered(false);
   }, [questionText]);
 
@@ -48,7 +66,8 @@ export function QuizContainer({
   const draggedOptIdxRef = useRef<number | null>(null);
 
   const optionsList = options || ["", ""];
-  const correctIdxValue = correctIndex ?? 0;
+  const quizTypeValue: "single" | "multiple" = quizType === "multiple" ? "multiple" : "single";
+  const correctIndicesValue = correctIndices && correctIndices.length > 0 ? correctIndices : [0];
 
   // Option DND Handlers
   const handleOptDragStart = (idx: number, e: React.DragEvent) => {
@@ -78,21 +97,12 @@ export function QuizContainer({
       const [draggedItem] = updatedOptions.splice(currentDraggedIdx, 1);
       updatedOptions.splice(idx, 0, draggedItem);
 
-      let newCorrectIdx = correctIdxValue;
-      if (correctIdxValue === currentDraggedIdx) {
-        newCorrectIdx = idx;
-      } else {
-        if (currentDraggedIdx < correctIdxValue && correctIdxValue <= idx) {
-          newCorrectIdx = correctIdxValue - 1;
-        } else if (idx <= correctIdxValue && correctIdxValue < currentDraggedIdx) {
-          newCorrectIdx = correctIdxValue + 1;
-        }
-      }
+      const newCorrectIndices = correctIndicesValue.map((ci) => remapIndexOnMove(ci, currentDraggedIdx, idx));
 
       onUpdateContent({
         options: updatedOptions,
-        correctIndex: newCorrectIdx,
-        correctAnswer: updatedOptions[newCorrectIdx] || `Option ${String.fromCharCode(65 + newCorrectIdx)}`,
+        correctIndices: newCorrectIndices,
+        correctAnswer: correctAnswerLabel(updatedOptions, newCorrectIndices),
       });
 
       draggedOptIdxRef.current = idx;
@@ -117,7 +127,37 @@ export function QuizContainer({
     onEnableDrag?.();
   };
 
+  const handleSetCorrect = (optIdx: number) => {
+    let nextIndices: number[];
+    if (quizTypeValue === "multiple") {
+      if (correctIndicesValue.includes(optIdx)) {
+        if (correctIndicesValue.length === 1) return; // keep at least one correct answer
+        nextIndices = correctIndicesValue.filter((i) => i !== optIdx);
+      } else {
+        nextIndices = [...correctIndicesValue, optIdx].sort((a, b) => a - b);
+      }
+    } else {
+      nextIndices = [optIdx];
+    }
+    onUpdateContent({
+      correctIndices: nextIndices,
+      correctAnswer: correctAnswerLabel(optionsList, nextIndices),
+    });
+  };
+
+  const handleSetQuizType = (nextType: "single" | "multiple") => {
+    if (nextType === quizTypeValue) return;
+    const nextIndices = nextType === "single" ? [correctIndicesValue[0] ?? 0] : correctIndicesValue;
+    onUpdateContent({
+      quizType: nextType,
+      correctIndices: nextIndices,
+      correctAnswer: correctAnswerLabel(optionsList, nextIndices),
+    });
+  };
+
   if (mode === "play") {
+    const isMultiple = quizTypeValue === "multiple";
+
     return (
       <div className="flex-1 flex flex-col justify-center gap-4 pt-6 pb-4 px-1">
         <p className="font-sans font-semibold text-base md:text-lg text-foreground leading-relaxed">
@@ -126,8 +166,8 @@ export function QuizContainer({
 
         <div className="flex flex-col gap-2 w-full">
           {optionsList.map((option, idx) => {
-            const isSelected = selectedIdx === idx;
-            const isCorrect = correctIdxValue === idx;
+            const isSelected = selectedIndices.includes(idx);
+            const isCorrect = correctIndicesValue.includes(idx);
 
             let btnClass = "border-border bg-card text-foreground hover:bg-accent";
             if (answered) {
@@ -138,6 +178,8 @@ export function QuizContainer({
               } else {
                 btnClass = "border-border bg-card text-muted-foreground opacity-50";
               }
+            } else if (isMultiple && isSelected) {
+              btnClass = "border-primary bg-primary/10 text-foreground";
             }
 
             return (
@@ -147,23 +189,52 @@ export function QuizContainer({
                 disabled={answered}
                 onClick={() => {
                   if (answered) return;
-                  setSelectedIdx(idx);
-                  setAnswered(true);
-                  onAnswered?.(idx === correctIdxValue);
+                  if (isMultiple) {
+                    setSelectedIndices((prev) =>
+                      prev.includes(idx) ? prev.filter((i) => i !== idx) : [...prev, idx]
+                    );
+                  } else {
+                    setSelectedIndices([idx]);
+                    setAnswered(true);
+                    onAnswered?.([idx]);
+                  }
                 }}
-                className={`w-full text-left px-4 py-3 rounded-2xl border text-sm font-medium transition-all duration-300 relative ${btnClass}`}
+                className={`w-full text-left px-4 py-3 rounded-2xl border text-sm font-medium transition-all duration-300 relative flex items-center gap-2.5 ${btnClass}`}
               >
+                {isMultiple && !answered && (
+                  <span
+                    className={`h-4 w-4 rounded-md border-2 flex items-center justify-center shrink-0 transition-colors ${
+                      isSelected ? "border-primary bg-primary" : "border-muted-foreground/40"
+                    }`}
+                  >
+                    {isSelected && <Check className="h-3 w-3 text-primary-foreground stroke-[3]" />}
+                  </span>
+                )}
+                <span className="flex-1">{option}</span>
                 {answered && isCorrect && (
-                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-green-500 font-bold">✓</span>
+                  <span className="text-green-500 font-bold shrink-0">✓</span>
                 )}
                 {answered && isSelected && !isCorrect && (
-                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-red-500 font-bold">✗</span>
+                  <span className="text-red-500 font-bold shrink-0">✗</span>
                 )}
-                {option}
               </button>
             );
           })}
         </div>
+
+        {isMultiple && !answered && (
+          <button
+            type="button"
+            disabled={selectedIndices.length === 0}
+            onClick={() => {
+              setAnswered(true);
+              onAnswered?.(selectedIndices);
+            }}
+            className="w-full py-3 rounded-2xl text-sm font-bold transition-all bg-primary text-primary-foreground disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Confirm
+          </button>
+        )}
 
         {answered && explanation && (
           <p className="font-sans font-medium text-base md:text-lg text-foreground leading-relaxed animate-fade-in border-t border-border pt-3.5">
@@ -196,9 +267,32 @@ export function QuizContainer({
         />
       </div>
 
+      {isActive && (
+        <div className="flex items-center gap-1.5 shrink-0 p-0.5 rounded-full bg-muted/60 border border-border w-fit">
+          <button
+            type="button"
+            onClick={() => handleSetQuizType("single")}
+            className={`px-3 py-1 rounded-full text-[10px] md:text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer ${
+              quizTypeValue === "single" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Single Answer
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSetQuizType("multiple")}
+            className={`px-3 py-1 rounded-full text-[10px] md:text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer ${
+              quizTypeValue === "multiple" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Multiple Answers
+          </button>
+        </div>
+      )}
+
       <div className="w-full space-y-2 px-0.5 shrink-0 flex flex-col items-center overflow-visible">
         {optionsList.map((option, optIdx) => {
-          const isCorrect = correctIdxValue === optIdx;
+          const isCorrect = correctIndicesValue.includes(optIdx);
           const isDragged = isActive && draggedOptIdx === optIdx;
           const isDragOver = isActive && dragOverOptIdx === optIdx;
           const optKey = `opt-${optIdx}`;
@@ -244,18 +338,16 @@ export function QuizContainer({
                 <button
                   type="button"
                   disabled={!isActive}
-                  onClick={() => {
-                    onUpdateContent({
-                      correctIndex: optIdx,
-                      correctAnswer: option || `Option ${String.fromCharCode(65 + optIdx)}`,
-                    });
-                  }}
-                  className={`h-5 w-5 rounded-full flex items-center justify-center shrink-0 transition-colors border-2 ${
+                  onClick={() => handleSetCorrect(optIdx)}
+                  className={`h-5 w-5 flex items-center justify-center shrink-0 transition-colors border-2 ${
+                    quizTypeValue === "multiple" ? "rounded-md" : "rounded-full"
+                  } ${
                     isCorrect ? "border-primary bg-transparent" : "border-muted-foreground/30 bg-transparent"
                   } ${isActive ? "cursor-pointer hover:border-primary" : "cursor-default"}`}
-                  title={isActive ? "Set as correct answer" : undefined}
+                  title={isActive ? "Toggle correct answer" : undefined}
                 >
-                  {isCorrect && <div className="h-2.5 w-2.5 rounded-full bg-primary" />}
+                  {isCorrect && quizTypeValue === "multiple" && <Check className="h-3 w-3 text-primary stroke-[3]" />}
+                  {isCorrect && quizTypeValue === "single" && <div className="h-2.5 w-2.5 rounded-full bg-primary" />}
                 </button>
 
                 <textarea
@@ -289,14 +381,14 @@ export function QuizContainer({
                   type="button"
                   onClick={() => {
                     const updatedOptions = optionsList.filter((_, i) => i !== optIdx);
-                    let nextCorrectIdx = correctIdxValue;
-                    if (nextCorrectIdx >= updatedOptions.length) {
-                      nextCorrectIdx = 0;
-                    }
+                    let nextCorrectIndices = correctIndicesValue
+                      .filter((ci) => ci !== optIdx)
+                      .map((ci) => (ci > optIdx ? ci - 1 : ci));
+                    if (nextCorrectIndices.length === 0) nextCorrectIndices = [0];
                     onUpdateContent({
                       options: updatedOptions,
-                      correctIndex: nextCorrectIdx,
-                      correctAnswer: updatedOptions[nextCorrectIdx] || `Option ${String.fromCharCode(65 + nextCorrectIdx)}`,
+                      correctIndices: nextCorrectIndices,
+                      correctAnswer: correctAnswerLabel(updatedOptions, nextCorrectIndices),
                     });
                   }}
                   style={{ right: "-22px" }}

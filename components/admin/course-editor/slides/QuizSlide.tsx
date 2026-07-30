@@ -13,7 +13,7 @@ interface QuizCardProps {
   onDisableDrag?: () => void;
   onEnableDrag?: () => void;
   mode?: "edit" | "play";
-  onAnswered?: (isCorrect: boolean) => void;
+  onAnswered?: (selectedIndices: number[]) => void;
 }
 
 export function QuizCard({
@@ -44,7 +44,8 @@ export function QuizCard({
       <QuizContainer
         questionText={content.heading || content.question || content.title || ""}
         options={content.options || ["", ""]}
-        correctIndex={content.correctIndex ?? 0}
+        quizType={content.quizType}
+        correctIndices={content.correctIndices}
         explanation={content.explanation || ""}
         isActive={isActive}
         onUpdateContent={(fields) => onUpdateSlideContent(index, fields)}

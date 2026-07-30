@@ -51,7 +51,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     const { id } = req.query as { id: string };
 
-    // Decode Clerk session cookie manually to verify auth since this route bypasses Next.js middleware 10MB limit
+    // proxy.ts deliberately excludes this route from clerkMiddleware (bodyParser: false,
+    // needed to bypass Next.js's request body size limit for large PPTX uploads), so
+    // Clerk's getAuth()/requireOrgIdFromApiRequest() can't be used here — it requires
+    // clerkMiddleware to have run and throws otherwise. Decode the session cookie
+    // manually instead; see lib/org.ts for details.
     const { userId, clerkOrgId } = decodeClerkSessionCookie(req.headers.cookie || "");
     if (!userId) {
       return res.status(401).json({ error: "Unauthorized" });

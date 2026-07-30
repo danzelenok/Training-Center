@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { SearchInput } from "@/components/ui/search-input";
 import { toast, Toaster } from "sonner";
 import { format } from "date-fns";
 import {
@@ -800,13 +801,13 @@ export default function WorkersPage() {
       {/* Filtering & Table Panel */}
       <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-xl">
         <div className="p-4 border-b border-border flex flex-col sm:flex-row gap-3 items-center justify-between">
-          <div className="relative w-full sm:w-80">
-            <Search className="absolute left-3 top-3 h-4.5 w-4.5 text-muted-foreground" />
-            <Input
+          <div className="w-full sm:w-80">
+            <SearchInput
               value={search}
               onChange={(e) => setSearch(e.target.value)}
+              onClear={() => setSearch("")}
               placeholder="Search worker by name or phone..."
-              className="pl-9 bg-background border-border text-foreground rounded-xl placeholder-muted-foreground focus-visible:ring-primary h-10 text-xs"
+              className="bg-background border-border text-foreground rounded-xl placeholder-muted-foreground focus-visible:ring-primary h-10 text-xs"
             />
           </div>
           <Tabs value={statusTab} onValueChange={(v) => setStatusTab(v as "active" | "deactivated")}>

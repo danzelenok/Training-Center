@@ -1,0 +1,1 @@
+ALTER TABLE "progress" ADD CONSTRAINT "progress_worker_id_course_id_unique" UNIQUE("worker_id","course_id");

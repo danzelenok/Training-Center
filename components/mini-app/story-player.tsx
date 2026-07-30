@@ -29,8 +29,7 @@ export function StoryPlayer({ slides, courseId, initData, themeType, themeValue 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [completed, setCompleted] = useState(false);
   const [quizAnswered, setQuizAnswered] = useState(false);
-  const [quizCorrect, setQuizCorrect] = useState(0);
-  const [quizTotal, setQuizTotal] = useState(0);
+  const [quizScore, setQuizScore] = useState<number | null>(null);
   const [progressLoaded, setProgressLoaded] = useState(false);
 
   useEffect(() => {
@@ -65,8 +64,11 @@ export function StoryPlayer({ slides, courseId, initData, themeType, themeValue 
     })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (data && data.status !== "completed") {
-          setCurrentIndex(Math.min(data.currentSlideIndex ?? 0, slides.length - 1));
+        if (data) {
+          if (typeof data.quizScore === "number") setQuizScore(data.quizScore);
+          if (data.status !== "completed") {
+            setCurrentIndex(Math.min(data.currentSlideIndex ?? 0, slides.length - 1));
+          }
         }
       })
       .catch(() => {})
@@ -150,9 +152,12 @@ export function StoryPlayer({ slides, courseId, initData, themeType, themeValue 
   }, [slides, currentIndex, getSlideMedia]);
 
   const saveProgress = useCallback(
-    (slideIndex: number, status: "in_progress" | "completed", correct: number, total: number) => {
+    (
+      slideIndex: number,
+      status: "in_progress" | "completed",
+      answer?: { slideId: string; selectedIndices: number[] }
+    ) => {
       if (!courseId || !initData) return;
-      const quizScore = total > 0 ? Math.round((correct / total) * 100) : null;
       fetch("/api/progress", {
         method: "POST",
         headers: {
@@ -163,9 +168,14 @@ export function StoryPlayer({ slides, courseId, initData, themeType, themeValue 
           courseId,
           currentSlideIndex: slideIndex,
           status,
-          quizScore,
+          ...(answer ? { slideId: answer.slideId, selectedIndices: answer.selectedIndices } : {}),
         }),
-      }).catch(() => {});
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data && typeof data.quizScore === "number") setQuizScore(data.quizScore);
+        })
+        .catch(() => {});
     },
     [courseId, initData]
   );
@@ -200,20 +210,18 @@ export function StoryPlayer({ slides, courseId, initData, themeType, themeValue 
       setQuizAnswered(false);
       // Mark completed as soon as the user reaches (or passes) the last content slide
       const newStatus = nextIndex >= lastContentIndex ? "completed" : "in_progress";
-      saveProgress(nextIndex, newStatus, quizCorrect, quizTotal);
+      saveProgress(nextIndex, newStatus);
     } else {
       setCompleted(true);
-      saveProgress(currentIndex, "completed", quizCorrect, quizTotal);
+      saveProgress(currentIndex, "completed");
     }
   };
 
-  const handleQuizAnswered = (isCorrect: boolean) => {
-    const newCorrect = isCorrect ? quizCorrect + 1 : quizCorrect;
-    const newTotal = quizTotal + 1;
-    setQuizCorrect(newCorrect);
-    setQuizTotal(newTotal);
+  const handleQuizAnswered = (selectedIndices: number[]) => {
     setQuizAnswered(true);
-    saveProgress(currentIndex, "in_progress", newCorrect, newTotal);
+    if (slide?.id) {
+      saveProgress(currentIndex, "in_progress", { slideId: slide.id, selectedIndices });
+    }
   };
 
   const handlePollSubmitted = (rating: string | null, comment: string) => {
@@ -291,9 +299,9 @@ export function StoryPlayer({ slides, courseId, initData, themeType, themeValue 
         <div className="space-y-2">
           <h1 className="text-2xl font-black uppercase tracking-tight">Course Completed!</h1>
           <p className="text-sm text-slate-400">You've reviewed all slides.</p>
-          {quizTotal > 0 && (
+          {quizScore !== null && (
             <p className="text-lg font-bold text-[#C8D400]">
-              Quiz Score: {Math.round((quizCorrect / quizTotal) * 100)}%
+              Quiz Score: {quizScore}%
             </p>
           )}
           <p className="text-xs text-slate-500">This course is now in your Completed section — you can revisit it anytime.</p>
@@ -310,9 +318,7 @@ export function StoryPlayer({ slides, courseId, initData, themeType, themeValue 
             onClick={() => {
               setCompleted(false);
               setCurrentIndex(0);
-              setQuizCorrect(0);
-              setQuizTotal(0);
-              saveProgress(0, "in_progress", 0, 0);
+              saveProgress(0, "in_progress");
             }}
             className="flex items-center justify-center gap-2 w-full px-6 py-3 bg-slate-900 border border-slate-800 text-slate-300 rounded-2xl text-xs font-bold uppercase tracking-wider"
           >

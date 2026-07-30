@@ -126,10 +126,13 @@ export const progress = pgTable("progress", {
   currentSlideIndex: integer("current_slide_index").default(0).notNull(),
   status: text("status").$type<"not_started" | "in_progress" | "completed">().default("not_started").notNull(),
   quizScore: integer("quiz_score"),
+  quizAnswers: jsonb("quiz_answers").$type<Record<string, number[]>>(),
   completedAt: timestamp("completed_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  uniqueProgress: unique().on(table.workerId, table.courseId),
+}));
 
 // 5. ASSIGNMENTS TABLE
 export const assignments = pgTable("assignments", {

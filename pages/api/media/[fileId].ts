@@ -3,16 +3,18 @@ import { db } from "@/db";
 import { mediaFiles } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { deleteFromR2 } from "@/lib/r2";
-import { decodeClerkSessionCookie, resolveOrgId } from "@/lib/org";
+import { requireOrgIdFromApiRequest, UnauthorizedOrgError } from "@/lib/org";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const { userId, clerkOrgId } = decodeClerkSessionCookie(req.headers.cookie || "");
-  if (!userId) {
-    return res.status(401).json({ error: "Unauthorized" });
-  }
-  const orgId = await resolveOrgId(clerkOrgId);
-  if (!orgId) {
-    return res.status(401).json({ error: "Unauthorized" });
+  let orgId: string;
+  try {
+    orgId = await requireOrgIdFromApiRequest(req);
+  } catch (err: any) {
+    if (err instanceof UnauthorizedOrgError) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    console.error("Error resolving org for /api/media/[fileId]:", err);
+    return res.status(500).json({ error: err.message || "Internal Server Error" });
   }
 
   const { fileId } = req.query as { fileId: string };

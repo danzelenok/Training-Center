@@ -1,10 +1,24 @@
-import { auth } from "@clerk/nextjs/server";
+import { auth, getAuth } from "@clerk/nextjs/server";
+import type { NextApiRequest } from "next";
 import { db } from "@/db";
 import { organizations } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { env } from "@/env";
 
 export class UnauthorizedOrgError extends Error {}
+
+/** Looks up our internal `organizations.id` for a verified Clerk org id, throwing if unknown. */
+async function lookupOrgId(clerkOrgId: string): Promise<string> {
+  const [org] = await db
+    .select({ id: organizations.id })
+    .from(organizations)
+    .where(eq(organizations.clerkOrgId, clerkOrgId))
+    .limit(1);
+
+  if (!org) throw new UnauthorizedOrgError("Organization not found");
+
+  return org.id;
+}
 
 /**
  * Resolves the caller's Clerk org into our internal `organizations.id`.
@@ -13,6 +27,10 @@ export class UnauthorizedOrgError extends Error {}
  *
  * In development, MOCK_ORG_ID bypasses the Clerk lookup entirely so the
  * admin API can be exercised without a real Clerk organization.
+ *
+ * App Router only — relies on `auth()`, which reads from Next.js's
+ * request-scoped async context. Pages Router API routes don't have that
+ * context; use `requireOrgIdFromApiRequest()` there instead.
  */
 export async function requireOrgId(): Promise<string> {
   if (env.NODE_ENV === "development" && env.MOCK_ORG_ID) {
@@ -22,15 +40,32 @@ export async function requireOrgId(): Promise<string> {
   const { orgId } = await auth();
   if (!orgId) throw new UnauthorizedOrgError("No active organization");
 
-  const [org] = await db
-    .select({ id: organizations.id })
-    .from(organizations)
-    .where(eq(organizations.clerkOrgId, orgId))
-    .limit(1);
+  return lookupOrgId(orgId);
+}
 
-  if (!org) throw new UnauthorizedOrgError("Organization not found");
+/**
+ * Pages Router equivalent of `requireOrgId()`, for `NextApiRequest` handlers.
+ * Uses `getAuth(req)`, the officially supported Clerk helper for Pages
+ * Router, which returns the same version-independent `orgId` regardless of
+ * the underlying Clerk session-token format (see decodeClerkSessionCookie
+ * for why that matters).
+ *
+ * IMPORTANT: `getAuth(req)` requires `clerkMiddleware` to have run on this
+ * request (it reads an auth-status marker the middleware sets); it throws
+ * otherwise. Routes that proxy.ts deliberately bypasses clerkMiddleware for
+ * (currently `/api/media/upload` and `/api/courses/[id]/upload`, both for
+ * request-body-size reasons) cannot use this — they still need
+ * `decodeClerkSessionCookie()` below.
+ */
+export async function requireOrgIdFromApiRequest(req: NextApiRequest): Promise<string> {
+  if (env.NODE_ENV === "development" && env.MOCK_ORG_ID) {
+    return env.MOCK_ORG_ID;
+  }
 
-  return org.id;
+  const { orgId } = getAuth(req);
+  if (!orgId) throw new UnauthorizedOrgError("No active organization");
+
+  return lookupOrgId(orgId);
 }
 
 /**
@@ -56,7 +91,10 @@ export function decodeClerkSessionCookie(cookieHeader: string): {
   try {
     const payloadBase64 = sessionCookie.split(".")[1];
     const payload = JSON.parse(Buffer.from(payloadBase64, "base64").toString());
-    return { userId: payload.sub || null, clerkOrgId: payload.org_id || null };
+    // Clerk's v2 session token format nests active-org data under `o.id`
+    // instead of the flat `org_id` claim used by v1 tokens.
+    const clerkOrgId = payload.org_id || payload.o?.id || null;
+    return { userId: payload.sub || null, clerkOrgId };
   } catch {
     return { userId: null, clerkOrgId: null };
   }

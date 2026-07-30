@@ -64,6 +64,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: "Method Not Allowed" });
   }
 
+  // proxy.ts deliberately excludes this route from clerkMiddleware (bodyParser: false,
+  // needed to bypass Next.js's request body size limit for large media uploads), so
+  // Clerk's getAuth()/requireOrgIdFromApiRequest() can't be used here — it requires
+  // clerkMiddleware to have run and throws otherwise. Decode the session cookie
+  // manually instead; see lib/org.ts for details.
   const { userId, clerkOrgId } = decodeClerkSessionCookie(req.headers.cookie || "");
   if (!userId) {
     return res.status(401).json({ error: "Unauthorized" });

@@ -20,7 +20,7 @@ interface DialogueCardProps {
   onEnableDrag?: () => void;
   mode?: "edit" | "play";
   onCompleted?: () => void;
-  onAnswered?: (isCorrect: boolean) => void;
+  onAnswered?: (selectedIndices: number[]) => void;
 }
 
 // 1. Silhouettes & Soundwave Icons
@@ -478,16 +478,18 @@ export function DialogueCard({
         <QuizContainer
           questionText={content.belowQuizQuestion || ""}
           options={content.belowQuizOptions || ["", ""]}
-          correctIndex={content.belowQuizCorrectIndex ?? 0}
+          quizType={content.belowQuizType}
+          correctIndices={content.belowQuizCorrectIndices}
           explanation={content.belowQuizExplanation || ""}
           isActive={isActive}
           mode={mode}
-          onAnswered={(isCorrect) => { onAnswered?.(isCorrect); onCompleted?.(); }}
+          onAnswered={(selectedIndices) => { onAnswered?.(selectedIndices); onCompleted?.(); }}
           onUpdateContent={(fields) => {
             const updated: any = {};
             if (fields.question !== undefined) updated.belowQuizQuestion = fields.question;
             if (fields.options !== undefined) updated.belowQuizOptions = fields.options;
-            if (fields.correctIndex !== undefined) updated.belowQuizCorrectIndex = fields.correctIndex;
+            if (fields.quizType !== undefined) updated.belowQuizType = fields.quizType;
+            if (fields.correctIndices !== undefined) updated.belowQuizCorrectIndices = fields.correctIndices;
             if (fields.correctAnswer !== undefined) updated.belowQuizCorrectAnswer = fields.correctAnswer;
             if (fields.explanation !== undefined) updated.belowQuizExplanation = fields.explanation;
             updateContent(updated);

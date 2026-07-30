@@ -32,7 +32,8 @@ export interface Slide {
     belowType?: "none" | "image" | "text";
     pollType?: "stars" | "emojis" | "thumbs";
     options?: string[];
-    correctIndex?: number;
+    quizType?: "single" | "multiple";
+    correctIndices?: number[];
     correctAnswer?: string;
     explanation?: string;
     showHeading?: boolean;
@@ -63,7 +64,8 @@ export interface Slide {
     dialogueBelowType?: "none" | "quiz" | "text";
     belowQuizQuestion?: string;
     belowQuizOptions?: string[];
-    belowQuizCorrectIndex?: number;
+    belowQuizType?: "single" | "multiple";
+    belowQuizCorrectIndices?: number[];
     belowQuizCorrectAnswer?: string;
     belowQuizExplanation?: string;
     belowHeading?: string;

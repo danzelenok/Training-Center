@@ -2,38 +2,6 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { z } from "zod";
 
 // Zod schemas for Slide structure validation
-export const SlideContentSchema = z.union([
-  z.object({
-    heading: z.string().min(1),
-    body: z.string().min(1),
-  }),
-  z.object({
-    heading: z.string().min(1),
-    body: z.string().min(1),
-    visualKeywords: z.string().min(1),
-  }),
-  z.object({
-    heading: z.string().min(1),
-    body: z.string().min(1),
-    audioScript: z.string().min(1),
-  }),
-  z.object({
-    heading: z.string().min(1),
-    dialogueLines: z.array(
-      z.object({
-        character: z.string().min(1),
-        text: z.string().min(1),
-      })
-    ).min(1),
-  }),
-  z.object({
-    heading: z.string().min(1),
-    options: z.array(z.string().min(1)).min(2).max(4),
-    correctIndex: z.number().int().nonnegative(),
-    explanation: z.string().min(1),
-  }),
-]);
-
 export const SlideInputSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("text"),
@@ -67,7 +35,8 @@ export const SlideInputSchema = z.discriminatedUnion("type", [
         dialogueBelowType: z.literal("quiz"),
         belowQuizQuestion: z.string().min(1),
         belowQuizOptions: z.array(z.string().min(1)).min(2).max(8),
-        belowQuizCorrectIndex: z.number().int().nonnegative(),
+        belowQuizType: z.enum(["single", "multiple"]),
+        belowQuizCorrectIndices: z.array(z.number().int().nonnegative()).min(1),
         belowQuizExplanation: z.string().min(1),
       }),
     ]),
@@ -110,7 +79,8 @@ export const SlideInputSchema = z.discriminatedUnion("type", [
     content: z.object({
       heading: z.string().min(1),
       options: z.array(z.string().min(1)).min(2).max(8),
-      correctIndex: z.number().int().nonnegative(),
+      quizType: z.enum(["single", "multiple"]),
+      correctIndices: z.array(z.number().int().nonnegative()).min(1),
       explanation: z.string().min(1),
     }),
   }),
@@ -125,6 +95,45 @@ export const SlideInputSchema = z.discriminatedUnion("type", [
 
 export type SlideInput = z.infer<typeof SlideInputSchema>;
 
+// Shuffles a list of options and remaps a set of correct-answer indices onto their
+// new positions. `indices` maps new position -> old position, so an old index i now
+// lives at indices.indexOf(i).
+function shuffleOptionsAndIndices(options: string[], correctIndices: number[]): { options: string[]; correctIndices: number[] } {
+  const indices = options.map((_, i) => i);
+  for (let i = indices.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [indices[i], indices[j]] = [indices[j], indices[i]];
+  }
+
+  const newOptions = indices.map((i) => options[i]);
+  const newCorrectIndices = correctIndices.map((old) => indices.indexOf(old));
+
+  return { options: newOptions, correctIndices: newCorrectIndices };
+}
+
+function shuffleQuizOptions(slide: SlideInput): SlideInput {
+  if (slide.type === "quiz") {
+    const { options, correctIndices } = shuffleOptionsAndIndices(slide.content.options, slide.content.correctIndices);
+    return {
+      ...slide,
+      content: { ...slide.content, options, correctIndices },
+    };
+  }
+
+  if (slide.type === "dialogue" && slide.content.dialogueBelowType === "quiz") {
+    const { options, correctIndices } = shuffleOptionsAndIndices(
+      slide.content.belowQuizOptions,
+      slide.content.belowQuizCorrectIndices
+    );
+    return {
+      ...slide,
+      content: { ...slide.content, belowQuizOptions: options, belowQuizCorrectIndices: correctIndices },
+    };
+  }
+
+  return slide;
+}
+
 const systemInstruction = `You are an expert safety training content creator.
 Generate a structured, cohesive, and educational slide deck for a safety training course based on the topic prompt.
 The course must cover essential safety concepts, scaffolded logically.
@@ -136,7 +145,7 @@ CRITICAL DESIGN REQUIREMENT: Slides are displayed on a 9:16 vertical mobile scre
 - Dialogue Slide: heading ≤ 25 chars, exactly 2 dialogue lines, each line up to 200 chars.
 - Chat Slide: heading ≤ 25 chars, each bubble text ≤ 80 chars, 2-6 bubbles total.
 - Video Slide: heading ≤ 25 chars, body ≤ 100 chars, speechText ≤ 1400 chars (the avatar's voiceover — max 2 minutes of speech at natural pace).
-- Quiz Slide: heading (question) ≤ 50 chars, exactly 3 options each ≤ 25 chars, explanation ≤ 80 chars.
+- Quiz Slide: heading (question) ≤ 50 chars, 2 to 8 options each ≤ 25 chars (vary the count across quiz slides in the same course), explanation ≤ 80 chars.
 - Poll (Rate) Slide: heading ≤ 60 chars (a reflection or rating prompt).
 
 You must return a raw JSON array of slides. Do not wrap the JSON in markdown code blocks. Return ONLY the JSON array.
@@ -209,7 +218,8 @@ AVAILABLE SLIDE TYPES — use all of them creatively based on what fits the topi
        "dialogueBelowType": "quiz",
        "belowQuizQuestion": "When must a hard hat be worn?",
        "belowQuizOptions": ["Before entering the zone", "Only when working above 2m", "Only indoors"],
-       "belowQuizCorrectIndex": 0,
+       "belowQuizType": "single",
+       "belowQuizCorrectIndices": [0],
        "belowQuizExplanation": "Hard hats are required any time you enter a designated zone."
      }
    }
@@ -264,7 +274,7 @@ AVAILABLE SLIDE TYPES — use all of them creatively based on what fits the topi
    }
 
 6. Video Slide (HeyGen avatar speaking, auto-generated):
-   Use for a talking-head explanation of a key concept, a personal safety message, or a module introduction/conclusion. The avatar speaks the speechText aloud.
+   Use for a talking-head explanation of a key concept or a personal safety message. This is not a required intro or outro — place it wherever it fits best in the course, not always first or last. The avatar speaks the speechText aloud.
    {
      "type": "video",
      "content": {
@@ -278,13 +288,29 @@ AVAILABLE SLIDE TYPES — use all of them creatively based on what fits the topi
 
 7. Quiz Slide (knowledge check):
    Use to test understanding of a rule or procedure just covered. Choose how many options fit the question — you can use 2 (true/false style), 3, 4, or up to 8 options. More options make harder questions; fewer options work for simple yes/no or binary choices.
+   Set "quizType" to "single" when exactly one option is correct, or "multiple" when more than one fact/option applies — list every correct option's index in "correctIndices". Favor "single" for most questions; use "multiple" only when the question genuinely has more than one correct answer (e.g. "Which of these are required PPE?").
+
+   Single-answer example:
    {
      "type": "quiz",
      "content": {
        "heading": "What protects from falls?",
        "options": ["Safety harness", "Hard hat", "Safety glasses", "Steel-toe boots"],
-       "correctIndex": 0,
+       "quizType": "single",
+       "correctIndices": [0],
        "explanation": "A safety harness prevents falls from height."
+     }
+   }
+
+   Multiple-answer example:
+   {
+     "type": "quiz",
+     "content": {
+       "heading": "Which are required before working at height?",
+       "options": ["Safety harness", "Hard hat", "Anchor point inspection", "Sunglasses"],
+       "quizType": "multiple",
+       "correctIndices": [0, 1, 2],
+       "explanation": "Harness, hard hat, and a checked anchor point are all required before working at height."
      }
    }
 
@@ -316,7 +342,7 @@ export async function generateCourseStructure(prompt: string, modelName: string 
   });
 
   const userMessage = lniContext
-    ? `REFERENCE MATERIALS FROM WASHINGTON STATE L&I:\n${lniContext}\n\nUsing the above official materials as your primary source, create a training course on: ${prompt}`
+    ? `REFERENCE MATERIALS FROM WASHINGTON STATE L&I:\n${lniContext}\n\nBase all factual claims, requirements, and procedures strictly on the reference materials above. Do not introduce safety requirements, numbers, or practices that are not present in the reference materials. You may vary the structure, wording, examples, and order of presentation freely — but the underlying factual content must come only from the source above. Create a training course based on this topic: ${prompt}`
     : `Create a training course based on this topic: ${prompt}`;
 
   const response = await model.generateContent({
@@ -362,5 +388,5 @@ export async function generateCourseStructure(prompt: string, modelName: string 
     throw new Error("AI did not generate any slides for the course.");
   }
 
-  return validatedSlides;
+  return validatedSlides.map(shuffleQuizOptions);
 }

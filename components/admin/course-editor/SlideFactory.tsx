@@ -44,7 +44,7 @@ export interface SlideCardProps {
   setSelectedBubbleIdx?: (idx: number | null) => void;
   chatBubblesToolsOpen?: boolean;
   mode?: "edit" | "play";
-  onAnswered?: (isCorrect: boolean) => void;
+  onAnswered?: (selectedIndices: number[]) => void;
   onCompleted?: () => void;
   onPollSubmitted?: (rating: string | null, comment: string) => void;
 }
