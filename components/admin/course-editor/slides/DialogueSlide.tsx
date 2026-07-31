@@ -266,6 +266,7 @@ export function DialogueCard({
   const studentVideoRef = useRef<HTMLVideoElement>(null);
   const secondVideoPlayedRef = useRef(false);
   const stallTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const playTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const firstSpeaker = useMemo(() => {
     if (linesList.length === 0) return "instructor";
@@ -277,6 +278,12 @@ export function DialogueCard({
   // network/webview) or the browser fires "error", give up and let the caller treat it
   // the same as if the clip had ended — otherwise one bad clip permanently blocks the
   // quiz/quest below it, with no way for the worker to recover short of reloading.
+  //
+  // Some in-app WebViews (observed on iOS Telegram) can return a play() Promise that
+  // never settles — neither resolves nor rejects — when play() isn't called from inside
+  // a direct user gesture. That left needsTapToPlay stuck at false forever: no overlay,
+  // no "ended" event, quiz permanently locked with zero recovery path. playTimeoutRef
+  // guards specifically against that hang by surfacing the tap-to-play overlay itself.
   const playWithFallback = useCallback((el: HTMLVideoElement, onGiveUp: () => void) => {
     const cleanup = () => {
       el.removeEventListener("canplay", onCanPlay);
@@ -285,11 +292,35 @@ export function DialogueCard({
         clearTimeout(stallTimeoutRef.current);
         stallTimeoutRef.current = null;
       }
+      if (playTimeoutRef.current) {
+        clearTimeout(playTimeoutRef.current);
+        playTimeoutRef.current = null;
+      }
     };
 
     const onCanPlay = () => {
       cleanup();
-      el.play().then(() => setNeedsTapToPlay(false)).catch(() => setNeedsTapToPlay(true));
+      let settled = false;
+      playTimeoutRef.current = setTimeout(() => {
+        if (!settled) setNeedsTapToPlay(true);
+      }, 4000);
+      el.play()
+        .then(() => {
+          settled = true;
+          if (playTimeoutRef.current) {
+            clearTimeout(playTimeoutRef.current);
+            playTimeoutRef.current = null;
+          }
+          setNeedsTapToPlay(false);
+        })
+        .catch(() => {
+          settled = true;
+          if (playTimeoutRef.current) {
+            clearTimeout(playTimeoutRef.current);
+            playTimeoutRef.current = null;
+          }
+          setNeedsTapToPlay(true);
+        });
     };
 
     const onFail = () => {

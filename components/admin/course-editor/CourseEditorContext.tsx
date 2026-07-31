@@ -4,30 +4,21 @@ import React, { createContext, useContext, useState, useEffect, useRef, useCallb
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Slide } from "./CardCanvas";
+import type { Course, MediaLibraryFile } from "@/hooks/admin/course-editor/types";
+import {
+  useCourseQuery,
+  useMediaFilesQuery,
+  useGenerationPollingQuery,
+} from "@/hooks/admin/course-editor/queries";
+import {
+  useAutosaveMutation,
+  useSaveCourseMutation,
+  useUploadFileMutation,
+  useGenerateAIMutation,
+  usePPTXUploadMutation,
+} from "@/hooks/admin/course-editor/mutations";
 
-export interface MediaLibraryFile {
-  fileId: string;
-  name: string;
-  url: string;
-  thumbnailUrl?: string;
-  fileType: string;
-  size?: number;
-  mime?: string;
-}
-
-export interface Course {
-  id: string;
-  title: string;
-  description: string;
-  status: "draft" | "published";
-  autoAssignNewWorkers: boolean;
-  telegramMessageId: string | null;
-  telegramGroupId: string | null;
-  slides: Slide[];
-  generationStatus?: "none" | "pending" | "generating" | "ready" | "failed";
-  themeType?: string;
-  themeValue?: string;
-}
+export type { Course, MediaLibraryFile };
 
 interface CourseEditorContextType {
   course: Course | null;
@@ -40,7 +31,6 @@ interface CourseEditorContextType {
   mediaPickerOpen: boolean;
   mediaFiles: MediaLibraryFile[];
   mediaLoading: boolean;
-  slideUploading: boolean;
   activeTab: "library" | "upload" | "pexels";
   isDragOver: boolean;
   pexelsQuery: string;
@@ -66,8 +56,6 @@ interface CourseEditorContextType {
   setSlidesList: React.Dispatch<React.SetStateAction<Slide[]>>;
   setActiveSlideIndex: (idx: number | null) => void;
   setMediaPickerOpen: (open: boolean) => void;
-  setMediaLoading: (loading: boolean) => void;
-  setSlideUploading: (uploading: boolean) => void;
   setActiveTab: (tab: "library" | "upload" | "pexels") => void;
   setIsDragOver: (dragOver: boolean) => void;
   setPexelsQuery: (query: string) => void;
@@ -93,7 +81,6 @@ interface CourseEditorContextType {
   searchPexels: (query: string) => Promise<void>;
   handleSelectPexelsPhoto: (photo: { id: number; url: string; thumbnail: string; photographer: string }) => void;
   handleSelectFromLibrary: (file: MediaLibraryFile) => void;
-  handleSlideDirectUpload: (file: File) => Promise<void>;
   updateCourseMeta: (field: "title" | "description", value: string) => void;
   toggleAutoAssignNewWorkers: () => void;
   addSlide: (type: Slide["type"]) => void;
@@ -116,13 +103,17 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
   const [slidesList, setSlidesList] = useState<Slide[]>([]);
   const slidesListRef = useRef<Slide[]>([]);
   slidesListRef.current = slidesList;
-  const [loading, setLoading] = useState(true);
 
   // Auto-save states and hooks
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "error" | null>("saved");
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isInitialLoad = useRef(true);
   const prevPollStatusesRef = useRef<Record<string, string>>({});
+
+  const courseQuery = useCourseQuery(id);
+  const loading = courseQuery.isLoading;
+
+  const autosaveMutation = useAutosaveMutation(id);
 
   const triggerAutoSave = useCallback(() => {
     if (loading || !course) return;
@@ -133,45 +124,39 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
 
     setSaveStatus("saving");
 
-    saveTimeoutRef.current = setTimeout(async () => {
-      try {
-        const res = await fetch(`/api/courses/${id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            title: course.title,
-            description: course.description,
-            themeType: course.themeType || "preset",
-            themeValue: course.themeValue || "linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)",
-            autoAssignNewWorkers: course.autoAssignNewWorkers,
-            slides: slidesListRef.current,
-          }),
-        });
-
-        if (!res.ok) {
-          const errorText = await res.text();
-          throw new Error(errorText || "Failed to save changes");
+    saveTimeoutRef.current = setTimeout(() => {
+      autosaveMutation.mutate(
+        {
+          title: course.title,
+          description: course.description,
+          themeType: course.themeType || "preset",
+          themeValue: course.themeValue || "linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)",
+          autoAssignNewWorkers: course.autoAssignNewWorkers,
+          slides: slidesListRef.current,
+        },
+        {
+          onSuccess: (data) => {
+            if (Array.isArray(data.slides)) {
+              const serverIds = data.slides.map((s: Slide) => s.id).filter(Boolean);
+              const hasIdChanges = slidesListRef.current.some((slide, idx) => serverIds[idx] && slide.id !== serverIds[idx]);
+              if (hasIdChanges) {
+                isInitialLoad.current = true;
+                setSlidesList(prev => prev.map((slide, idx) => ({
+                  ...slide,
+                  id: serverIds[idx] || slide.id,
+                })));
+              }
+            }
+            setSaveStatus("saved");
+          },
+          onError: (err: Error) => {
+            console.error("Auto-save error:", err);
+            setSaveStatus("error");
+          },
         }
-
-        const data = await res.json();
-        if (Array.isArray(data.slides)) {
-          const serverIds = data.slides.map((s: Slide) => s.id).filter(Boolean);
-          const hasIdChanges = slidesListRef.current.some((slide, idx) => serverIds[idx] && slide.id !== serverIds[idx]);
-          if (hasIdChanges) {
-            isInitialLoad.current = true;
-            setSlidesList(prev => prev.map((slide, idx) => ({
-              ...slide,
-              id: serverIds[idx] || slide.id,
-            })));
-          }
-        }
-        setSaveStatus("saved");
-      } catch (err: any) {
-        console.error("Auto-save error:", err);
-        setSaveStatus("error");
-      }
+      );
     }, 1500);
-  }, [id, course, loading]);
+  }, [course, loading, autosaveMutation]);
 
   useEffect(() => {
     if (loading || !course) return;
@@ -209,9 +194,6 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
 
   // Media library & upload states
   const [mediaPickerOpen, setMediaPickerOpen] = useState(false);
-  const [mediaFiles, setMediaFiles] = useState<MediaLibraryFile[]>([]);
-  const [mediaLoading, setMediaLoading] = useState(false);
-  const [slideUploading, setSlideUploading] = useState(false);
   const [activeTab, setActiveTab] = useState<"library" | "upload" | "pexels">("library");
   const [isDragOver, setIsDragOver] = useState(false);
   const [pexelsQuery, setPexelsQuery] = useState("");
@@ -238,7 +220,7 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
   const [aiUseLNI, setAiUseLNI] = useState(true);
   const [aiGenerating, setAiGenerating] = useState(false);
 
-  // Publish dialog states
+  // Publish dialog states — untouched in this task (task 2.2)
   const [publishDialogOpen, setPublishDialogOpen] = useState(false);
   const [publishAssignTo, setPublishAssignTo] = useState<"all" | "teams" | "specific">("all");
   const [publishWorkerIds, setPublishWorkerIds] = useState<string[]>([]);
@@ -248,142 +230,133 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
   const [publishTeamsList, setPublishTeamsList] = useState<{ id: string; label: string; memberCount: number }[]>([]);
   const [publishWorkersLoading, setPublishWorkersLoading] = useState(false);
 
-  // Fetch Course details & slides
-  const fetchCourse = async () => {
-    try {
-      const res = await fetch(`/api/courses/${id}`);
-      if (!res.ok) throw new Error("Course not found");
-      const data = await res.json();
-      setCourse(data);
-      const loadedSlides = (data.slides || []).map((s: Slide) => ({
-        ...s,
-        id: s.id || crypto.randomUUID()
-      }));
-      setSlidesList(loadedSlides);
-      if (data.slides && data.slides.length > 0) {
-        setActiveSlideIndex(0);
-      }
-    } catch (err: any) {
-      toast.error(err.message || "Failed to load course details");
-      router.push("/admin/courses");
-    } finally {
-      setLoading(false);
+  // Sync course + slidesList from the server whenever a fresh payload for
+  // this courseId arrives — mirrors the old fetchCourse() success path.
+  // Fires on: initial mount, courseId change, and the invalidate triggered
+  // by useGenerateAIMutation's onSuccess (replaces the old `await
+  // fetchCourse()` re-call). No isInitialLoad reset here — matching the
+  // original, which relied on the ref's default `true` to skip only the
+  // very first sync; a later AI-generation refetch is expected to fall
+  // through to triggerAutoSave and persist the freshly generated slides,
+  // same as before.
+  useEffect(() => {
+    if (!courseQuery.data) return;
+    const data = courseQuery.data;
+    setCourse(data);
+    const loadedSlides = (data.slides || []).map((s: Slide) => ({
+      ...s,
+      id: s.id || crypto.randomUUID()
+    }));
+    setSlidesList(loadedSlides);
+    if (data.slides && data.slides.length > 0) {
+      setActiveSlideIndex(0);
     }
-  };
+  }, [courseQuery.data]);
 
   useEffect(() => {
-    fetchCourse();
-  }, [id]);
+    if (courseQuery.isError) {
+      toast.error(courseQuery.error?.message || "Failed to load course details");
+      router.push("/admin/courses");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [courseQuery.isError]);
+
+  // fetchCourse() is kept on the facade only for interface parity — nothing
+  // currently calls it (page.tsx/Sidebar/CardCanvas never did either); the
+  // useCourseQuery + sync effect above now own the fetch lifecycle.
+  const fetchCourse = useCallback(async () => {
+    await courseQuery.refetch();
+  }, [courseQuery]);
 
   // Poll only while Inngest is actively processing slides
   const anySlideGenerating = slidesList.some(
     (s) => s.assetStatus === "generating"
   );
+  const shouldPoll = course?.generationStatus === "generating" || anySlideGenerating;
+
+  const generationPollingQuery = useGenerationPollingQuery(id, shouldPoll);
 
   useEffect(() => {
-    const shouldPoll = course?.generationStatus === "generating" || anySlideGenerating;
-    if (!shouldPoll) return;
+    const data = generationPollingQuery.data;
+    if (!data) return;
 
-    const intervalId = setInterval(async () => {
-      try {
-        const res = await fetch(`/api/courses/${id}/generation-status`);
-        if (res.ok) {
-          const data = await res.json();
-
-          // Detect status transitions from server response (before state update)
-          (data.slides || []).forEach((serverSlide: any) => {
-            const prev = prevPollStatusesRef.current[serverSlide.id];
-            if (prev === "generating" && serverSlide.assetStatus === "failed") {
-              const label = serverSlide.type.charAt(0).toUpperCase() + serverSlide.type.slice(1);
-              toast.error(`${label} generation failed.`);
-            }
-            prevPollStatusesRef.current[serverSlide.id] = serverSlide.assetStatus;
-          });
-
-          // Prevent this update from triggering auto-save
-          isInitialLoad.current = true;
-          setSlidesList((prevSlides) =>
-            prevSlides.map((slide) => {
-              // Only match by ID — never fall back to position to avoid assigning
-              // a wrong ID when slide counts differ, which causes duplicate PKs on save
-              const match = data.slides?.find((s: any) => s.id === slide.id);
-              if (match) {
-                return {
-                  ...slide,
-                  assetStatus: match.assetStatus,
-                  // Only merge server-generated URL fields — never overwrite user-edited content
-                  content: {
-                    ...slide.content,
-                    ...(match.content?.url !== undefined && { url: match.content.url }),
-                    ...(match.content?.assetUrl !== undefined && { assetUrl: match.content.assetUrl }),
-                    ...(match.content?.captions !== undefined && { captions: match.content.captions }),
-                    ...(match.content?.instructorVideoUrl !== undefined && { instructorVideoUrl: match.content.instructorVideoUrl }),
-                    ...(match.content?.studentVideoUrl !== undefined && { studentVideoUrl: match.content.studentVideoUrl }),
-                    ...(match.content?.slots !== undefined && { slots: match.content.slots }),
-                  },
-                };
-              }
-              return slide;
-            })
-          );
-
-          const mediaSlides = (data.slides || []).filter((s: any) => s.type === "audio" || s.type === "dialogue" || s.type === "video");
-          const allDone =
-            mediaSlides.length === 0 ||
-            mediaSlides.every((s: any) => s.assetStatus === "ready" || s.assetStatus === "failed");
-
-          if (allDone) {
-            setCourse((prev) => prev ? { ...prev, generationStatus: "ready" } : null);
-            fetch(`/api/courses/${id}`, {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ generationStatus: "ready" }),
-            }).catch(() => {});
-          } else {
-            setCourse((prev) => prev ? { ...prev, generationStatus: data.generationStatus } : null);
-          }
-        }
-      } catch {
-        // Network blip during polling — interval will retry automatically
+    // Detect status transitions from server response (before state update)
+    (data.slides || []).forEach((serverSlide) => {
+      const prev = prevPollStatusesRef.current[serverSlide.id];
+      if (prev === "generating" && serverSlide.assetStatus === "failed") {
+        const label = serverSlide.type.charAt(0).toUpperCase() + serverSlide.type.slice(1);
+        toast.error(`${label} generation failed.`);
       }
-    }, 2000);
+      prevPollStatusesRef.current[serverSlide.id] = serverSlide.assetStatus;
+    });
 
-    return () => clearInterval(intervalId);
-  }, [course?.generationStatus, anySlideGenerating, id]);
+    // Prevent this update from triggering auto-save
+    isInitialLoad.current = true;
+    setSlidesList((prevSlides) =>
+      prevSlides.map((slide) => {
+        // Only match by ID — never fall back to position to avoid assigning
+        // a wrong ID when slide counts differ, which causes duplicate PKs on save
+        const match = data.slides?.find((s) => s.id === slide.id);
+        if (match) {
+          return {
+            ...slide,
+            assetStatus: match.assetStatus,
+            // Only merge server-generated URL fields — never overwrite user-edited content
+            content: {
+              ...slide.content,
+              ...(match.content?.url !== undefined && { url: match.content.url }),
+              ...(match.content?.assetUrl !== undefined && { assetUrl: match.content.assetUrl }),
+              ...(match.content?.captions !== undefined && { captions: match.content.captions }),
+              ...(match.content?.instructorVideoUrl !== undefined && { instructorVideoUrl: match.content.instructorVideoUrl }),
+              ...(match.content?.studentVideoUrl !== undefined && { studentVideoUrl: match.content.studentVideoUrl }),
+              ...(match.content?.slots !== undefined && { slots: match.content.slots }),
+            },
+          };
+        }
+        return slide;
+      })
+    );
 
-  const fetchMediaFiles = useCallback(async () => {
-    setMediaLoading(true);
-    try {
-      const res = await fetch("/api/media");
-      if (!res.ok) throw new Error("Failed to load media library");
-      const data = await res.json();
-      setMediaFiles(Array.isArray(data) ? data : []);
-    } catch {
-      toast.error("Failed to load media library");
-    } finally {
-      setMediaLoading(false);
+    const mediaSlides = (data.slides || []).filter((s) => s.type === "audio" || s.type === "dialogue" || s.type === "video");
+    const allDone =
+      mediaSlides.length === 0 ||
+      mediaSlides.every((s) => s.assetStatus === "ready" || s.assetStatus === "failed");
+
+    if (allDone) {
+      setCourse((prev) => prev ? { ...prev, generationStatus: "ready" } : null);
+      fetch(`/api/courses/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ generationStatus: "ready" }),
+      }).catch(() => {});
+    } else {
+      setCourse((prev) => prev ? { ...prev, generationStatus: data.generationStatus } : null);
     }
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [generationPollingQuery.data, id]);
+
+  const mediaFilesQuery = useMediaFilesQuery(mediaPickerOpen);
+  const uploadFileMutation = useUploadFileMutation();
+  const mediaFiles = mediaFilesQuery.data ?? [];
+  const mediaLoading = mediaFilesQuery.isFetching || uploadFileMutation.isPending;
 
   const openMediaPicker = () => {
     setActiveTab("library");
     setMediaPickerOpen(true);
-    fetchMediaFiles();
   };
+
+  // fetchMediaFiles() is kept on the facade only for interface parity;
+  // nothing currently calls it directly (openMediaPicker used to, now the
+  // useMediaFilesQuery's `enabled: mediaPickerOpen` owns that trigger).
+  const fetchMediaFiles = useCallback(async () => {
+    await mediaFilesQuery.refetch();
+  }, [mediaFilesQuery]);
 
   // Upload and auto-apply file logic for the Media Library Sheet
   const handleUploadFile = async (file: File) => {
-    setMediaLoading(true);
     const toastId = toast.loading(`Uploading ${file.name} to library…`);
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const res = await fetch("/api/media/upload", { method: "POST", body: formData });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || data.message || "Upload failed");
-
-      // Refresh the media library list
-      await fetchMediaFiles();
+      const data = await uploadFileMutation.mutateAsync(file);
 
       // Auto-select/apply the uploaded file
       const uploadedFile: MediaLibraryFile = {
@@ -396,8 +369,6 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
       toast.success(`${file.name} uploaded and applied!`, { id: toastId });
     } catch (err: any) {
       toast.error(err.message || "Upload failed", { id: toastId });
-    } finally {
-      setMediaLoading(false);
     }
   };
 
@@ -451,30 +422,6 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
     });
     setMediaPickerOpen(false);
     toast.success(`Media set: ${file.name}`);
-  };
-
-  // Direct Card Upload logic
-  const handleSlideDirectUpload = async (file: File) => {
-    if (activeSlideIndex === null) return;
-    setSlideUploading(true);
-    const toastId = toast.loading(`Uploading ${file.name}…`);
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const res = await fetch("/api/media/upload", { method: "POST", body: formData });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || data.message || "Upload failed");
-
-      updateActiveSlideContent(activeSlideIndex, {
-        url: data.url,
-        imageUrl: data.url,
-      });
-      toast.success(`${file.name} uploaded and applied!`, { id: toastId });
-    } catch (err: any) {
-      toast.error(err.message || "Upload failed", { id: toastId });
-    } finally {
-      setSlideUploading(false);
-    }
   };
 
   // Update Course Meta (title, desc)
@@ -629,6 +576,8 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
     });
   }, []);
 
+  const saveCourseMutation = useSaveCourseMutation(id);
+
   // Save changes to database via API
   const handleSaveCourse = async () => {
     if (!course?.title.trim()) {
@@ -638,23 +587,13 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
     setSaveStatus("saving");
     const toastId = toast.loading("Saving changes to server...");
     try {
-      const res = await fetch(`/api/courses/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: course.title,
-          description: course.description,
-          themeType: course.themeType || "preset",
-          themeValue: course.themeValue || "linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)",
-          slides: slidesListRef.current,
-        }),
+      const data = await saveCourseMutation.mutateAsync({
+        title: course.title,
+        description: course.description,
+        themeType: course.themeType || "preset",
+        themeValue: course.themeValue || "linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)",
+        slides: slidesListRef.current,
       });
-
-      if (!res.ok) {
-        const errorText = await res.text();
-        throw new Error(errorText || "Failed to save changes");
-      }
-      const data = await res.json();
 
       isInitialLoad.current = true;
       setCourse(data);
@@ -675,6 +614,7 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
   };
 
   // Open publish dialog (validate first, save, fetch workers, then open)
+  // — untouched in this task (task 2.2 owns the publish flow)
   const handlePublish = async () => {
     if (slidesList.length === 0) {
       toast.error("Cannot publish a course without slides. Add cards or import a PPTX first.");
@@ -720,7 +660,8 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
     }
   };
 
-  // Actually submit the publish with chosen options
+  // Actually submit the publish with chosen options — untouched in this
+  // task (task 2.2 owns the publish flow)
   const confirmPublish = async () => {
     setPublishDialogOpen(false);
     setPublishing(true);
@@ -762,6 +703,8 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
     }
   };
 
+  const generateAIMutation = useGenerateAIMutation(id);
+
   // AI Slides generation
   const handleGenerateAI = async () => {
     if (!aiPrompt.trim()) {
@@ -771,24 +714,19 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
     setAiGenerating(true);
     const toastId = toast.loading("AI is generating course structure…");
     try {
-      const res = await fetch(`/api/courses/${id}/generate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: aiPrompt, model: aiModel, useLNI: aiUseLNI }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to generate course");
+      await generateAIMutation.mutateAsync({ prompt: aiPrompt, model: aiModel, useLNI: aiUseLNI });
 
       toast.success("AI Course generated successfully!", { id: toastId });
       setAiDialogOpen(false);
       setAiPrompt("");
-      await fetchCourse();
     } catch (err: any) {
       toast.error(err.message || "Failed to generate course", { id: toastId });
     } finally {
       setAiGenerating(false);
     }
   };
+
+  const pptxUploadMutation = usePPTXUploadMutation(id);
 
   // PPTX Parser
   const handlePPTXUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -806,16 +744,7 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
     setImporting(true);
     const toastId = toast.loading("Uploading and parsing PowerPoint slides...");
     try {
-      const res = await fetch(`/api/courses/${id}/upload`, {
-        method: "POST",
-        body: file,
-        headers: {
-          "Content-Type": "application/octet-stream",
-          "X-Filename": encodeURIComponent(file.name),
-        },
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.details || data.error || "Upload failed");
+      const data = await pptxUploadMutation.mutateAsync(file);
 
       toast.success(`Successfully imported ${data.slides?.length || 0} slides!`, { id: toastId });
       const importedSlides = (data.slides || []).map((s: Slide) => ({
@@ -847,7 +776,6 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
         mediaPickerOpen,
         mediaFiles,
         mediaLoading,
-        slideUploading,
         activeTab,
         isDragOver,
         pexelsQuery,
@@ -864,8 +792,6 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
         setSlidesList,
         setActiveSlideIndex,
         setMediaPickerOpen,
-        setMediaLoading,
-        setSlideUploading,
         setActiveTab,
         setIsDragOver,
         setPexelsQuery,
@@ -884,7 +810,6 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
         searchPexels,
         handleSelectPexelsPhoto,
         handleSelectFromLibrary,
-        handleSlideDirectUpload,
         updateCourseMeta,
         toggleAutoAssignNewWorkers,
         addSlide,

@@ -12,12 +12,16 @@ import { toast } from "sonner";
  * useQuery no longer takes an onError in v5, so fetch-failure toasts are
  * centralized here via QueryCache. Individual queries opt in with
  * `meta: { errorMessage: "..." }` to keep their original wording; queries
- * without it fall back to the raw error message.
+ * without it fall back to the raw error message. Background polling queries
+ * (e.g. course generation-status) set `meta: { silent: true }` to suppress
+ * the toast entirely — a single missed poll isn't worth surfacing, the next
+ * interval tick retries automatically.
  */
 export function makeQueryClient() {
   return new QueryClient({
     queryCache: new QueryCache({
       onError: (error, query) => {
+        if (query.meta?.silent) return;
         const message = (query.meta?.errorMessage as string | undefined) ?? error.message;
         toast.error(message);
       },
