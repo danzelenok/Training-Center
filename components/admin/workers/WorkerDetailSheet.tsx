@@ -11,6 +11,7 @@ import {
   CheckCircle,
   Clock,
   Users,
+  UserCog,
   BookOpen,
   Trophy,
   Layers,
@@ -158,6 +159,7 @@ interface WorkerDetailSheetProps {
   onAssignCourse: (workerId: string, courseId: string) => void;
   onOpenUnbindConfirm: (worker: Worker) => void;
   onOpenTeamPicker: () => void;
+  onOpenManagerPicker: () => void;
 }
 
 export function WorkerDetailSheet({
@@ -173,6 +175,7 @@ export function WorkerDetailSheet({
   onAssignCourse,
   onOpenUnbindConfirm,
   onOpenTeamPicker,
+  onOpenManagerPicker,
 }: WorkerDetailSheetProps) {
   const { data: worker, isLoading: loadingDetail } = useWorkerDetailQuery(workerId);
 
@@ -401,6 +404,33 @@ export function WorkerDetailSheet({
                   </div>
                 );
               })}
+            </div>
+
+            {/* Manager */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                  <UserCog className="h-3.5 w-3.5" />
+                  Manager
+                </h3>
+                <button
+                  onClick={onOpenManagerPicker}
+                  className="p-1 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                  title="Edit manager"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              {worker.manager ? (
+                <span className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-muted/30 px-3 py-1.5 text-xs font-medium text-foreground">
+                  <UserCog className="h-3 w-3 text-muted-foreground" />
+                  {worker.manager.name}
+                </span>
+              ) : (
+                <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+                  No manager assigned yet.
+                </div>
+              )}
             </div>
 
             {/* Teams */}

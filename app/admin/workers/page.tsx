@@ -5,7 +5,7 @@ import { UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast, Toaster } from "sonner";
 import { normalizePhone } from "@/lib/phone";
-import { useWorkersQuery, useCoursesQuery } from "@/hooks/admin/workers/queries";
+import { useWorkersQuery, useCoursesQuery, useTeamsQuery } from "@/hooks/admin/workers/queries";
 import {
   useCreateWorkerMutation,
   useReissueInviteMutation,
@@ -21,13 +21,16 @@ import { DuplicateWorkerDialog } from "@/components/admin/workers/DuplicateWorke
 import { InviteLinkDialog } from "@/components/admin/workers/InviteLinkDialog";
 import { UnbindConfirmDialog } from "@/components/admin/workers/UnbindConfirmDialog";
 import { TeamPickerDialog } from "@/components/admin/workers/TeamPickerDialog";
+import { ManagerPickerDialog } from "@/components/admin/workers/ManagerPickerDialog";
 import { WorkerDetailSheet } from "@/components/admin/workers/WorkerDetailSheet";
 
 export default function WorkersPage() {
   const workersQuery = useWorkersQuery();
   const coursesQuery = useCoursesQuery();
+  const teamsQuery = useTeamsQuery();
   const workersList = workersQuery.data?.workers ?? [];
   const publishedCourses = coursesQuery.data ?? [];
+  const teamsList = teamsQuery.data ?? [];
 
   const createWorker = useCreateWorkerMutation();
   const reissueInvite = useReissueInviteMutation();
@@ -39,6 +42,8 @@ export default function WorkersPage() {
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [newWorkerName, setNewWorkerName] = useState("");
   const [newWorkerPhone, setNewWorkerPhone] = useState("");
+  const [newWorkerTeamIds, setNewWorkerTeamIds] = useState<string[]>([]);
+  const [newWorkerManagerId, setNewWorkerManagerId] = useState<string | null>(null);
 
   // Possible-duplicate warning shown before creating a new worker
   const [duplicateCandidate, setDuplicateCandidate] = useState<Worker | null>(null);
@@ -57,6 +62,7 @@ export default function WorkersPage() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [selectedWorkerId, setSelectedWorkerId] = useState<string | null>(null);
   const [teamPickerOpen, setTeamPickerOpen] = useState(false);
+  const [managerPickerOpen, setManagerPickerOpen] = useState(false);
 
   const openInviteModal = (name: string, url: string) => {
     setActiveInviteWorkerName(name);
@@ -89,16 +95,27 @@ export default function WorkersPage() {
 
   const performCreateWorker = () => {
     createWorker.mutate(
-      { name: newWorkerName.trim(), phone: newWorkerPhone.trim() },
+      {
+        name: newWorkerName.trim(),
+        phone: newWorkerPhone.trim(),
+        teamIds: newWorkerTeamIds,
+        managerId: newWorkerManagerId,
+      },
       {
         onSuccess: (data) => {
           setCreateModalOpen(false);
           openInviteModal(data.worker.displayName || newWorkerName, data.inviteUrl);
           setNewWorkerName("");
           setNewWorkerPhone("");
+          setNewWorkerTeamIds([]);
+          setNewWorkerManagerId(null);
         },
       }
     );
+  };
+
+  const handleToggleNewWorkerTeam = (teamId: string, checked: boolean) => {
+    setNewWorkerTeamIds((prev) => (checked ? [...prev, teamId] : prev.filter((id) => id !== teamId)));
   };
 
   const handleCreateWorkerSubmit = (e: React.FormEvent) => {
@@ -127,6 +144,8 @@ export default function WorkersPage() {
     setCreateModalOpen(false);
     setNewWorkerName("");
     setNewWorkerPhone("");
+    setNewWorkerTeamIds([]);
+    setNewWorkerManagerId(null);
   };
 
   const handleViewDuplicate = () => {
@@ -237,6 +256,12 @@ export default function WorkersPage() {
         onPhoneChange={setNewWorkerPhone}
         onSubmit={handleCreateWorkerSubmit}
         creating={createWorker.isPending}
+        teams={teamsList}
+        teamIds={newWorkerTeamIds}
+        onToggleTeam={handleToggleNewWorkerTeam}
+        managerCandidates={workersList.filter((w) => w.active)}
+        managerId={newWorkerManagerId}
+        onManagerChange={setNewWorkerManagerId}
       />
 
       <DuplicateWorkerDialog
@@ -275,6 +300,12 @@ export default function WorkersPage() {
         workerId={selectedWorkerId}
       />
 
+      <ManagerPickerDialog
+        open={managerPickerOpen}
+        onOpenChange={setManagerPickerOpen}
+        workerId={selectedWorkerId}
+      />
+
       <WorkerDetailSheet
         workerId={selectedWorkerId}
         open={sheetOpen}
@@ -288,6 +319,7 @@ export default function WorkersPage() {
         onAssignCourse={handleAssignCourse}
         onOpenUnbindConfirm={handleOpenUnbindConfirm}
         onOpenTeamPicker={() => setTeamPickerOpen(true)}
+        onOpenManagerPicker={() => setManagerPickerOpen(true)}
       />
     </div>
   );

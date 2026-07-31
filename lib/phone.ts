@@ -23,7 +23,7 @@ export function formatPhoneDisplay(stored: string): string {
 
 /** Formats digits-as-typed into "(555) 123-4567" for a live input mask, capped at 10 digits. */
 export function formatPhoneInput(raw: string): string {
-  const digits = raw.replace(/\D/g, "").slice(0, 10);
+  const digits = raw.replace(/\D/g, "").replace(/^1(?=\d{10}$)/, "").slice(0, 10);
   if (digits.length > 6) return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
   if (digits.length > 3) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
   if (digits.length > 0) return `(${digits}`;

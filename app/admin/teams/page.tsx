@@ -58,6 +58,7 @@ export default function TeamsPage() {
   const [rosterSheetOpen, setRosterSheetOpen] = useState(false);
   const [rosterTeam, setRosterTeam] = useState<Team | null>(null);
   const [rosterMemberIds, setRosterMemberIds] = useState<string[]>([]);
+  const [rosterOriginalMemberIds, setRosterOriginalMemberIds] = useState<string[]>([]);
   const [loadingRoster, setLoadingRoster] = useState(false);
   const [savingRoster, setSavingRoster] = useState(false);
   const [rosterSearch, setRosterSearch] = useState("");
@@ -179,7 +180,9 @@ export default function TeamsPage() {
       const res = await fetch(`/api/teams/${team.id}`);
       if (!res.ok) throw new Error("Failed to fetch team roster");
       const data = await res.json();
-      setRosterMemberIds((data.members || []).map((m: { id: string }) => m.id));
+      const memberIds = (data.members || []).map((m: { id: string }) => m.id);
+      setRosterMemberIds(memberIds);
+      setRosterOriginalMemberIds(memberIds);
     } catch (err: any) {
       toast.error(err.message || "Could not load team roster");
       setRosterSheetOpen(false);
@@ -188,23 +191,30 @@ export default function TeamsPage() {
     }
   };
 
-  const handleToggleRosterMember = async (workerId: string, checked: boolean) => {
-    if (!rosterTeam) return;
-    const nextIds = checked
-      ? [...rosterMemberIds, workerId]
-      : rosterMemberIds.filter((id) => id !== workerId);
+  const handleToggleRosterMember = (workerId: string, checked: boolean) => {
+    setRosterMemberIds((prev) =>
+      checked ? [...prev, workerId] : prev.filter((id) => id !== workerId)
+    );
+  };
 
+  const rosterDirty =
+    rosterMemberIds.length !== rosterOriginalMemberIds.length ||
+    rosterMemberIds.some((id) => !rosterOriginalMemberIds.includes(id));
+
+  const handleSaveRoster = async () => {
+    if (!rosterTeam) return;
     setSavingRoster(true);
     try {
       const res = await fetch(`/api/teams/${rosterTeam.id}/members`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ workerIds: nextIds }),
+        body: JSON.stringify({ workerIds: rosterMemberIds }),
       });
       if (!res.ok) throw new Error("Failed to update roster");
 
-      setRosterMemberIds(nextIds);
+      setRosterOriginalMemberIds(rosterMemberIds);
       await fetchTeams();
+      toast.success("Roster updated");
     } catch (err: any) {
       toast.error(err.message || "Could not update roster");
     } finally {
@@ -471,7 +481,6 @@ export default function TeamsPage() {
                       >
                         <Checkbox
                           checked={checked}
-                          disabled={savingRoster}
                           onCheckedChange={(v) => handleToggleRosterMember(w.id, v === true)}
                         />
                         <span className="text-xs font-medium text-foreground">{workerName(w)}</span>
@@ -480,6 +489,18 @@ export default function TeamsPage() {
                   })
                 )}
               </div>
+              {activeWorkers.length > 0 && (
+                <div className="sticky bottom-0 -mx-4 -mb-6 border-t border-border bg-background px-4 py-3">
+                  <Button
+                    size="sm"
+                    onClick={handleSaveRoster}
+                    disabled={!rosterDirty || savingRoster}
+                    className="w-full bg-[#C8D400] hover:bg-[#B6C200] text-[#1B2A6B] font-extrabold text-xs rounded-xl gap-1.5"
+                  >
+                    {savingRoster ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Save Changes"}
+                  </Button>
+                </div>
+              )}
             </div>
           )}
         </SheetContent>

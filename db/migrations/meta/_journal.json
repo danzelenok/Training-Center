@@ -120,6 +120,13 @@
       "when": 1785449881596,
       "tag": "0016_add_quiz_answers_to_progress",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1785519131130,
+      "tag": "0017_add_worker_manager_id",
+      "breakpoints": true
     }
   ]
 }

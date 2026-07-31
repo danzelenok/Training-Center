@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, integer, bigint, timestamp, boolean, jsonb, unique } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, integer, bigint, timestamp, boolean, jsonb, unique, type AnyPgColumn } from "drizzle-orm/pg-core";
 
 // 0. ORGANIZATIONS TABLE
 export const organizations = pgTable("organizations", {
@@ -51,6 +51,7 @@ export const workers = pgTable("workers", {
   lastName: text("last_name"),
   displayName: text("display_name"),
   phone: text("phone"),
+  managerId: uuid("manager_id").references((): AnyPgColumn => workers.id, { onDelete: "set null" }),
   active: boolean("active").default(true).notNull(),
   deactivatedAt: timestamp("deactivated_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),

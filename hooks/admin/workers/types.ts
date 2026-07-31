@@ -3,6 +3,11 @@ export interface TeamRef {
   name: string;
 }
 
+export interface ManagerRef {
+  id: string;
+  name: string;
+}
+
 export interface Worker {
   id: string;
   telegramUserId: string | null;
@@ -56,6 +61,7 @@ export interface WorkerStatusEvent {
 }
 
 export interface WorkerDetail extends Worker {
+  manager: ManagerRef | null;
   courses: WorkerCourseProgress[];
   pollResponses: WorkerPollResponse[];
   statusHistory: WorkerStatusEvent[];

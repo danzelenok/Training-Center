@@ -96,10 +96,26 @@ export async function GET(
       .where(eq(workerStatusEvents.workerId, id))
       .orderBy(workerStatusEvents.changedAt);
 
+    let manager: { id: string; name: string } | null = null;
+    if (worker[0].managerId) {
+      const [managerRow] = await db
+        .select({ id: workers.id, firstName: workers.firstName, lastName: workers.lastName, displayName: workers.displayName })
+        .from(workers)
+        .where(eq(workers.id, worker[0].managerId))
+        .limit(1);
+      if (managerRow) {
+        manager = {
+          id: managerRow.id,
+          name: managerRow.displayName || [managerRow.firstName, managerRow.lastName].filter(Boolean).join(" ") || "Unnamed Worker",
+        };
+      }
+    }
+
     return NextResponse.json({
       ...worker[0],
       telegramUserId: worker[0].telegramUserId?.toString() ?? null,
       teams: workerTeamsList,
+      manager,
       statusHistory,
       courses: courseProgress.map((r) => ({
         assignmentId: r.assignmentId,
@@ -177,6 +193,25 @@ export async function PATCH(
         }
       }
       updates.phone = phone;
+    }
+
+    if ("managerId" in body) {
+      if (body.managerId === null) {
+        updates.managerId = null;
+      } else if (typeof body.managerId === "string") {
+        if (body.managerId === id) {
+          return NextResponse.json({ error: "A worker cannot be their own manager." }, { status: 400 });
+        }
+        const [manager] = await db
+          .select({ id: workers.id })
+          .from(workers)
+          .where(and(eq(workers.id, body.managerId), eq(workers.organizationId, orgId)))
+          .limit(1);
+        if (!manager) {
+          return NextResponse.json({ error: "Selected manager was not found." }, { status: 400 });
+        }
+        updates.managerId = manager.id;
+      }
     }
 
     let statusChanged = false;

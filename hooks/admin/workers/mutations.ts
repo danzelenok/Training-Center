@@ -17,6 +17,8 @@ function invalidateWorkerAndList(
 interface CreateWorkerVars {
   name: string;
   phone: string;
+  teamIds: string[];
+  managerId: string | null;
 }
 
 interface CreateWorkerResult {
@@ -27,11 +29,11 @@ interface CreateWorkerResult {
 export function useCreateWorkerMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ name, phone }: CreateWorkerVars): Promise<CreateWorkerResult> => {
+    mutationFn: async ({ name, phone, teamIds, managerId }: CreateWorkerVars): Promise<CreateWorkerResult> => {
       const res = await fetch("/api/admin/workers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, phone }),
+        body: JSON.stringify({ name, phone, teamIds, managerId }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to create worker");
@@ -297,6 +299,36 @@ export function useUpdateWorkerTeamsMutation() {
     },
     onError: (err: Error) => {
       toast.error(err.message || "Could not update teams");
+    },
+  });
+}
+
+// --- Update worker's manager ---
+
+interface UpdateWorkerManagerVars {
+  workerId: string;
+  managerId: string | null;
+}
+
+export function useUpdateWorkerManagerMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ workerId, managerId }: UpdateWorkerManagerVars) => {
+      const res = await fetch(`/api/workers/${workerId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ managerId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to update manager");
+      return data;
+    },
+    onSuccess: (_data, { workerId }) => {
+      invalidateWorkerAndList(queryClient, workerId);
+      toast.success("Manager updated");
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || "Could not update manager");
     },
   });
 }

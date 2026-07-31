@@ -80,6 +80,22 @@ export async function POST(req: Request) {
         ).map((t) => t.id)
       : [];
 
+    let managerId: string | null = null;
+    if (typeof body.managerId === "string" && body.managerId) {
+      const [manager] = await db
+        .select({ id: workers.id })
+        .from(workers)
+        .where(and(eq(workers.id, body.managerId), eq(workers.organizationId, orgId)))
+        .limit(1);
+      if (!manager) {
+        return new NextResponse(
+          JSON.stringify({ error: "Selected manager was not found." }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      managerId = manager.id;
+    }
+
     // 1. Create worker
     const [worker] = await db
       .insert(workers)
@@ -90,6 +106,7 @@ export async function POST(req: Request) {
         firstName,
         lastName,
         phone: phone || null,
+        managerId,
       })
       .returning();
 

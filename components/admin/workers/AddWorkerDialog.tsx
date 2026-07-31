@@ -1,6 +1,14 @@
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -10,6 +18,9 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { formatPhoneInput } from "@/lib/phone";
+import { workerDisplayName, type TeamRef, type Worker } from "@/hooks/admin/workers/types";
+
+const NO_MANAGER = "__none__";
 
 interface AddWorkerDialogProps {
   open: boolean;
@@ -20,6 +31,12 @@ interface AddWorkerDialogProps {
   onPhoneChange: (value: string) => void;
   onSubmit: (e: React.FormEvent) => void;
   creating: boolean;
+  teams: TeamRef[];
+  teamIds: string[];
+  onToggleTeam: (teamId: string, checked: boolean) => void;
+  managerCandidates: Worker[];
+  managerId: string | null;
+  onManagerChange: (managerId: string | null) => void;
 }
 
 export function AddWorkerDialog({
@@ -31,6 +48,12 @@ export function AddWorkerDialog({
   onPhoneChange,
   onSubmit,
   creating,
+  teams,
+  teamIds,
+  onToggleTeam,
+  managerCandidates,
+  managerId,
+  onManagerChange,
 }: AddWorkerDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -70,6 +93,55 @@ export function AddWorkerDialog({
                 className="bg-background border-border text-foreground text-xs h-10 rounded-xl"
               />
             </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">
+                Manager
+              </label>
+              <Select
+                value={managerId ?? NO_MANAGER}
+                onValueChange={(v) => onManagerChange(v === NO_MANAGER ? null : v)}
+              >
+                <SelectTrigger className="w-full bg-background border-border rounded-xl h-10">
+                  <SelectValue placeholder="No manager" />
+                </SelectTrigger>
+                <SelectContent className="bg-card border border-border text-foreground">
+                  <SelectItem value={NO_MANAGER}>No manager</SelectItem>
+                  {managerCandidates.map((w) => (
+                    <SelectItem key={w.id} value={w.id}>
+                      {workerDisplayName(w)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {teams.length > 0 && (
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">
+                  Teams
+                </label>
+                <div className="space-y-2 max-h-40 overflow-y-auto">
+                  {teams.map((team) => {
+                    const checked = teamIds.includes(team.id);
+                    return (
+                      <label
+                        key={team.id}
+                        className={`flex items-center gap-2 rounded-xl border px-3 py-2 cursor-pointer transition-colors ${
+                          checked ? "border-[#C8D400]/50 bg-[#C8D400]/10" : "border-border hover:bg-muted/30"
+                        }`}
+                      >
+                        <Checkbox
+                          checked={checked}
+                          onCheckedChange={(v) => onToggleTeam(team.id, v === true)}
+                        />
+                        <span className="text-xs font-medium text-foreground">{team.name}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           <DialogFooter className="gap-2">
