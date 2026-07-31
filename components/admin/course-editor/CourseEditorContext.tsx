@@ -114,6 +114,15 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
   const loading = courseQuery.isLoading;
 
   const autosaveMutation = useAutosaveMutation(id);
+  // useMutation() returns a fresh result object every render (TanStack Query
+  // doesn't memoize it), so depending on `autosaveMutation` itself below would
+  // recreate triggerAutoSave — and re-fire the effect that calls it — on every
+  // render, including the one caused by its own setSaveStatus("saved"). That
+  // self-sustaining saving->saved->saving loop is what left the Sidebar
+  // indicator stuck showing "Saving..." even though each cycle's save request
+  // genuinely succeeds. `.mutate` itself is stable (memoized on the internal
+  // observer), so depend on that instead.
+  const autosaveMutate = autosaveMutation.mutate;
 
   const triggerAutoSave = useCallback(() => {
     if (loading || !course) return;
@@ -125,7 +134,7 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
     setSaveStatus("saving");
 
     saveTimeoutRef.current = setTimeout(() => {
-      autosaveMutation.mutate(
+      autosaveMutate(
         {
           title: course.title,
           description: course.description,
@@ -156,7 +165,7 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
         }
       );
     }, 1500);
-  }, [course, loading, autosaveMutation]);
+  }, [course, loading, autosaveMutate]);
 
   useEffect(() => {
     if (loading || !course) return;
