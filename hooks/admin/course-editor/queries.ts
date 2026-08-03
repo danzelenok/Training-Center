@@ -16,7 +16,14 @@ export function useCourseQuery(courseId: string) {
 
 async function fetchMediaFiles(): Promise<MediaLibraryFile[]> {
   const res = await fetch("/api/media");
-  if (!res.ok) throw new Error("Failed to load media library");
+  if (!res.ok) {
+    // Error responses are normally {error: string} JSON, but a 502/504 from
+    // a proxy in front of the API can return an HTML error page instead —
+    // guard the parse so that case falls back to the generic message
+    // instead of surfacing a raw "Unexpected token <" JSON error.
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to load media library");
+  }
   const data = await res.json();
   return Array.isArray(data) ? data : [];
 }

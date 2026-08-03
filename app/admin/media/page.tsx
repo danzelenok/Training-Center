@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Upload,
   Trash2,
@@ -18,18 +18,12 @@ import {
 } from "lucide-react";
 import { toast, Toaster } from "sonner";
 import { Button } from "@/components/ui/button";
+import { useMediaFilesQuery } from "@/hooks/admin/course-editor/queries";
+import { useUploadFileMutation } from "@/hooks/admin/course-editor/mutations";
+import { useDeleteMediaFileMutation } from "@/hooks/admin/media/mutations";
+import type { MediaLibraryFile } from "@/hooks/admin/course-editor/types";
 
-interface MediaFile {
-  fileId: string;
-  name: string;
-  url: string;
-  thumbnailUrl?: string;
-  fileType: string;
-  size?: number;
-  createdAt?: string;
-  filePath?: string;
-  mime?: string;
-}
+type MediaFile = MediaLibraryFile;
 
 type FilterType = "all" | "image" | "video" | "audio";
 
@@ -370,66 +364,43 @@ function MediaCard({
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function MediaManagerPage() {
-  const [files, setFiles] = useState<MediaFile[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [uploading, setUploading] = useState(false);
+  const mediaFilesQuery = useMediaFilesQuery(true);
+  const uploadFileMutation = useUploadFileMutation();
+  const deleteMediaFileMutation = useDeleteMediaFileMutation();
+
+  const files = mediaFilesQuery.data ?? [];
+  const loading = mediaFilesQuery.isLoading;
+  const uploading = uploadFileMutation.isPending;
+  const deleting = deleteMediaFileMutation.isPending;
+
   const [deleteTarget, setDeleteTarget] = useState<MediaFile | null>(null);
-  const [deleting, setDeleting] = useState(false);
   const [previewFile, setPreviewFile] = useState<MediaFile | null>(null);
   const [filter, setFilter] = useState<FilterType>("all");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const fetchFiles = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetch("/api/media");
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to load media library");
-      setFiles(Array.isArray(data) ? data : []);
-    } catch (err: any) {
-      toast.error(err.message || "Failed to load media");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { fetchFiles(); }, [fetchFiles]);
-
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setUploading(true);
     const toastId = toast.loading(`Uploading ${file.name}…`);
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const res = await fetch("/api/media/upload", { method: "POST", body: formData });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Upload failed");
+      await uploadFileMutation.mutateAsync(file);
       toast.success(`${file.name} uploaded successfully!`, { id: toastId });
-      await fetchFiles();
     } catch (err: any) {
       toast.error(err.message || "Upload failed", { id: toastId });
     } finally {
-      setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
 
   const handleDeleteConfirm = async () => {
     if (!deleteTarget) return;
-    setDeleting(true);
     const toastId = toast.loading(`Deleting ${deleteTarget.name}…`);
     try {
-      const res = await fetch(`/api/media/${deleteTarget.fileId}`, { method: "DELETE" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Delete failed");
+      await deleteMediaFileMutation.mutateAsync(deleteTarget.fileId);
       toast.success(`${deleteTarget.name} deleted`, { id: toastId });
-      setFiles((prev) => prev.filter((f) => f.fileId !== deleteTarget.fileId));
     } catch (err: any) {
       toast.error(err.message || "Delete failed", { id: toastId });
     } finally {
-      setDeleting(false);
       setDeleteTarget(null);
     }
   };
@@ -486,7 +457,7 @@ export default function MediaManagerPage() {
           <Button
             variant="outline"
             size="sm"
-            onClick={fetchFiles}
+            onClick={() => mediaFilesQuery.refetch()}
             disabled={loading}
             className="border-border text-muted-foreground hover:text-foreground gap-1.5"
           >

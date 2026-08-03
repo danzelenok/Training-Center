@@ -22,17 +22,23 @@ export function useWorkersQuery() {
   });
 }
 
-async function fetchPublishedCourses(): Promise<Course[]> {
+async function fetchCourses(): Promise<Course[]> {
   const res = await fetch("/api/courses");
   if (!res.ok) throw new Error("Failed to fetch courses");
-  const data = await res.json();
-  return data.filter((c: Course) => c.status === "published");
+  return res.json();
 }
 
-export function useCoursesQuery() {
+// Defaults to "published" — the original (and still most common) caller,
+// the workers page's course-assignment dropdown, only ever wants published
+// courses. Pass "all" for admin screens that manage courses regardless of
+// status (reports' filter dropdown, courses.tsx).
+export function useCoursesQuery(status: "published" | "all" = "published") {
   return useQuery({
-    queryKey: coursesKeys.published(),
-    queryFn: fetchPublishedCourses,
+    queryKey: status === "all" ? coursesKeys.all() : coursesKeys.published(),
+    queryFn: async () => {
+      const courses = await fetchCourses();
+      return status === "all" ? courses : courses.filter((c) => c.status === "published");
+    },
   });
 }
 

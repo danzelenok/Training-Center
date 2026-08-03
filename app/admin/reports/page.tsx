@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   FileText,
   TrendingUp,
@@ -24,115 +24,31 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-
-interface Report {
-  id: string;
-  workerId: string;
-  workerName: string;
-  courseName: string;
-  status: "not_started" | "in_progress" | "completed";
-  completedAt: string | null;
-  quizScore: number | null;
-}
-
-interface Course {
-  id: string;
-  title: string;
-}
-
-interface PollResponse {
-  id: string;
-  slideIndex: number;
-  rating: string | null;
-  comment: string | null;
-  createdAt: string;
-  courseId: string;
-  workerId: string;
-  courseName: string;
-  workerName: string;
-  question: string | null;
-}
+import { useCoursesQuery } from "@/hooks/admin/workers/queries";
+import { useReportsQuery, usePollResponsesQuery } from "@/hooks/admin/reports/queries";
+import { useDeleteReportMutation } from "@/hooks/admin/reports/mutations";
 
 export default function ReportsPage() {
-  const [reports, setReports] = useState<Report[]>([]);
-  const [courses, setCourses] = useState<Course[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [pollResponses, setPollResponses] = useState<PollResponse[]>([]);
-  const [pollLoading, setPollLoading] = useState(true);
-
   // Filters
   const [selectedCourse, setSelectedCourse] = useState<string>("all");
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  const fetchReports = async () => {
-    try {
-      const params = new URLSearchParams();
-      if (selectedCourse && selectedCourse !== "all") {
-        params.append("courseId", selectedCourse);
-      }
-      if (selectedStatus && selectedStatus !== "all") {
-        params.append("status", selectedStatus);
-      }
+  const coursesQuery = useCoursesQuery("all");
+  const reportsQuery = useReportsQuery(selectedCourse, selectedStatus);
+  const pollResponsesQuery = usePollResponsesQuery(selectedCourse);
+  const deleteReportMutation = useDeleteReportMutation();
 
-      const res = await fetch(`/api/reports?${params.toString()}`);
-      if (!res.ok) throw new Error("Failed to fetch reports");
-      const data = await res.json();
-      setReports(data);
-    } catch (err: any) {
-      toast.error(err.message || "Could not load reports");
-    }
-  };
-
-  const fetchCourses = async () => {
-    try {
-      const res = await fetch("/api/courses");
-      if (!res.ok) throw new Error("Failed to fetch courses");
-      const data = await res.json();
-      setCourses(data);
-    } catch (err: any) {
-      toast.error(err.message || "Could not load courses");
-    }
-  };
-
-  const fetchPollResponses = async () => {
-    setPollLoading(true);
-    try {
-      const params = new URLSearchParams();
-      if (selectedCourse && selectedCourse !== "all") params.append("courseId", selectedCourse);
-      const res = await fetch(`/api/poll-responses?${params.toString()}`);
-      if (!res.ok) throw new Error("Failed to fetch poll responses");
-      setPollResponses(await res.json());
-    } catch (err: any) {
-      toast.error(err.message || "Could not load poll responses");
-    } finally {
-      setPollLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchCourses();
-  }, []);
-
-  useEffect(() => {
-    const loadData = async () => {
-      setLoading(true);
-      await fetchReports();
-      setLoading(false);
-    };
-    loadData();
-  }, [selectedCourse, selectedStatus]);
-
-  useEffect(() => {
-    fetchPollResponses();
-  }, [selectedCourse]);
+  const reports = reportsQuery.data ?? [];
+  const courses = coursesQuery.data ?? [];
+  const loading = reportsQuery.isLoading;
+  const pollResponses = pollResponsesQuery.data ?? [];
+  const pollLoading = pollResponsesQuery.isLoading;
 
   const handleDeleteReport = async (id: string) => {
     setDeletingId(id);
     try {
-      const res = await fetch(`/api/reports/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Failed to delete report");
-      setReports((prev) => prev.filter((r) => r.id !== id));
+      await deleteReportMutation.mutateAsync(id);
       toast.success("Record deleted");
     } catch (err: any) {
       toast.error(err.message || "Could not delete record");

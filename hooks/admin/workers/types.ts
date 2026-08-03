@@ -90,6 +90,7 @@ export const workersKeys = {
 
 export const coursesKeys = {
   published: () => ["courses", "published"] as const,
+  all: () => ["courses", "all"] as const,
 };
 
 export const teamsKeys = {

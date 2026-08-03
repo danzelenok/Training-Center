@@ -23,6 +23,14 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { useTeamsQuery, useWorkersQuery } from "@/hooks/admin/workers/queries";
+import { useTeamRosterQuery } from "@/hooks/admin/teams/queries";
+import {
+  useCreateTeamMutation,
+  useRenameTeamMutation,
+  useDeleteTeamMutation,
+  useSaveRosterMutation,
+} from "@/hooks/admin/teams/mutations";
 
 interface Team {
   id: string;
@@ -40,62 +48,61 @@ interface WorkerOption {
 }
 
 export default function TeamsPage() {
-  const [teamsList, setTeamsList] = useState<Team[]>([]);
-  const [activeWorkers, setActiveWorkers] = useState<WorkerOption[]>([]);
-  const [loading, setLoading] = useState(true);
+  const teamsQuery = useTeamsQuery();
+  const workersQuery = useWorkersQuery();
+
+  const teamsList = (teamsQuery.data ?? []) as Team[];
+  const activeWorkers = ((workersQuery.data?.workers ?? []) as WorkerOption[]).filter((w) => w.active);
+  const loading = teamsQuery.isLoading || workersQuery.isLoading;
+
+  const createTeamMutation = useCreateTeamMutation();
+  const renameTeamMutation = useRenameTeamMutation();
+  const deleteTeamMutation = useDeleteTeamMutation();
+  const saveRosterMutation = useSaveRosterMutation();
 
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [newTeamName, setNewTeamName] = useState("");
-  const [creatingTeam, setCreatingTeam] = useState(false);
 
   const [renamingTeamId, setRenamingTeamId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
-  const [savingRename, setSavingRename] = useState(false);
 
   const [deletingTeam, setDeletingTeam] = useState<Team | null>(null);
-  const [deleting, setDeleting] = useState(false);
 
   const [rosterSheetOpen, setRosterSheetOpen] = useState(false);
-  const [rosterTeam, setRosterTeam] = useState<Team | null>(null);
+  const [rosterTeamId, setRosterTeamId] = useState<string | null>(null);
   const [rosterMemberIds, setRosterMemberIds] = useState<string[]>([]);
   const [rosterOriginalMemberIds, setRosterOriginalMemberIds] = useState<string[]>([]);
-  const [loadingRoster, setLoadingRoster] = useState(false);
-  const [savingRoster, setSavingRoster] = useState(false);
   const [rosterSearch, setRosterSearch] = useState("");
+
+  const rosterTeam = teamsList.find((t) => t.id === rosterTeamId) ?? null;
+  const teamRosterQuery = useTeamRosterQuery(rosterTeamId);
+  const loadingRoster = teamRosterQuery.isLoading;
+
+  // Seeds the editable roster draft from the server whenever fresh roster
+  // data arrives (sheet opens, or team switches while open).
+  useEffect(() => {
+    if (!teamRosterQuery.data) return;
+    const memberIds = teamRosterQuery.data.members.map((m) => m.id);
+    setRosterMemberIds(memberIds);
+    setRosterOriginalMemberIds(memberIds);
+  }, [teamRosterQuery.data]);
+
+  useEffect(() => {
+    if (teamRosterQuery.isError) {
+      toast.error(teamRosterQuery.error?.message || "Could not load team roster");
+      setRosterSheetOpen(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [teamRosterQuery.isError]);
 
   const workerName = (w: WorkerOption) =>
     w.displayName || [w.firstName, w.lastName].filter(Boolean).join(" ") || "Unnamed Worker";
 
-  const fetchTeams = async () => {
-    try {
-      const res = await fetch("/api/teams");
-      if (!res.ok) throw new Error("Failed to fetch teams");
-      const data = await res.json();
-      setTeamsList(data);
-    } catch (err: any) {
-      toast.error(err.message || "Could not load teams");
-    }
+  const openRoster = (teamId: string) => {
+    setRosterTeamId(teamId);
+    setRosterSheetOpen(true);
+    setRosterSearch("");
   };
-
-  const fetchWorkers = async () => {
-    try {
-      const res = await fetch("/api/workers");
-      if (!res.ok) throw new Error("Failed to fetch workers");
-      const data = await res.json();
-      setActiveWorkers((data.workers || []).filter((w: WorkerOption) => w.active));
-    } catch (err: any) {
-      toast.error(err.message || "Could not load workers");
-    }
-  };
-
-  useEffect(() => {
-    const init = async () => {
-      setLoading(true);
-      await Promise.all([fetchTeams(), fetchWorkers()]);
-      setLoading(false);
-    };
-    init();
-  }, []);
 
   const handleCreateTeam = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -103,25 +110,14 @@ export default function TeamsPage() {
       toast.error("Please enter a team name");
       return;
     }
-    setCreatingTeam(true);
     try {
-      const res = await fetch("/api/teams", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newTeamName.trim() }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to create team");
-
+      const data = await createTeamMutation.mutateAsync(newTeamName.trim());
       setCreateModalOpen(false);
       setNewTeamName("");
-      await fetchTeams();
       toast.success("Team created");
-      await openRoster(data);
+      openRoster(data.id);
     } catch (err: any) {
       toast.error(err.message || "Error creating team");
-    } finally {
-      setCreatingTeam(false);
     }
   };
 
@@ -135,59 +131,23 @@ export default function TeamsPage() {
       toast.error("Team name cannot be empty");
       return;
     }
-    setSavingRename(true);
     try {
-      const res = await fetch(`/api/teams/${teamId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: renameValue.trim() }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to rename team");
-
+      await renameTeamMutation.mutateAsync({ teamId, name: renameValue.trim() });
       setRenamingTeamId(null);
-      await fetchTeams();
       toast.success("Team renamed");
     } catch (err: any) {
       toast.error(err.message || "Could not rename team");
-    } finally {
-      setSavingRename(false);
     }
   };
 
   const handleConfirmDelete = async () => {
     if (!deletingTeam) return;
-    setDeleting(true);
     try {
-      const res = await fetch(`/api/teams/${deletingTeam.id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Failed to delete team");
+      await deleteTeamMutation.mutateAsync(deletingTeam.id);
       setDeletingTeam(null);
-      await fetchTeams();
       toast.success("Team deleted");
     } catch (err: any) {
       toast.error(err.message || "Could not delete team");
-    } finally {
-      setDeleting(false);
-    }
-  };
-
-  const openRoster = async (team: Team) => {
-    setRosterTeam(team);
-    setRosterSheetOpen(true);
-    setRosterSearch("");
-    setLoadingRoster(true);
-    try {
-      const res = await fetch(`/api/teams/${team.id}`);
-      if (!res.ok) throw new Error("Failed to fetch team roster");
-      const data = await res.json();
-      const memberIds = (data.members || []).map((m: { id: string }) => m.id);
-      setRosterMemberIds(memberIds);
-      setRosterOriginalMemberIds(memberIds);
-    } catch (err: any) {
-      toast.error(err.message || "Could not load team roster");
-      setRosterSheetOpen(false);
-    } finally {
-      setLoadingRoster(false);
     }
   };
 
@@ -203,22 +163,12 @@ export default function TeamsPage() {
 
   const handleSaveRoster = async () => {
     if (!rosterTeam) return;
-    setSavingRoster(true);
     try {
-      const res = await fetch(`/api/teams/${rosterTeam.id}/members`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ workerIds: rosterMemberIds }),
-      });
-      if (!res.ok) throw new Error("Failed to update roster");
-
+      await saveRosterMutation.mutateAsync({ teamId: rosterTeam.id, workerIds: rosterMemberIds });
       setRosterOriginalMemberIds(rosterMemberIds);
-      await fetchTeams();
       toast.success("Roster updated");
     } catch (err: any) {
       toast.error(err.message || "Could not update roster");
-    } finally {
-      setSavingRoster(false);
     }
   };
 
@@ -291,10 +241,10 @@ export default function TeamsPage() {
                           />
                           <button
                             onClick={() => handleSaveRename(team.id)}
-                            disabled={savingRename}
+                            disabled={renameTeamMutation.isPending}
                             className="p-1 rounded-lg hover:bg-muted text-emerald-500"
                           >
-                            {savingRename ? (
+                            {renameTeamMutation.isPending ? (
                               <Loader2 className="h-3.5 w-3.5 animate-spin" />
                             ) : (
                               <Check className="h-3.5 w-3.5" />
@@ -313,7 +263,7 @@ export default function TeamsPage() {
                     </td>
                     <td className="px-6 py-4">
                       <button
-                        onClick={() => openRoster(team)}
+                        onClick={() => openRoster(team.id)}
                         className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-muted hover:bg-muted/70 text-muted-foreground font-semibold text-xs border border-border cursor-pointer transition-colors"
                       >
                         <UsersRound className="h-3 w-3" />
@@ -388,10 +338,10 @@ export default function TeamsPage() {
               </Button>
               <Button
                 type="submit"
-                disabled={creatingTeam}
+                disabled={createTeamMutation.isPending}
                 className="bg-[#C8D400] hover:bg-[#B6C200] text-[#1B2A6B] font-extrabold text-xs px-4 rounded-xl"
               >
-                {creatingTeam ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create Team"}
+                {createTeamMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create Team"}
               </Button>
             </DialogFooter>
           </form>
@@ -419,10 +369,10 @@ export default function TeamsPage() {
             </Button>
             <Button
               onClick={handleConfirmDelete}
-              disabled={deleting}
+              disabled={deleteTeamMutation.isPending}
               className="bg-destructive hover:bg-destructive/90 text-white font-extrabold text-xs px-4 rounded-xl"
             >
-              {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Delete Team"}
+              {deleteTeamMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Delete Team"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -494,10 +444,10 @@ export default function TeamsPage() {
                   <Button
                     size="sm"
                     onClick={handleSaveRoster}
-                    disabled={!rosterDirty || savingRoster}
+                    disabled={!rosterDirty || saveRosterMutation.isPending}
                     className="w-full bg-[#C8D400] hover:bg-[#B6C200] text-[#1B2A6B] font-extrabold text-xs rounded-xl gap-1.5"
                   >
-                    {savingRoster ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Save Changes"}
+                    {saveRosterMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Save Changes"}
                   </Button>
                 </div>
               )}
