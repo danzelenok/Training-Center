@@ -767,6 +767,7 @@ function CourseEditorContent() {
             <Button
               onClick={confirmPublish}
               disabled={
+                publishing ||
                 (publishAssignTo === "specific" && publishWorkerIds.length === 0) ||
                 (publishAssignTo === "teams" && publishTeamIds.length === 0)
               }

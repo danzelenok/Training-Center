@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Card } from "@/components/ui/card";
 import {
-  AlertTriangle,
   ArrowLeft,
   Film,
   FileText,
@@ -15,12 +14,15 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { ROLE_INSTRUCTOR } from "@/lib/avatar-roles";
-import { fetchAvatarsList, CHAD_FALLBACK_IMAGE, FLORIN_FALLBACK_IMAGE } from "../AvatarSelector";
 import { Slide } from "../CardCanvas";
 import { MediaPlayerBar } from "../MediaPlayerBar";
 import { ControlPanel } from "../ControlPanel";
 import { PanelButton } from "../PanelButton";
 import { SlideTypeSelector } from "./SlideTypeSelector";
+import { useAvatarSelection } from "../useAvatarSelection";
+import { useSlideAssetRegeneration } from "../useSlideAssetRegeneration";
+import { AssetGenerationStatus } from "../AssetGenerationStatus";
+import { usePlayerControls } from "../usePlayerControls";
 
 interface VideoCardProps {
   slide: Slide;
@@ -57,28 +59,37 @@ export function VideoCard({
   const isGenerating = slide.assetStatus === "pending" || slide.assetStatus === "generating";
   const isFailed = slide.assetStatus === "failed";
 
-  const [isPlaying, setIsPlaying] = useState(false);
+  const {
+    mediaRef: videoRef,
+    setMediaRef: setVideoRef,
+    isPlaying,
+    setIsPlaying,
+    currentTime,
+    setCurrentTime,
+    duration,
+    setDuration,
+    speed,
+    isCCActive,
+    togglePlay,
+    changeSpeed,
+    handleScrub,
+    toggleCC,
+  } = usePlayerControls<HTMLVideoElement>();
+  // Video-only: tied to the stall-guard autoplay mechanism (attemptAutoplay
+  // below), which is out of scope for this pass — kept local, not shared
+  // with Audio via usePlayerControls.
   const [isBuffering, setIsBuffering] = useState(false);
   const [isStalled, setIsStalled] = useState(false);
-  const [isCCActive, setIsCCActive] = useState(false);
+  // Video-only: local overlay toggle for showing the speech-text transcript
+  // during playback. Not the same concept as Audio's audioTranscriptToolsOpen
+  // (that one is the *editor* panel for typing captions, passed down as a
+  // prop from CardCanvas) — this is a play-mode viewer overlay, so it can't
+  // be unified with it.
   const [transcriptOpen, setTranscriptOpen] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0.1);
-  const [speed, setSpeed] = useState(1);
-  const [chadImage, setChadImage] = useState(CHAD_FALLBACK_IMAGE);
-  const [florinImage, setFlorinImage] = useState(FLORIN_FALLBACK_IMAGE);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
   const autoPlayStartedRef = useRef(false);
   const stallTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
-    fetchAvatarsList().then((list) => {
-      const chad = list.find((a: any) => a.name.toLowerCase() === "chad");
-      const florin = list.find((a: any) => a.name.toLowerCase() === "florin");
-      if (chad?.preview_image_url) setChadImage(chad.preview_image_url);
-      if (florin?.preview_image_url) setFlorinImage(florin.preview_image_url);
-    });
-  }, []);
+  const { chadImage, florinImage } = useAvatarSelection();
 
   // Waits for the video to become playable and starts it. On mobile networks/webviews,
   // "canplay" or "error" can both silently never fire — a timeout guarantees we never
@@ -138,61 +149,25 @@ export function VideoCard({
     attemptAutoplay(el);
   };
 
-  const togglePlay = () => {
-    if (videoRef.current) {
-      if (videoRef.current.paused) { videoRef.current.play().catch(() => {}); setIsPlaying(true); }
-      else { videoRef.current.pause(); setIsPlaying(false); }
-    }
-  };
-  const changeSpeed = () => {
-    const speeds = [1, 1.25, 1.5, 2];
-    const next = speeds[(speeds.indexOf(speed) + 1) % speeds.length];
-    setSpeed(next);
-    if (videoRef.current) videoRef.current.playbackRate = next;
-  };
-  const handleScrub = (val: number) => {
-    if (videoRef.current) { videoRef.current.currentTime = val; setCurrentTime(val); }
+  const regenerateAsset = useSlideAssetRegeneration(slide.id, index, onUpdateSlideContent);
+
+  const handleRegenerateVideo = () => {
+    regenerateAsset({
+      asset: "video",
+      body: { speechText: content.speechText || "" },
+      successMessage: "HeyGen video generation triggered in background.",
+      errorPrefix: "Failed to regenerate video",
+    });
   };
 
-  const handleRegenerateVideo = async () => {
-    if (!slide.id) return;
-    onUpdateSlideContent(index, {}, { assetStatus: "generating" });
-    try {
-      const res = await fetch(`/api/slides/${slide.id}/regenerate?asset=video`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ speechText: content.speechText || "" }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || `Server error ${res.status}`);
-      }
-      toast.success("HeyGen video generation triggered in background.");
-    } catch (err: any) {
-      toast.error("Failed to regenerate video: " + err.message);
-      onUpdateSlideContent(index, {}, { assetStatus: "failed" });
-    }
-  };
-
-  const handleGenerateVideo = async () => {
-    if (!slide.id) return;
-    onUpdateSlideContent(index, {}, { assetStatus: "generating" });
+  const handleGenerateVideo = () => {
     setIsVideoConfigOpen(false);
-    try {
-      const res = await fetch(`/api/slides/${slide.id}/regenerate?asset=video`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ speechText }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || `Server error ${res.status}`);
-      }
-      toast.success("HeyGen video generation triggered in background.");
-    } catch (err: any) {
-      toast.error("Failed to generate video: " + err.message);
-      onUpdateSlideContent(index, {}, { assetStatus: "failed" });
-    }
+    regenerateAsset({
+      asset: "video",
+      body: { speechText },
+      successMessage: "HeyGen video generation triggered in background.",
+      errorPrefix: "Failed to generate video",
+    });
   };
 
   const updateContent = (fields: any) => onUpdateSlideContent(index, fields);
@@ -205,11 +180,11 @@ export function VideoCard({
           draggedIdx !== null ? "scale-[0.37] pointer-events-none" : "scale-100"
         }`}
       >
-        <Loader2 className="h-10 w-10 animate-spin text-primary" />
-        <h3 className="text-base font-bold text-foreground">Generating AI Video...</h3>
-        <p className="text-xs max-w-[200px] leading-normal text-muted-foreground">
-          Your HeyGen avatar is being rendered. This may take a few minutes.
-        </p>
+        <AssetGenerationStatus
+          status="generating"
+          title="Generating AI Video..."
+          description="Your HeyGen avatar is being rendered. This may take a few minutes."
+        />
       </Card>
     );
   }
@@ -222,32 +197,16 @@ export function VideoCard({
           draggedIdx !== null ? "scale-[0.37] pointer-events-none" : "scale-100"
         }`}
       >
-        <div className="p-3 bg-destructive/10 text-destructive rounded-full border border-destructive/20">
-          <AlertTriangle className="h-8 w-8 text-destructive animate-bounce" />
-        </div>
-        <h3 className="text-base font-bold text-destructive">Video Generation Failed</h3>
-        <p className="text-xs max-w-[200px] leading-normal text-muted-foreground">
-          We encountered an error while calling the HeyGen API.
-        </p>
-        {isActive && (
-          speechText ? (
-            <button
-              type="button"
-              onClick={handleRegenerateVideo}
-              className="mt-2 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white py-2 px-5 rounded-xl shadow-md transition-all active:scale-95 cursor-pointer no-swipe"
-            >
-              Retry Generation
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setIsVideoConfigOpen(true)}
-              className="mt-2 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white py-2 px-5 rounded-xl shadow-md transition-all active:scale-95 cursor-pointer no-swipe"
-            >
-              Configure Avatar
-            </button>
-          )
-        )}
+        <AssetGenerationStatus
+          status="failed"
+          title="Video Generation Failed"
+          description="We encountered an error while calling the HeyGen API."
+          titleClassName="text-base font-bold text-destructive"
+          isActive={isActive}
+          actionLabel={speechText ? "Retry Generation" : "Configure Avatar"}
+          onAction={speechText ? handleRegenerateVideo : () => setIsVideoConfigOpen(true)}
+          actionClassName="mt-2 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white py-2 px-5 rounded-xl shadow-md transition-all active:scale-95 cursor-pointer no-swipe"
+        />
       </Card>
     );
   }
@@ -280,10 +239,7 @@ export function VideoCard({
               </div>
             )}
             <video
-              ref={(node) => {
-                videoRef.current = node;
-                if (node) node.playbackRate = speed;
-              }}
+              ref={setVideoRef}
               src={content.url}
               className="w-full h-full object-cover pointer-events-none"
               playsInline
@@ -321,7 +277,7 @@ export function VideoCard({
                 onScrub={handleScrub}
                 onChangeSpeed={changeSpeed}
                 isCCActive={isCCActive}
-                onToggleCC={() => setIsCCActive(!isCCActive)}
+                onToggleCC={toggleCC}
                 transcriptOpen={transcriptOpen}
                 onToggleTranscript={() => setTranscriptOpen(!transcriptOpen)}
               />
@@ -562,26 +518,17 @@ export function VideoToolbar({
 
   const updateContent = (fields: any) => onUpdateSlideContent(index, fields);
 
-  const handleRegenerateWithScript = async () => {
-    if (!slide.id) return;
+  const regenerateAsset = useSlideAssetRegeneration(slide.id, index, onUpdateSlideContent);
+
+  const handleRegenerateWithScript = () => {
     updateContent({ speechText: localScript });
-    onUpdateSlideContent(index, {}, { assetStatus: "generating" });
     setScriptOpen(false);
-    try {
-      const res = await fetch(`/api/slides/${slide.id}/regenerate?asset=video`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ speechText: localScript }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || `Server error ${res.status}`);
-      }
-      toast.success("HeyGen video generation triggered in background.");
-    } catch (err: any) {
-      toast.error("Failed to regenerate video: " + err.message);
-      onUpdateSlideContent(index, {}, { assetStatus: "failed" });
-    }
+    regenerateAsset({
+      asset: "video",
+      body: { speechText: localScript },
+      successMessage: "HeyGen video generation triggered in background.",
+      errorPrefix: "Failed to regenerate video",
+    });
   };
 
   if (videoMode === "generate" && !content.url) return null;

@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Card } from "@/components/ui/card";
 import {
-  AlertTriangle,
   ArrowLeft,
   Check,
   FileText,
@@ -21,6 +20,9 @@ import { MediaPlayerBar } from "../MediaPlayerBar";
 import { ControlPanel } from "../ControlPanel";
 import { PanelButton } from "../PanelButton";
 import { SlideTypeSelector } from "./SlideTypeSelector";
+import { usePlayerControls } from "../usePlayerControls";
+import { useSlideAssetRegeneration } from "../useSlideAssetRegeneration";
+import { AssetGenerationStatus } from "../AssetGenerationStatus";
 
 interface AudioCardProps {
   slide: Slide;
@@ -72,11 +74,22 @@ export function AudioCard({
   const isFailed = slide.assetStatus === "failed";
 
   // Audio Playback States
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0.1);
-  const [speed, setSpeed] = useState(1);
-  const [isCCActive, setIsCCActive] = useState(false);
+  const {
+    mediaRef: audioRef,
+    setMediaRef: setAudioRef,
+    isPlaying,
+    setIsPlaying,
+    currentTime,
+    setCurrentTime,
+    duration,
+    setDuration,
+    speed,
+    isCCActive,
+    togglePlay,
+    changeSpeed,
+    handleScrub,
+    toggleCC,
+  } = usePlayerControls<HTMLAudioElement>();
 
   // Microphone Recording States
   const [isRecording, setIsRecording] = useState(false);
@@ -86,7 +99,6 @@ export function AudioCard({
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   // Sync index change or deactivated slide - stop playing & recording
   useEffect(() => {
@@ -108,28 +120,19 @@ export function AudioCard({
     }
   }, [mode, content.url]);
 
-  const handleRegenerateAudio = async (overrideScript?: string) => {
-    if (!slide.id) return;
-    onUpdateSlideContent(index, {}, { assetStatus: "generating" });
-    try {
-      const scriptToUse =
-        overrideScript !== undefined
-          ? overrideScript
-          : content.audioScript || content.text || content.body || "";
-      const res = await fetch(`/api/slides/${slide.id}/regenerate?asset=audio`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ audioScript: scriptToUse }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || `Server error ${res.status}`);
-      }
-      toast.success("AI audio generation triggered in background.");
-    } catch (err: any) {
-      toast.error("Failed to regenerate audio: " + err.message);
-      onUpdateSlideContent(index, {}, { assetStatus: "failed" });
-    }
+  const regenerateAsset = useSlideAssetRegeneration(slide.id, index, onUpdateSlideContent);
+
+  const handleRegenerateAudio = (overrideScript?: string) => {
+    const scriptToUse =
+      overrideScript !== undefined
+        ? overrideScript
+        : content.audioScript || content.text || content.body || "";
+    regenerateAsset({
+      asset: "audio",
+      body: { audioScript: scriptToUse },
+      successMessage: "AI audio generation triggered in background.",
+      errorPrefix: "Failed to regenerate audio",
+    });
   };
 
   // Recording Controls
@@ -205,35 +208,6 @@ export function AudioCard({
     return `${m}:${s < 10 ? "0" : ""}${s}`;
   };
 
-  const togglePlay = () => {
-    if (audioRef.current) {
-      if (audioRef.current.paused) {
-        audioRef.current.play().catch(() => {});
-        setIsPlaying(true);
-      } else {
-        audioRef.current.pause();
-        setIsPlaying(false);
-      }
-    }
-  };
-
-  const changeSpeed = () => {
-    const speeds = [1, 1.25, 1.5, 2];
-    const nextIdx = (speeds.indexOf(speed) + 1) % speeds.length;
-    const nextSpeed = speeds[nextIdx];
-    setSpeed(nextSpeed);
-    if (audioRef.current) {
-      audioRef.current.playbackRate = nextSpeed;
-    }
-  };
-
-  const handleScrub = (val: number) => {
-    if (audioRef.current) {
-      audioRef.current.currentTime = val;
-      setCurrentTime(val);
-    }
-  };
-
   const updateContent = (fields: any) => {
     onUpdateSlideContent(index, fields);
   };
@@ -258,11 +232,11 @@ export function AudioCard({
           draggedIdx !== null ? "scale-[0.37] pointer-events-none" : "scale-100"
         }`}
       >
-        <Loader2 className="h-10 w-10 animate-spin text-primary" />
-        <h3 className="text-base font-bold text-foreground">Generating AI Voiceover...</h3>
-        <p className="text-xs max-w-[200px] leading-normal text-muted-foreground">
-          Please wait while we generate speech audio from your script.
-        </p>
+        <AssetGenerationStatus
+          status="generating"
+          title="Generating AI Voiceover..."
+          description="Please wait while we generate speech audio from your script."
+        />
       </Card>
     );
   }
@@ -276,22 +250,15 @@ export function AudioCard({
           draggedIdx !== null ? "scale-[0.37] pointer-events-none" : "scale-100"
         }`}
       >
-        <div className="p-3 bg-destructive/10 text-destructive rounded-full border border-destructive/20">
-          <AlertTriangle className="h-8 w-8 text-destructive animate-bounce" />
-        </div>
-        <h3 className="text-base font-bold text-destructive font-sans">Audio Generation Failed</h3>
-        <p className="text-xs max-w-[200px] leading-normal text-muted-foreground">
-          We encountered an error while calling the OpenAI Text-to-Speech API.
-        </p>
-        {isActive && (
-          <button
-            type="button"
-            onClick={() => handleRegenerateAudio()}
-            className="mt-2 text-xs font-bold bg-primary hover:bg-primary/95 text-primary-foreground py-2 px-5 rounded-xl shadow-md transition-all active:scale-95 cursor-pointer no-swipe font-sans"
-          >
-            Retry Generation
-          </button>
-        )}
+        <AssetGenerationStatus
+          status="failed"
+          title="Audio Generation Failed"
+          description="We encountered an error while calling the OpenAI Text-to-Speech API."
+          isActive={isActive}
+          actionLabel="Retry Generation"
+          onAction={() => handleRegenerateAudio()}
+          actionClassName="mt-2 text-xs font-bold bg-primary hover:bg-primary/95 text-primary-foreground py-2 px-5 rounded-xl shadow-md transition-all active:scale-95 cursor-pointer no-swipe font-sans"
+        />
       </Card>
     );
   }
@@ -303,12 +270,7 @@ export function AudioCard({
       return (
         <div className="flex-1 flex flex-col justify-between pt-10 pb-16 min-h-0 w-full z-10">
           <audio
-            ref={(node) => {
-              audioRef.current = node;
-              if (node) {
-                node.playbackRate = speed;
-              }
-            }}
+            ref={setAudioRef}
             src={content.url}
             onTimeUpdate={(e) => {
               const el = e.currentTarget;
@@ -374,7 +336,7 @@ export function AudioCard({
               onScrub={handleScrub}
               onChangeSpeed={changeSpeed}
               isCCActive={isCCActive}
-              onToggleCC={() => setIsCCActive(!isCCActive)}
+              onToggleCC={toggleCC}
               transcriptOpen={audioTranscriptToolsOpen}
               onToggleTranscript={() => {
                 setAudioTranscriptToolsOpen(!audioTranscriptToolsOpen);
@@ -650,24 +612,15 @@ export function AudioToolbar({
 
   const updateContent = (fields: any) => onUpdateSlideContent(index, fields);
 
-  const handleRegenerateAudio = async () => {
-    if (!slide.id) return;
-    onUpdateSlideContent(index, {}, { assetStatus: "generating" });
-    try {
-      const res = await fetch(`/api/slides/${slide.id}/regenerate?asset=audio`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ audioScript: content.audioScript || content.text || content.body || "" }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || `Server error ${res.status}`);
-      }
-      toast.success("AI audio generation triggered in background.");
-    } catch (err: any) {
-      toast.error("Failed to regenerate audio: " + err.message);
-      onUpdateSlideContent(index, {}, { assetStatus: "failed" });
-    }
+  const regenerateAsset = useSlideAssetRegeneration(slide.id, index, onUpdateSlideContent);
+
+  const handleRegenerateAudio = () => {
+    regenerateAsset({
+      asset: "audio",
+      body: { audioScript: content.audioScript || content.text || content.body || "" },
+      successMessage: "AI audio generation triggered in background.",
+      errorPrefix: "Failed to regenerate audio",
+    });
   };
 
   return (

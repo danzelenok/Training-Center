@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from "react";
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Slide } from "./CardCanvas";
@@ -16,7 +16,10 @@ import {
   useUploadFileMutation,
   useGenerateAIMutation,
   usePPTXUploadMutation,
+  usePublishCourseMutation,
 } from "@/hooks/admin/course-editor/mutations";
+import { useWorkersQuery, useTeamsQuery } from "@/hooks/admin/workers/queries";
+import type { TeamRef } from "@/hooks/admin/workers/types";
 
 export type { Course, MediaLibraryFile };
 
@@ -199,7 +202,6 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
 
   // States for interactive processes
   const [importing, setImporting] = useState(false);
-  const [publishing, setPublishing] = useState(false);
 
   // Media library & upload states
   const [mediaPickerOpen, setMediaPickerOpen] = useState(false);
@@ -229,15 +231,46 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
   const [aiUseLNI, setAiUseLNI] = useState(true);
   const [aiGenerating, setAiGenerating] = useState(false);
 
-  // Publish dialog states — untouched in this task (task 2.2)
+  // Publish dialog UI state — picker selections + toggle, all still local.
   const [publishDialogOpen, setPublishDialogOpen] = useState(false);
   const [publishAssignTo, setPublishAssignTo] = useState<"all" | "teams" | "specific">("all");
   const [publishWorkerIds, setPublishWorkerIds] = useState<string[]>([]);
   const [publishTeamIds, setPublishTeamIds] = useState<string[]>([]);
   const [publishNotifyTelegram, setPublishNotifyTelegram] = useState(true);
-  const [publishWorkersList, setPublishWorkersList] = useState<{ id: string; label: string }[]>([]);
-  const [publishTeamsList, setPublishTeamsList] = useState<{ id: string; label: string; memberCount: number }[]>([]);
-  const [publishWorkersLoading, setPublishWorkersLoading] = useState(false);
+
+  // Publish dialog pickers — reuse the same workers/teams queries the
+  // Workers admin page already uses (hooks/admin/workers/queries.ts).
+  // Shared query cache: if the admin already visited /admin/workers this
+  // session, these can resolve from cache with no extra network request.
+  const workersQuery = useWorkersQuery();
+  const teamsQuery = useTeamsQuery();
+
+  const publishWorkersList = useMemo(
+    () =>
+      (workersQuery.data?.workers ?? [])
+        .filter((w) => w.active)
+        .map((w) => ({
+          id: w.id,
+          label: w.displayName || [w.firstName, w.lastName].filter(Boolean).join(" ") || w.telegramUsername || w.telegramUserId || "",
+        })),
+    [workersQuery.data]
+  );
+
+  const publishTeamsList = useMemo(
+    () =>
+      // GET /api/teams returns memberCount per team (see app/api/teams/route.ts),
+      // but TeamRef in hooks/admin/workers/types.ts doesn't declare it since no
+      // current workers-page consumer needs it — widen locally rather than
+      // touching that shared type.
+      ((teamsQuery.data ?? []) as (TeamRef & { memberCount: number })[]).map((t) => ({
+        id: t.id,
+        label: t.name,
+        memberCount: t.memberCount,
+      })),
+    [teamsQuery.data]
+  );
+
+  const publishWorkersLoading = workersQuery.isLoading || teamsQuery.isLoading;
 
   // Sync course + slidesList from the server whenever a fresh payload for
   // this courseId arrives — mirrors the old fetchCourse() success path.
@@ -622,8 +655,13 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
     }
   };
 
-  // Open publish dialog (validate first, save, fetch workers, then open)
-  // — untouched in this task (task 2.2 owns the publish flow)
+  const publishCourseMutation = usePublishCourseMutation(id);
+
+  // Open publish dialog (validate first, save, then open). Pickers no
+  // longer fetched here — publishWorkersList/publishTeamsList above are
+  // derived from the shared useWorkersQuery/useTeamsQuery, which are always
+  // mounted (not conditional on dialog open), so their data is either
+  // already in cache or already in flight by the time the dialog renders.
   const handlePublish = async () => {
     if (slidesList.length === 0) {
       toast.error("Cannot publish a course without slides. Add cards or import a PPTX first.");
@@ -637,66 +675,36 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
     setPublishTeamIds([]);
     setPublishNotifyTelegram(true);
 
-    // Fetch workers (for "specific") and teams (for "teams") pickers
-    setPublishWorkersLoading(true);
     setPublishDialogOpen(true);
-    try {
-      const [workersRes, teamsRes] = await Promise.all([
-        fetch("/api/workers"),
-        fetch("/api/teams"),
-      ]);
-      if (workersRes.ok) {
-        const data = await workersRes.json();
-        setPublishWorkersList(
-          (data.workers || [])
-            .filter((w: any) => w.active)
-            .map((w: any) => ({
-              id: w.id,
-              label: w.displayName || [w.firstName, w.lastName].filter(Boolean).join(" ") || w.telegramUsername || w.telegramUserId,
-            }))
-        );
-      }
-      if (teamsRes.ok) {
-        const data = await teamsRes.json();
-        setPublishTeamsList(
-          data.map((t: any) => ({ id: t.id, label: t.name, memberCount: t.memberCount }))
-        );
-      }
-    } catch {
-      // Non-fatal — pickers just stay empty, user can still use "all"
-    } finally {
-      setPublishWorkersLoading(false);
-    }
   };
 
-  // Actually submit the publish with chosen options — untouched in this
-  // task (task 2.2 owns the publish flow)
+  // Actually submit the publish with chosen options. This sends real
+  // Telegram DMs to workers when publishNotifyTelegram is true — see
+  // usePublishCourseMutation's retry:0 for why this must never auto-retry.
   const confirmPublish = async () => {
     setPublishDialogOpen(false);
-    setPublishing(true);
     const toastMsg = publishNotifyTelegram
       ? "Publishing & sending direct messages to workers…"
       : "Publishing course…";
     const toastId = toast.loading(toastMsg);
     try {
-      const res = await fetch(`/api/courses/${id}/publish`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          assignTo: publishAssignTo,
-          workerIds: publishAssignTo === "specific" ? publishWorkerIds : [],
-          teamIds: publishAssignTo === "teams" ? publishTeamIds : [],
-          notifyWorkers: publishNotifyTelegram,
-        }),
+      const data = await publishCourseMutation.mutateAsync({
+        assignTo: publishAssignTo,
+        workerIds: publishAssignTo === "specific" ? publishWorkerIds : [],
+        teamIds: publishAssignTo === "teams" ? publishTeamIds : [],
+        notifyWorkers: publishNotifyTelegram,
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Publishing failed");
 
       const successMsg = publishNotifyTelegram
         ? "Course is LIVE! Direct messages sent to assigned workers."
         : "Course published without announcements.";
       toast.success(successMsg, { id: toastId });
 
+      // Point merge, not a ['course', id] invalidate — an invalidate would
+      // re-run the sync effect above and force activeSlideIndex back to 0,
+      // yanking the editor to slide 1 right after a publish click. Sidebar
+      // already sees the new status immediately since it reads `course`
+      // from this same Context.
       if (course) {
         setCourse({
           ...course,
@@ -707,8 +715,6 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
       }
     } catch (err: any) {
       toast.error(err.message || "Error during publication", { id: toastId });
-    } finally {
-      setPublishing(false);
     }
   };
 
@@ -781,7 +787,7 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
         saveStatus,
         activeSlideIndex,
         importing,
-        publishing,
+        publishing: publishCourseMutation.isPending,
         mediaPickerOpen,
         mediaFiles,
         mediaLoading,

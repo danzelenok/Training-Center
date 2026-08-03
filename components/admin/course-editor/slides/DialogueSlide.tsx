@@ -1,13 +1,16 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { Card } from "@/components/ui/card";
-import { AlertTriangle, Loader2, Play, X, Sparkles, FileText } from "lucide-react";
+import { Loader2, Play, X, Sparkles, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { Slide } from "../CardCanvas";
 import { SlideBody } from "../SlideBody";
 import { QuizContainer } from "../QuizContainer";
 import { ControlPanel } from "../ControlPanel";
 import { PanelButton, PanelDivider } from "../PanelButton";
-import { AvatarSelector, fetchAvatarsList, CHAD_FALLBACK_IMAGE, FLORIN_FALLBACK_IMAGE } from "../AvatarSelector";
+import { AvatarSelector } from "../AvatarSelector";
+import { useAvatarSelection } from "../useAvatarSelection";
+import { useSlideAssetRegeneration } from "../useSlideAssetRegeneration";
+import { AssetGenerationStatus } from "../AssetGenerationStatus";
 
 interface DialogueCardProps {
   slide: Slide;
@@ -232,17 +235,7 @@ export function DialogueCard({
   onAnswered,
 }: DialogueCardProps) {
   const content = slide.content || {};
-  const [chadImage, setChadImage] = useState(CHAD_FALLBACK_IMAGE);
-  const [florinImage, setFlorinImage] = useState(FLORIN_FALLBACK_IMAGE);
-
-  useEffect(() => {
-    fetchAvatarsList().then((list) => {
-      const chad = list.find((a: any) => a.name.toLowerCase() === "chad");
-      const florin = list.find((a: any) => a.name.toLowerCase() === "florin");
-      if (chad?.preview_image_url) setChadImage(chad.preview_image_url);
-      if (florin?.preview_image_url) setFlorinImage(florin.preview_image_url);
-    });
-  }, []);
+  const { chadImage, florinImage } = useAvatarSelection();
   const labelA = content.labelA ?? "";
   const labelB = content.labelB ?? "";
   const heygenAvatarAId = content.heygenAvatarAId || "";
@@ -403,35 +396,24 @@ export function DialogueCard({
     onUpdateSlideContent(index, fields);
   };
 
-  const handleRegenerateVideo = async (slot?: 0 | 1) => {
-    if (!slide.id) return;
-    onUpdateSlideContent(index, {}, { assetStatus: "generating" });
-    const url = slot !== undefined
-      ? `/api/slides/${slide.id}/regenerate?asset=video&slot=${slot}`
-      : `/api/slides/${slide.id}/regenerate?asset=video`;
-    try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          dialogueLines: content.dialogueLines,
-          heygenAvatarAId: content.heygenAvatarAId || undefined,
-          heygenAvatarBId: content.heygenAvatarBId || undefined,
-          slots,
-        }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || `Server error ${res.status}`);
-      }
-      toast.success(slot !== undefined
-        ? `Generating ${slot === 0 ? "left" : "right"} avatar video…`
-        : "HeyGen dialogue video generation triggered in background."
-      );
-    } catch (err: any) {
-      toast.error("Failed to regenerate video: " + err.message);
-      onUpdateSlideContent(index, {}, { assetStatus: "failed" });
-    }
+  const regenerateAsset = useSlideAssetRegeneration(slide.id, index, onUpdateSlideContent);
+
+  const handleRegenerateVideo = (slot?: 0 | 1) => {
+    regenerateAsset({
+      asset: "video",
+      slot,
+      body: {
+        dialogueLines: content.dialogueLines,
+        heygenAvatarAId: content.heygenAvatarAId || undefined,
+        heygenAvatarBId: content.heygenAvatarBId || undefined,
+        slots,
+      },
+      successMessage:
+        slot !== undefined
+          ? `Generating ${slot === 0 ? "left" : "right"} avatar video…`
+          : "HeyGen dialogue video generation triggered in background.",
+      errorPrefix: "Failed to regenerate video",
+    });
   };
 
   // Helper to map avatars to standard types
@@ -456,22 +438,14 @@ export function DialogueCard({
           draggedIdx !== null ? "scale-[0.37] pointer-events-none" : "scale-100"
         }`}
       >
-        <div className="p-3 bg-destructive/10 text-destructive rounded-full border border-destructive/20">
-          <AlertTriangle className="h-8 w-8 text-destructive animate-bounce" />
-        </div>
-        <h3 className="text-base font-bold text-destructive font-sans">Video Generation Failed</h3>
-        <p className="text-xs max-w-[200px] leading-normal text-muted-foreground">
-          We encountered an error while calling the HeyGen API.
-        </p>
-        {isActive && (
-          <button
-            type="button"
-            onClick={() => handleRegenerateVideo()}
-            className="mt-2 text-xs font-bold bg-primary hover:bg-primary/90 text-primary-foreground py-2 px-5 rounded-xl shadow-md transition-all active:scale-95 cursor-pointer no-swipe font-sans"
-          >
-            Retry Generation
-          </button>
-        )}
+        <AssetGenerationStatus
+          status="failed"
+          title="Video Generation Failed"
+          description="We encountered an error while calling the HeyGen API."
+          isActive={isActive}
+          actionLabel="Retry Generation"
+          onAction={() => handleRegenerateVideo()}
+        />
       </Card>
     );
   }

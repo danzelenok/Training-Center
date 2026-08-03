@@ -126,3 +126,40 @@ export function usePPTXUploadMutation(courseId: string) {
     },
   });
 }
+
+interface PublishCourseVars {
+  assignTo: "all" | "teams" | "specific";
+  workerIds: string[];
+  teamIds: string[];
+  notifyWorkers: boolean;
+}
+
+interface PublishCourseResult {
+  telegramMessageId: string | null;
+  telegramGroupId: string | null;
+}
+
+// Sends real Telegram DMs to workers when notifyWorkers is true — no
+// automatic retry. A retried publish after a network blip could double-send
+// announcements or re-run assignment side effects the caller never asked
+// for twice. retry:0 is set explicitly (not relying on the mutation default)
+// because this is the one mutation in this app where that default matters.
+// No onSuccess/onError here — toast wording and the course-state merge
+// depend on publishNotifyTelegram/course, which live in the Provider, so
+// confirmPublish drives them via mutateAsync, same shape as the original
+// linear try/catch.
+export function usePublishCourseMutation(courseId: string) {
+  return useMutation({
+    retry: 0,
+    mutationFn: async (payload: PublishCourseVars): Promise<PublishCourseResult> => {
+      const res = await fetch(`/api/courses/${courseId}/publish`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Publishing failed");
+      return data;
+    },
+  });
+}
