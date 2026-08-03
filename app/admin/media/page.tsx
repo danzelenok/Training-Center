@@ -458,10 +458,10 @@ export default function MediaManagerPage() {
             variant="outline"
             size="sm"
             onClick={() => mediaFilesQuery.refetch()}
-            disabled={loading}
+            disabled={mediaFilesQuery.isFetching}
             className="border-border text-muted-foreground hover:text-foreground gap-1.5"
           >
-            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            <RefreshCw className={`h-4 w-4 ${mediaFilesQuery.isFetching ? "animate-spin" : ""}`} />
             Refresh
           </Button>
 

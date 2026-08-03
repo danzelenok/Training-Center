@@ -34,7 +34,7 @@ export default function ReportsPage() {
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  const coursesQuery = useCoursesQuery("all");
+  const coursesQuery = useCoursesQuery("published");
   const reportsQuery = useReportsQuery(selectedCourse, selectedStatus);
   const pollResponsesQuery = usePollResponsesQuery(selectedCourse);
   const deleteReportMutation = useDeleteReportMutation();

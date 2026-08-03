@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -35,6 +35,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { useCoursesQuery } from "@/hooks/admin/workers/queries";
+import {
+  useCreateCourseMutation,
+  usePublishOrResendCourseMutation,
+  useRevokeCourseMutation,
+  useDeleteCourseMutation,
+} from "@/hooks/admin/courses/mutations";
 
 interface Course {
   id: string;
@@ -50,58 +57,44 @@ interface Course {
 
 export default function CoursesPage() {
   const router = useRouter();
-  const [courses, setCourses] = useState<Course[]>([]);
-  const [loading, setLoading] = useState(true);
+  const coursesQuery = useCoursesQuery("all");
+  const courses = (coursesQuery.data ?? []) as Course[];
+  const loading = coursesQuery.isLoading;
 
   // New Course Dialog states
   const [openNewDialog, setOpenNewDialog] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [newDescription, setNewDescription] = useState("");
-  const [creating, setCreating] = useState(false);
 
   // Actions states
   const [expandedDescId, setExpandedDescId] = useState<string | null>(null);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [publishingId, setPublishingId] = useState<string | null>(null);
-  const [revokingId, setRevokingId] = useState<string | null>(null);
-  const [resendingId, setResendingId] = useState<string | null>(null);
 
-  // Fetch Courses
-  const fetchCourses = async () => {
-    try {
-      const res = await fetch("/api/courses");
-      if (!res.ok) throw new Error("Failed to fetch courses");
-      const data = await res.json();
-      setCourses(data);
-    } catch (err: any) {
-      toast.error(err.message || "Could not load courses");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const createCourseMutation = useCreateCourseMutation();
+  const publishOrResendMutation = usePublishOrResendCourseMutation();
+  const revokeCourseMutation = useRevokeCourseMutation();
+  const deleteCourseMutation = useDeleteCourseMutation();
 
-  useEffect(() => {
-    fetchCourses();
-  }, []);
+  const creating = createCourseMutation.isPending;
+  // A course is only ever draft (shows Publish) or published (shows Resend)
+  // at once, so one shared pending id correctly drives whichever of the two
+  // buttons is actually rendered for a given course — same observable
+  // behavior as the original's separate publishingId/resendingId.
+  const pendingPublishOrResendId = publishOrResendMutation.isPending
+    ? publishOrResendMutation.variables?.courseId ?? null
+    : null;
+  const revokingId = revokeCourseMutation.isPending ? revokeCourseMutation.variables ?? null : null;
+  const deletingId = deleteCourseMutation.isPending ? deleteCourseMutation.variables ?? null : null;
 
   // Create Course
   const handleCreateCourse = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim()) return;
 
-    setCreating(true);
     try {
-      const res = await fetch("/api/courses", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: newTitle,
-          description: newDescription,
-        }),
+      const data = await createCourseMutation.mutateAsync({
+        title: newTitle,
+        description: newDescription,
       });
-
-      if (!res.ok) throw new Error("Failed to create course");
-      const data = await res.json();
 
       toast.success("Course created successfully!");
       setOpenNewDialog(false);
@@ -112,35 +105,22 @@ export default function CoursesPage() {
       router.push(`/admin/courses/${data.id}`);
     } catch (err: any) {
       toast.error(err.message || "Error creating course");
-    } finally {
-      setCreating(false);
     }
   };
 
-  // Publish Course
+  // Publish Course — real Telegram DM blast to every assigned worker, so
+  // confirm before sending (this page previously had no confirmation here
+  // at all, unlike Revoke/Delete).
   const handlePublishCourse = async (id: string) => {
-    setPublishingId(id);
+    if (!confirm("Publish this course? Assigned workers will be notified.")) {
+      return;
+    }
     const toastId = toast.loading("Publishing course & broadcasting to Telegram...");
     try {
-      const res = await fetch(`/api/courses/${id}/publish`, {
-        method: "POST",
-      });
-
-      if (!res.ok) {
-        const ct = res.headers.get("content-type") || "";
-        const msg = ct.includes("application/json")
-          ? (await res.json()).error
-          : `Server error ${res.status}`;
-        throw new Error(msg || "Failed to publish course");
-      }
-      const data = await res.json();
-
+      await publishOrResendMutation.mutateAsync({ courseId: id, variant: "publish" });
       toast.success("Course published and Telegram alert broadcasted!", { id: toastId });
-      fetchCourses();
     } catch (err: any) {
       toast.error(err.message || "Publishing failed", { id: toastId });
-    } finally {
-      setPublishingId(null);
     }
   };
 
@@ -149,46 +129,28 @@ export default function CoursesPage() {
     if (!confirm("Revoke this course? The Telegram message will be deleted and the course will return to draft.")) {
       return;
     }
-    setRevokingId(id);
     const toastId = toast.loading("Revoking course...");
     try {
-      const res = await fetch(`/api/courses/${id}/publish`, { method: "DELETE" });
-      if (!res.ok) {
-        const ct = res.headers.get("content-type") || "";
-        const msg = ct.includes("application/json")
-          ? (await res.json()).error
-          : `Server error ${res.status}`;
-        throw new Error(msg || "Failed to revoke course");
-      }
+      await revokeCourseMutation.mutateAsync(id);
       toast.success("Course revoked. Telegram message deleted.", { id: toastId });
-      fetchCourses();
     } catch (err: any) {
       toast.error(err.message || "Failed to revoke course", { id: toastId });
-    } finally {
-      setRevokingId(null);
     }
   };
 
-  // Resend Course (send new Telegram announcement)
+  // Resend Course (send new Telegram announcement) — re-notifies every
+  // worker currently assigned, not just a new subset, so make that explicit
+  // before sending.
   const handleResendCourse = async (id: string) => {
-    setResendingId(id);
+    if (!confirm("Resend will notify ALL workers currently assigned to this course again. Continue?")) {
+      return;
+    }
     const toastId = toast.loading("Resending to Telegram...");
     try {
-      const res = await fetch(`/api/courses/${id}/publish`, { method: "POST" });
-      if (!res.ok) {
-        const ct = res.headers.get("content-type") || "";
-        const msg = ct.includes("application/json")
-          ? (await res.json()).error
-          : `Server error ${res.status}`;
-        throw new Error(msg || "Failed to resend course");
-      }
-      const data = await res.json();
+      await publishOrResendMutation.mutateAsync({ courseId: id, variant: "resend" });
       toast.success("Course resent to Telegram!", { id: toastId });
-      fetchCourses();
     } catch (err: any) {
       toast.error(err.message || "Failed to resend course", { id: toastId });
-    } finally {
-      setResendingId(null);
     }
   };
 
@@ -198,19 +160,11 @@ export default function CoursesPage() {
       return;
     }
 
-    setDeletingId(id);
     try {
-      const res = await fetch(`/api/courses/${id}`, {
-        method: "DELETE",
-      });
-
-      if (!res.ok) throw new Error("Failed to delete course");
+      await deleteCourseMutation.mutateAsync(id);
       toast.success("Course deleted successfully");
-      fetchCourses();
     } catch (err: any) {
       toast.error(err.message || "Error deleting course");
-    } finally {
-      setDeletingId(null);
     }
   };
 
@@ -399,11 +353,11 @@ export default function CoursesPage() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            disabled={course.slideCount === 0 || publishingId === course.id}
+                            disabled={course.slideCount === 0 || pendingPublishOrResendId === course.id}
                             onClick={() => handlePublishCourse(course.id)}
                             className="h-9 px-3 text-xs font-semibold text-[#C8D400] hover:bg-[#C8D400]/10 hover:text-[#B6C200] disabled:opacity-40 disabled:hover:bg-transparent rounded-lg cursor-pointer"
                           >
-                            {publishingId === course.id ? (
+                            {pendingPublishOrResendId === course.id ? (
                               <Loader2 className="h-3.5 w-3.5 animate-spin" />
                             ) : (
                               <>
@@ -418,12 +372,12 @@ export default function CoursesPage() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            disabled={resendingId === course.id || revokingId === course.id}
+                            disabled={pendingPublishOrResendId === course.id || revokingId === course.id}
                             onClick={() => handleResendCourse(course.id)}
                             title="Resend to Telegram"
                             className="h-9 w-9 p-0 text-muted-foreground hover:bg-[#C8D400]/10 hover:text-[#C8D400] rounded-lg cursor-pointer"
                           >
-                            {resendingId === course.id ? (
+                            {pendingPublishOrResendId === course.id ? (
                               <Loader2 className="h-4 w-4 animate-spin" />
                             ) : (
                               <RotateCcw className="h-4 w-4" />
@@ -436,7 +390,7 @@ export default function CoursesPage() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            disabled={revokingId === course.id || resendingId === course.id}
+                            disabled={revokingId === course.id || pendingPublishOrResendId === course.id}
                             onClick={() => handleRevokeCourse(course.id)}
                             title="Revoke course from Telegram"
                             className="h-9 w-9 p-0 text-muted-foreground hover:bg-orange-500/10 hover:text-orange-400 rounded-lg cursor-pointer"
