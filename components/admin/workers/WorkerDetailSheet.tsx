@@ -12,6 +12,7 @@ import {
   Clock,
   Users,
   UserCog,
+  MapPin,
   BookOpen,
   Trophy,
   Layers,
@@ -160,6 +161,7 @@ interface WorkerDetailSheetProps {
   onOpenUnbindConfirm: (worker: Worker) => void;
   onOpenTeamPicker: () => void;
   onOpenManagerPicker: () => void;
+  onOpenJurisdictionPicker: () => void;
 }
 
 export function WorkerDetailSheet({
@@ -176,6 +178,7 @@ export function WorkerDetailSheet({
   onOpenUnbindConfirm,
   onOpenTeamPicker,
   onOpenManagerPicker,
+  onOpenJurisdictionPicker,
 }: WorkerDetailSheetProps) {
   const { data: worker, isLoading: loadingDetail } = useWorkerDetailQuery(workerId);
 
@@ -429,6 +432,33 @@ export function WorkerDetailSheet({
               ) : (
                 <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
                   No manager assigned yet.
+                </div>
+              )}
+            </div>
+
+            {/* State / jurisdiction */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                  <MapPin className="h-3.5 w-3.5" />
+                  State
+                </h3>
+                <button
+                  onClick={onOpenJurisdictionPicker}
+                  className="p-1 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                  title="Edit state"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              {worker.jurisdiction ? (
+                <span className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-muted/30 px-3 py-1.5 text-xs font-medium text-foreground">
+                  <MapPin className="h-3 w-3 text-muted-foreground" />
+                  {worker.jurisdiction.code} &middot; {worker.jurisdiction.name}
+                </span>
+              ) : (
+                <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+                  No state assigned yet.
                 </div>
               )}
             </div>

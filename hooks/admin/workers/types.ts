@@ -68,6 +68,7 @@ export interface WorkerStatusEvent {
 
 export interface WorkerDetail extends Worker {
   manager: ManagerRef | null;
+  jurisdiction: JurisdictionRef | null;
   courses: WorkerCourseProgress[];
   pollResponses: WorkerPollResponse[];
   statusHistory: WorkerStatusEvent[];

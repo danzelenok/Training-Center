@@ -117,12 +117,20 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
   const [slidesList, setSlidesList] = useState<Slide[]>([]);
   const slidesListRef = useRef<Slide[]>([]);
   slidesListRef.current = slidesList;
+  const courseRef = useRef<Course | null>(null);
+  courseRef.current = course;
 
   // Auto-save states and hooks
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "error" | null>("saved");
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isInitialLoad = useRef(true);
   const prevPollStatusesRef = useRef<Record<string, string>>({});
+  // Only one PATCH /api/courses/[id] request (autosave or explicit save) may be
+  // in flight at a time — the reconcile endpoint diffs the *entire* slides array
+  // against the DB, so two overlapping requests resolving out of order can each
+  // "delete" slides the other just added/kept, corrupting unrelated slides.
+  const isSavingRef = useRef(false);
+  const pendingAutosaveRef = useRef(false);
 
   const courseQuery = useCourseQuery(id);
   const loading = courseQuery.isLoading;
@@ -138,8 +146,61 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
   // observer), so depend on that instead.
   const autosaveMutate = autosaveMutation.mutate;
 
+  // Reads course/slides from refs (not closed-over state) so it stays correct
+  // whether it fires from the debounce timeout or from the unmount-flush below.
+  const performAutosave = useCallback(() => {
+    const currentCourse = courseRef.current;
+    if (!currentCourse) return;
+
+    // Never let two reconcile PATCHes overlap — defer this one until the
+    // in-flight request settles, then run with whatever is freshest by then.
+    if (isSavingRef.current) {
+      pendingAutosaveRef.current = true;
+      return;
+    }
+    isSavingRef.current = true;
+
+    autosaveMutate(
+      {
+        title: currentCourse.title,
+        description: currentCourse.description,
+        themeType: currentCourse.themeType || "preset",
+        themeValue: currentCourse.themeValue || "linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)",
+        autoAssignNewWorkers: currentCourse.autoAssignNewWorkers,
+        slides: slidesListRef.current,
+      },
+      {
+        onSuccess: (data) => {
+          if (Array.isArray(data.slides)) {
+            const serverIds = data.slides.map((s: Slide) => s.id).filter(Boolean);
+            const hasIdChanges = slidesListRef.current.some((slide, idx) => serverIds[idx] && slide.id !== serverIds[idx]);
+            if (hasIdChanges) {
+              isInitialLoad.current = true;
+              setSlidesList(prev => prev.map((slide, idx) => ({
+                ...slide,
+                id: serverIds[idx] || slide.id,
+              })));
+            }
+          }
+          setSaveStatus("saved");
+        },
+        onError: (err: Error) => {
+          console.error("Auto-save error:", err);
+          setSaveStatus("error");
+        },
+        onSettled: () => {
+          isSavingRef.current = false;
+          if (pendingAutosaveRef.current) {
+            pendingAutosaveRef.current = false;
+            performAutosave();
+          }
+        },
+      }
+    );
+  }, [autosaveMutate]);
+
   const triggerAutoSave = useCallback(() => {
-    if (loading || !course) return;
+    if (loading || !courseRef.current) return;
 
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
@@ -148,38 +209,10 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
     setSaveStatus("saving");
 
     saveTimeoutRef.current = setTimeout(() => {
-      autosaveMutate(
-        {
-          title: course.title,
-          description: course.description,
-          themeType: course.themeType || "preset",
-          themeValue: course.themeValue || "linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)",
-          autoAssignNewWorkers: course.autoAssignNewWorkers,
-          slides: slidesListRef.current,
-        },
-        {
-          onSuccess: (data) => {
-            if (Array.isArray(data.slides)) {
-              const serverIds = data.slides.map((s: Slide) => s.id).filter(Boolean);
-              const hasIdChanges = slidesListRef.current.some((slide, idx) => serverIds[idx] && slide.id !== serverIds[idx]);
-              if (hasIdChanges) {
-                isInitialLoad.current = true;
-                setSlidesList(prev => prev.map((slide, idx) => ({
-                  ...slide,
-                  id: serverIds[idx] || slide.id,
-                })));
-              }
-            }
-            setSaveStatus("saved");
-          },
-          onError: (err: Error) => {
-            console.error("Auto-save error:", err);
-            setSaveStatus("error");
-          },
-        }
-      );
+      saveTimeoutRef.current = null;
+      performAutosave();
     }, 1500);
-  }, [course, loading, autosaveMutate]);
+  }, [loading, performAutosave]);
 
   useEffect(() => {
     if (loading || !course) return;
@@ -202,11 +235,17 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
 
   useEffect(() => {
     return () => {
+      // Don't just cancel a pending debounced save on navigate-away — flush it,
+      // otherwise the last ~1.5s of edits (e.g. a just-created slide, a just-
+      // removed image) are silently lost and the stale server copy reappears
+      // the next time the course is opened.
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current);
+        saveTimeoutRef.current = null;
+        performAutosave();
       }
     };
-  }, []);
+  }, [performAutosave]);
 
   // Active slide index being edited
   const [activeSlideIndex, setActiveSlideIndex] = useState<number | null>(null);
@@ -654,6 +693,19 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
     }
     setSaveStatus("saving");
     const toastId = toast.loading("Saving changes to server...");
+
+    // A debounced autosave may already be in flight — wait for it rather than
+    // firing a second overlapping PATCH (see isSavingRef comment above), since
+    // an out-of-order response between the two can drop slides written by the other.
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = null;
+    }
+    for (let waited = 0; isSavingRef.current && waited < 5000; waited += 150) {
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+    isSavingRef.current = true;
+
     try {
       const data = await saveCourseMutation.mutateAsync({
         title: course.title,
@@ -678,6 +730,12 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
     } catch (err: any) {
       setSaveStatus("error");
       toast.error(err.message || "Error saving changes", { id: toastId });
+    } finally {
+      isSavingRef.current = false;
+      if (pendingAutosaveRef.current) {
+        pendingAutosaveRef.current = false;
+        performAutosave();
+      }
     }
   };
 

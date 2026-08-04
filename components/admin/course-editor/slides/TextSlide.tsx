@@ -290,12 +290,12 @@ export function TextToolbar({
                 type="button"
                 onClick={() =>
                   onUpdateSlideContent(index, {
-                    imageUrl: undefined,
-                    url: undefined,
-                    imageScale: undefined,
-                    imageVolume: undefined,
-                    imageAlign: undefined,
-                    fullScreenMode: undefined,
+                    imageUrl: null,
+                    url: null,
+                    imageScale: null,
+                    imageVolume: null,
+                    imageAlign: null,
+                    fullScreenMode: null,
                   })
                 }
                 className="p-1.5 border border-destructive/30 bg-destructive/10 hover:bg-destructive/20 rounded-xl text-destructive transition-all cursor-pointer"

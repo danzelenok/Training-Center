@@ -88,11 +88,16 @@ export async function PATCH(
       // We achieve this by never including them in PATCH UPDATE operations: instead we use
       // a jsonb merge (`content || $clientFields`) that only applies the non-owned keys,
       // leaving whatever Inngest last wrote untouched regardless of timing.
+      // Only asset-bearing slide types actually have these fields written by Inngest (see
+      // lib/inngest-functions.ts) — text/chat slides reuse `url`/`assetUrl`-shaped keys for a
+      // manually-picked background image, so protecting them there just makes them permanently
+      // un-clearable from the editor instead of protecting a generated asset.
       const SERVER_OWNED = new Set([
         'instructorVideoUrl', 'studentVideoUrl',
         'heygenInstructorJobId', 'heygenStudentJobId',
         'assetUrl', 'url', 'audioUrl', 'captions',
       ]);
+      const ASSET_GENERATING_TYPES = new Set(['video', 'audio', 'dialogue']);
 
       const existingSlides = await db
         .select()
@@ -123,13 +128,15 @@ export async function PATCH(
 
         const clientContent = (slide.content || {}) as Record<string, any>;
         const existingContent = (existingSlide?.content || {}) as Record<string, any>;
+        const slideType = slide.type || existingSlide?.type || "text";
+        const protectServerOwned = ASSET_GENERATING_TYPES.has(slideType);
 
-        // Build a content patch that excludes SERVER_OWNED keys entirely.
-        // For existing slides we apply this via `content || $patch::jsonb` so the DB's
-        // server-owned fields are never touched — no matter when Inngest writes them.
+        // Build a content patch that excludes SERVER_OWNED keys entirely (asset-bearing
+        // slide types only). For existing slides we apply this via `content || $patch::jsonb`
+        // so the DB's server-owned fields are never touched — no matter when Inngest writes them.
         const clientPatch: Record<string, any> = {};
         for (const [key, value] of Object.entries(clientContent)) {
-          if (value !== undefined && !SERVER_OWNED.has(key)) {
+          if (value !== undefined && !(protectServerOwned && SERVER_OWNED.has(key))) {
             clientPatch[key] = value;
           }
         }

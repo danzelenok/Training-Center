@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { workers, progress, courses, pollResponses, slides, assignments, workerTeams, teams, workerStatusEvents } from "@/db/schema";
+import { workers, progress, courses, pollResponses, slides, assignments, workerTeams, teams, workerStatusEvents, jurisdictions, organizationJurisdictions } from "@/db/schema";
 import { requireOrgId } from "@/lib/org";
 import { and, count, eq, inArray, sql } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
@@ -111,11 +111,22 @@ export async function GET(
       }
     }
 
+    let jurisdiction: { id: string; code: string; name: string } | null = null;
+    if (worker[0].jurisdictionId) {
+      const [jurisdictionRow] = await db
+        .select({ id: jurisdictions.id, code: jurisdictions.code, name: jurisdictions.name })
+        .from(jurisdictions)
+        .where(eq(jurisdictions.id, worker[0].jurisdictionId))
+        .limit(1);
+      jurisdiction = jurisdictionRow ?? null;
+    }
+
     return NextResponse.json({
       ...worker[0],
       telegramUserId: worker[0].telegramUserId?.toString() ?? null,
       teams: workerTeamsList,
       manager,
+      jurisdiction,
       statusHistory,
       courses: courseProgress.map((r) => ({
         assignmentId: r.assignmentId,
@@ -211,6 +222,28 @@ export async function PATCH(
           return NextResponse.json({ error: "Selected manager was not found." }, { status: 400 });
         }
         updates.managerId = manager.id;
+      }
+    }
+
+    if ("jurisdictionId" in body) {
+      if (body.jurisdictionId === null) {
+        updates.jurisdictionId = null;
+      } else if (typeof body.jurisdictionId === "string") {
+        const [jurisdiction] = await db
+          .select({ id: jurisdictions.id })
+          .from(organizationJurisdictions)
+          .innerJoin(jurisdictions, eq(jurisdictions.id, organizationJurisdictions.jurisdictionId))
+          .where(
+            and(
+              eq(organizationJurisdictions.organizationId, orgId),
+              eq(organizationJurisdictions.jurisdictionId, body.jurisdictionId)
+            )
+          )
+          .limit(1);
+        if (!jurisdiction) {
+          return NextResponse.json({ error: "Selected state was not found." }, { status: 400 });
+        }
+        updates.jurisdictionId = jurisdiction.id;
       }
     }
 

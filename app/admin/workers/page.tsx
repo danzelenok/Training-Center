@@ -22,6 +22,7 @@ import { InviteLinkDialog } from "@/components/admin/workers/InviteLinkDialog";
 import { UnbindConfirmDialog } from "@/components/admin/workers/UnbindConfirmDialog";
 import { TeamPickerDialog } from "@/components/admin/workers/TeamPickerDialog";
 import { ManagerPickerDialog } from "@/components/admin/workers/ManagerPickerDialog";
+import { JurisdictionPickerDialog } from "@/components/admin/workers/JurisdictionPickerDialog";
 import { WorkerDetailSheet } from "@/components/admin/workers/WorkerDetailSheet";
 
 export default function WorkersPage() {
@@ -66,6 +67,7 @@ export default function WorkersPage() {
   const [selectedWorkerId, setSelectedWorkerId] = useState<string | null>(null);
   const [teamPickerOpen, setTeamPickerOpen] = useState(false);
   const [managerPickerOpen, setManagerPickerOpen] = useState(false);
+  const [jurisdictionPickerOpen, setJurisdictionPickerOpen] = useState(false);
 
   const openInviteModal = (name: string, url: string) => {
     setActiveInviteWorkerName(name);
@@ -319,6 +321,12 @@ export default function WorkersPage() {
         workerId={selectedWorkerId}
       />
 
+      <JurisdictionPickerDialog
+        open={jurisdictionPickerOpen}
+        onOpenChange={setJurisdictionPickerOpen}
+        workerId={selectedWorkerId}
+      />
+
       <WorkerDetailSheet
         workerId={selectedWorkerId}
         open={sheetOpen}
@@ -333,6 +341,7 @@ export default function WorkersPage() {
         onOpenUnbindConfirm={handleOpenUnbindConfirm}
         onOpenTeamPicker={() => setTeamPickerOpen(true)}
         onOpenManagerPicker={() => setManagerPickerOpen(true)}
+        onOpenJurisdictionPicker={() => setJurisdictionPickerOpen(true)}
       />
     </div>
   );

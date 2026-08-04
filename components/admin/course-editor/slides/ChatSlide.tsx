@@ -463,7 +463,7 @@ export function ChatToolbar({
                 <button type="button" onClick={onOpenMediaPicker} className="p-1.5 border border-border rounded-xl bg-card hover:bg-accent text-card-foreground transition-all cursor-pointer" title="Replace Image">
                   <RefreshCw className="h-4 w-4 shrink-0" />
                 </button>
-                <button type="button" onClick={() => { updateContent({ belowType: "none", chatVolume: 100, imageUrl: undefined, url: undefined, imageScale: undefined, imageAlign: undefined, fullScreenMode: undefined }); setImageToolsOpen(false); }} className="p-1.5 border border-destructive/30 bg-destructive/10 hover:bg-destructive/20 rounded-xl text-destructive transition-all cursor-pointer" title="Remove Image">
+                <button type="button" onClick={() => { updateContent({ belowType: "none", chatVolume: 100, imageUrl: null, url: null, imageScale: null, imageAlign: null, fullScreenMode: null }); setImageToolsOpen(false); }} className="p-1.5 border border-destructive/30 bg-destructive/10 hover:bg-destructive/20 rounded-xl text-destructive transition-all cursor-pointer" title="Remove Image">
                   <Trash2 className="h-4 w-4 shrink-0" />
                 </button>
               </div>

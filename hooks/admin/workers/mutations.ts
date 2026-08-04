@@ -334,6 +334,36 @@ export function useUpdateWorkerManagerMutation() {
   });
 }
 
+// --- Update worker's jurisdiction/state ---
+
+interface UpdateWorkerJurisdictionVars {
+  workerId: string;
+  jurisdictionId: string | null;
+}
+
+export function useUpdateWorkerJurisdictionMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ workerId, jurisdictionId }: UpdateWorkerJurisdictionVars) => {
+      const res = await fetch(`/api/workers/${workerId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jurisdictionId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to update state");
+      return data;
+    },
+    onSuccess: (_data, { workerId }) => {
+      invalidateWorkerAndList(queryClient, workerId);
+      toast.success("State updated");
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || "Could not update state");
+    },
+  });
+}
+
 // --- Delete worker (replaces handleDeleteWorker) ---
 
 interface DeleteWorkerVars {
