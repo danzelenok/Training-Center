@@ -1,7 +1,7 @@
 import { db } from "@/db";
 import { courses, slides } from "@/db/schema";
 import { withTelegramAuth } from "@/lib/telegram";
-import { and, eq, asc } from "drizzle-orm";
+import { and, asc, eq, isNull, or } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 export const GET = withTelegramAuth<{ params: Promise<{ id: string }> }>(
@@ -30,14 +30,18 @@ export const GET = withTelegramAuth<{ params: Promise<{ id: string }> }>(
         return new NextResponse("Course not found", { status: 404 });
       }
 
-      // Fetch slides for the course with language = 'en' ordered by order
+      // Fetch slides for the course with language = 'en', ordered by order,
+      // scoped to base slides (jurisdictionId IS NULL) plus the worker's own state.
       const courseSlides = await db
         .select()
         .from(slides)
         .where(
           and(
             eq(slides.courseId, id),
-            eq(slides.language, "en")
+            eq(slides.language, "en"),
+            worker.jurisdictionId
+              ? or(isNull(slides.jurisdictionId), eq(slides.jurisdictionId, worker.jurisdictionId))
+              : isNull(slides.jurisdictionId)
           )
         )
         .orderBy(asc(slides.order));

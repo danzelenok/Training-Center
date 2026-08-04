@@ -103,6 +103,33 @@ export function useGenerateAIMutation(courseId: string) {
   });
 }
 
+interface GenerateAddendumVars {
+  jurisdictionIds: string[];
+}
+
+interface GenerateAddendumResult {
+  results: { jurisdictionId: string; code: string; status: "ok" | "error"; slideCount?: number; error?: string }[];
+}
+
+export function useGenerateAddendumMutation(courseId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ jurisdictionIds }: GenerateAddendumVars): Promise<GenerateAddendumResult> => {
+      const res = await fetch(`/api/courses/${courseId}/generate-addendum`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jurisdictionIds }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to generate state variants");
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: courseEditorKeys.course(courseId) });
+    },
+  });
+}
+
 interface PPTXUploadResult {
   slides: Slide[];
 }

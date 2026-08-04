@@ -8,6 +8,26 @@ export const organizations = pgTable("organizations", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// 0.5. JURISDICTIONS TABLE (platform-wide reference data, not per-organization)
+export const jurisdictions = pgTable("jurisdictions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  code: text("code").notNull().unique(), // "WA", "OR", "CA"
+  name: text("name").notNull(), // "Washington L&I"
+  regulatorName: text("regulator_name").notNull(),
+  baseSourceUrl: text("base_source_url").notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
+  isStatePlan: boolean("is_state_plan").default(true).notNull(), // false only for the federal record — distinguishes "assignable to a worker" from "just a base source"
+});
+
+// 0.6. ORGANIZATION_JURISDICTIONS TABLE (which states an organization operates in)
+export const organizationJurisdictions = pgTable("organization_jurisdictions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizationId: uuid("organization_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  jurisdictionId: uuid("jurisdiction_id").references(() => jurisdictions.id, { onDelete: "cascade" }).notNull(),
+}, (table) => ({
+  unique: unique().on(table.organizationId, table.jurisdictionId),
+}));
+
 // 1. COURSES TABLE
 export const courses = pgTable("courses", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -37,9 +57,21 @@ export const slides = pgTable("slides", {
   content: jsonb("content").notNull(),
   language: text("language").default("en").notNull(),
   assetStatus: text("asset_status").$type<"pending" | "generating" | "ready" | "failed">().default("ready").notNull(),
+  jurisdictionId: uuid("jurisdiction_id").references(() => jurisdictions.id), // null = base slide, shown to all
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+// 2.5. COURSE_SOURCES TABLE (source material per course+jurisdiction, including the base version)
+export const courseSources = pgTable("course_sources", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  courseId: uuid("course_id").references(() => courses.id, { onDelete: "cascade" }).notNull(),
+  jurisdictionId: uuid("jurisdiction_id").references(() => jurisdictions.id), // null = base part
+  sourceUrl: text("source_url").notNull(),
+  retrievedAt: timestamp("retrieved_at").defaultNow().notNull(),
+}, (table) => ({
+  unique: unique().on(table.courseId, table.jurisdictionId),
+}));
 
 // 3. WORKERS TABLE
 export const workers = pgTable("workers", {
@@ -52,6 +84,7 @@ export const workers = pgTable("workers", {
   displayName: text("display_name"),
   phone: text("phone"),
   managerId: uuid("manager_id").references((): AnyPgColumn => workers.id, { onDelete: "set null" }),
+  jurisdictionId: uuid("jurisdiction_id").references(() => jurisdictions.id),
   active: boolean("active").default(true).notNull(),
   deactivatedAt: timestamp("deactivated_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),

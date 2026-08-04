@@ -15,17 +15,19 @@ import {
   useSaveCourseMutation,
   useUploadFileMutation,
   useGenerateAIMutation,
+  useGenerateAddendumMutation,
   usePPTXUploadMutation,
   usePublishCourseMutation,
 } from "@/hooks/admin/course-editor/mutations";
-import { useWorkersQuery, useTeamsQuery } from "@/hooks/admin/workers/queries";
-import type { TeamRef } from "@/hooks/admin/workers/types";
+import { useWorkersQuery, useTeamsQuery, useJurisdictionsQuery } from "@/hooks/admin/workers/queries";
+import type { TeamRef, JurisdictionRef } from "@/hooks/admin/workers/types";
 
 export type { Course, MediaLibraryFile };
 
 interface CourseEditorContextType {
   course: Course | null;
   slidesList: Slide[];
+  jurisdictionsList: JurisdictionRef[];
   loading: boolean;
   saveStatus: "saved" | "saving" | "error" | null;
   activeSlideIndex: number | null;
@@ -46,6 +48,10 @@ interface CourseEditorContextType {
   aiModel: "fast" | "advanced";
   aiUseLNI: boolean;
   aiGenerating: boolean;
+
+  addendumDialogOpen: boolean;
+  addendumJurisdictionIds: string[];
+  addendumGenerating: boolean;
 
   publishDialogOpen: boolean;
   publishAssignTo: "all" | "teams" | "specific";
@@ -69,6 +75,11 @@ interface CourseEditorContextType {
   setAiModel: (model: "fast" | "advanced") => void;
   setAiUseLNI: (value: boolean) => void;
 
+  setAddendumDialogOpen: (open: boolean) => void;
+  setAddendumJurisdictionIds: React.Dispatch<React.SetStateAction<string[]>>;
+  toggleAddendumJurisdiction: (jurisdictionId: string, checked: boolean) => void;
+  handleGenerateAddendum: () => Promise<void>;
+
   setPublishDialogOpen: (open: boolean) => void;
   setPublishAssignTo: (value: "all" | "teams" | "specific") => void;
   setPublishWorkerIds: React.Dispatch<React.SetStateAction<string[]>>;
@@ -88,7 +99,7 @@ interface CourseEditorContextType {
   toggleAutoAssignNewWorkers: () => void;
   addSlide: (type: Slide["type"]) => void;
   deleteSlide: (indexToDelete: number) => void;
-  duplicateSlide: (indexToDuplicate: number) => void;
+  duplicateSlide: (indexToDuplicate: number, jurisdictionId?: string | null) => void;
   updateActiveSlideContent: (index: number, updatedFields: any, slideFields?: any) => void;
   handleSaveCourse: () => Promise<void>;
   handlePublish: () => Promise<void>;
@@ -231,6 +242,11 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
   const [aiUseLNI, setAiUseLNI] = useState(true);
   const [aiGenerating, setAiGenerating] = useState(false);
 
+  // "Generate state variants" (addendum) dialog state — pre-fills every
+  // org jurisdiction as selected, per the checkbox UX.
+  const [addendumDialogOpen, setAddendumDialogOpen] = useState(false);
+  const [addendumJurisdictionIds, setAddendumJurisdictionIds] = useState<string[]>([]);
+
   // Publish dialog UI state — picker selections + toggle, all still local.
   const [publishDialogOpen, setPublishDialogOpen] = useState(false);
   const [publishAssignTo, setPublishAssignTo] = useState<"all" | "teams" | "specific">("all");
@@ -244,6 +260,8 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
   // session, these can resolve from cache with no extra network request.
   const workersQuery = useWorkersQuery();
   const teamsQuery = useTeamsQuery();
+  const jurisdictionsQuery = useJurisdictionsQuery();
+  const jurisdictionsList = jurisdictionsQuery.data ?? [];
 
   const publishWorkersList = useMemo(
     () =>
@@ -580,14 +598,19 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
     });
   };
 
-  // Duplicate slide
-  const duplicateSlide = (indexToDuplicate: number) => {
+  // Duplicate slide. Passing jurisdictionId turns the copy into a state-specific
+  // variant of the original slide (shown only to workers in that state, in addition
+  // to the base slide) rather than a plain duplicate.
+  const duplicateSlide = (indexToDuplicate: number, jurisdictionId?: string | null) => {
     const target = slidesList[indexToDuplicate];
     const newSlide: Slide = {
       ...target,
       id: crypto.randomUUID(),
       order: slidesList.length + 1,
-      content: JSON.parse(JSON.stringify(target.content)) // deep copy
+      content: JSON.parse(JSON.stringify(target.content)), // deep copy
+      // Plain "Duplicate slide" (no jurisdictionId arg) keeps the original's
+      // jurisdiction; only the "Add <state> variant" action overrides it.
+      jurisdictionId: jurisdictionId !== undefined ? jurisdictionId : (target.jurisdictionId ?? null),
     };
     const newList = [...slidesList];
     newList.splice(indexToDuplicate + 1, 0, newSlide);
@@ -599,7 +622,10 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
     }));
     setSlidesList(updated);
     setActiveSlideIndex(indexToDuplicate + 1);
-    toast.success("Slide duplicated successfully!");
+    const jurisdictionLabel = jurisdictionId
+      ? jurisdictionsList.find((j) => j.id === jurisdictionId)?.code
+      : null;
+    toast.success(jurisdictionLabel ? `${jurisdictionLabel} variant created!` : "Slide duplicated successfully!");
   };
 
   // Update content of the active slide — functional setState so concurrent calls never overwrite each other
@@ -741,6 +767,42 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
     }
   };
 
+  const toggleAddendumJurisdiction = (jurisdictionId: string, checked: boolean) => {
+    setAddendumJurisdictionIds((prev) =>
+      checked ? [...prev, jurisdictionId] : prev.filter((jid) => jid !== jurisdictionId)
+    );
+  };
+
+  const generateAddendumMutation = useGenerateAddendumMutation(id);
+
+  // State-variant (addendum) generation — runs sequentially server-side
+  // (see generate-addendum/route.ts), so this can take a while for 2-3 states.
+  const handleGenerateAddendum = async () => {
+    if (addendumJurisdictionIds.length === 0) {
+      toast.error("Select at least one state.");
+      return;
+    }
+    const toastId = toast.loading(`Generating state variants for ${addendumJurisdictionIds.length} state(s)…`);
+    try {
+      const data = await generateAddendumMutation.mutateAsync({ jurisdictionIds: addendumJurisdictionIds });
+      const okResults = data.results.filter((r) => r.status === "ok");
+      const errorResults = data.results.filter((r) => r.status === "error");
+      if (errorResults.length === 0) {
+        toast.success(`Generated variants for ${okResults.map((r) => r.code).join(", ")}.`, { id: toastId });
+      } else if (okResults.length > 0) {
+        toast.warning(
+          `Generated ${okResults.map((r) => r.code).join(", ")}. Failed: ${errorResults.map((r) => r.code).join(", ")}.`,
+          { id: toastId }
+        );
+      } else {
+        toast.error("Failed to generate any state variants.", { id: toastId });
+      }
+      setAddendumDialogOpen(false);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to generate state variants", { id: toastId });
+    }
+  };
+
   const pptxUploadMutation = usePPTXUploadMutation(id);
 
   // PPTX Parser
@@ -783,6 +845,7 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
       value={{
         course,
         slidesList,
+        jurisdictionsList,
         loading,
         saveStatus,
         activeSlideIndex,
@@ -804,6 +867,10 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
         aiUseLNI,
         aiGenerating,
 
+        addendumDialogOpen,
+        addendumJurisdictionIds,
+        addendumGenerating: generateAddendumMutation.isPending,
+
         setSlidesList,
         setActiveSlideIndex,
         setMediaPickerOpen,
@@ -816,6 +883,11 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
         setAiPrompt,
         setAiModel,
         setAiUseLNI,
+
+        setAddendumDialogOpen,
+        setAddendumJurisdictionIds,
+        toggleAddendumJurisdiction,
+        handleGenerateAddendum,
 
         updateCourseStyle,
         fetchCourse,

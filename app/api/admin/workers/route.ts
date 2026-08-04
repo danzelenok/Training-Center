@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { workers, invites, courses, teams, assignments, workerTeams } from "@/db/schema";
+import { workers, invites, courses, teams, assignments, workerTeams, jurisdictions, organizationJurisdictions } from "@/db/schema";
 import { requireOrgId } from "@/lib/org";
 import { and, eq, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
@@ -96,6 +96,28 @@ export async function POST(req: Request) {
       managerId = manager.id;
     }
 
+    let jurisdictionId: string | null = null;
+    if (typeof body.jurisdictionId === "string" && body.jurisdictionId) {
+      const [jurisdiction] = await db
+        .select({ id: jurisdictions.id })
+        .from(organizationJurisdictions)
+        .innerJoin(jurisdictions, eq(jurisdictions.id, organizationJurisdictions.jurisdictionId))
+        .where(
+          and(
+            eq(organizationJurisdictions.organizationId, orgId),
+            eq(organizationJurisdictions.jurisdictionId, body.jurisdictionId)
+          )
+        )
+        .limit(1);
+      if (!jurisdiction) {
+        return new NextResponse(
+          JSON.stringify({ error: "Selected state was not found." }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      jurisdictionId = jurisdiction.id;
+    }
+
     // 1. Create worker
     const [worker] = await db
       .insert(workers)
@@ -107,6 +129,7 @@ export async function POST(req: Request) {
         lastName,
         phone: phone || null,
         managerId,
+        jurisdictionId,
       })
       .returning();
 

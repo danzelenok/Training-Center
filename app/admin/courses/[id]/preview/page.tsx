@@ -4,6 +4,7 @@ import React, { use, useEffect, useState } from "react";
 import { X } from "lucide-react";
 import { StoryPlayer } from "@/components/mini-app/story-player";
 import { Slide } from "@/components/admin/course-editor/CardCanvas";
+import type { JurisdictionRef } from "@/hooks/admin/workers/types";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -12,6 +13,7 @@ interface PageProps {
 export default function CoursePreviewPage({ params }: PageProps) {
   const { id } = use(params);
   const [slides, setSlides] = useState<Slide[]>([]);
+  const [jurisdictions, setJurisdictions] = useState<JurisdictionRef[]>([]);
   const [themeType, setThemeType] = useState<string | undefined>();
   const [themeValue, setThemeValue] = useState<string | undefined>();
   const [loading, setLoading] = useState(true);
@@ -36,6 +38,11 @@ export default function CoursePreviewPage({ params }: PageProps) {
       }
     }
     fetchSlides();
+
+    fetch("/api/admin/jurisdictions")
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data) => setJurisdictions(data))
+      .catch(() => {});
   }, [id]);
 
   if (loading) {
@@ -62,7 +69,12 @@ export default function CoursePreviewPage({ params }: PageProps) {
   return (
     <div className="fixed inset-0 bg-slate-950 flex items-center justify-center">
       <div className="relative h-full w-full max-w-[420px] overflow-hidden">
-        <StoryPlayer slides={slides} themeType={themeType} themeValue={themeValue} />
+        <StoryPlayer
+          slides={slides}
+          themeType={themeType}
+          themeValue={themeValue}
+          jurisdictionBadges={jurisdictions}
+        />
       </div>
     </div>
   );

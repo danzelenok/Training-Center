@@ -3,9 +3,11 @@ import {
   workersKeys,
   coursesKeys,
   teamsKeys,
+  jurisdictionsKeys,
   type WorkersListResponse,
   type Course,
   type TeamRef,
+  type JurisdictionRef,
   type WorkerDetail,
 } from "./types";
 
@@ -52,6 +54,19 @@ export function useTeamsQuery() {
   return useQuery({
     queryKey: teamsKeys.list(),
     queryFn: fetchTeams,
+  });
+}
+
+async function fetchJurisdictions(): Promise<JurisdictionRef[]> {
+  const res = await fetch("/api/admin/jurisdictions");
+  if (!res.ok) throw new Error("Failed to fetch jurisdictions");
+  return res.json();
+}
+
+export function useJurisdictionsQuery() {
+  return useQuery({
+    queryKey: jurisdictionsKeys.list(),
+    queryFn: fetchJurisdictions,
   });
 }
 

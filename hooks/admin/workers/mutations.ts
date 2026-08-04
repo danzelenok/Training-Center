@@ -19,6 +19,7 @@ interface CreateWorkerVars {
   phone: string;
   teamIds: string[];
   managerId: string | null;
+  jurisdictionId: string | null;
 }
 
 interface CreateWorkerResult {
@@ -29,11 +30,11 @@ interface CreateWorkerResult {
 export function useCreateWorkerMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ name, phone, teamIds, managerId }: CreateWorkerVars): Promise<CreateWorkerResult> => {
+    mutationFn: async ({ name, phone, teamIds, managerId, jurisdictionId }: CreateWorkerVars): Promise<CreateWorkerResult> => {
       const res = await fetch("/api/admin/workers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, phone, teamIds, managerId }),
+        body: JSON.stringify({ name, phone, teamIds, managerId, jurisdictionId }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to create worker");

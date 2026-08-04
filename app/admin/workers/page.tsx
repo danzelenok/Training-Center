@@ -5,7 +5,7 @@ import { UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast, Toaster } from "sonner";
 import { normalizePhone } from "@/lib/phone";
-import { useWorkersQuery, useCoursesQuery, useTeamsQuery } from "@/hooks/admin/workers/queries";
+import { useWorkersQuery, useCoursesQuery, useTeamsQuery, useJurisdictionsQuery } from "@/hooks/admin/workers/queries";
 import {
   useCreateWorkerMutation,
   useReissueInviteMutation,
@@ -28,9 +28,11 @@ export default function WorkersPage() {
   const workersQuery = useWorkersQuery();
   const coursesQuery = useCoursesQuery();
   const teamsQuery = useTeamsQuery();
+  const jurisdictionsQuery = useJurisdictionsQuery();
   const workersList = workersQuery.data?.workers ?? [];
   const publishedCourses = coursesQuery.data ?? [];
   const teamsList = teamsQuery.data ?? [];
+  const jurisdictionsList = jurisdictionsQuery.data ?? [];
 
   const createWorker = useCreateWorkerMutation();
   const reissueInvite = useReissueInviteMutation();
@@ -44,6 +46,7 @@ export default function WorkersPage() {
   const [newWorkerPhone, setNewWorkerPhone] = useState("");
   const [newWorkerTeamIds, setNewWorkerTeamIds] = useState<string[]>([]);
   const [newWorkerManagerId, setNewWorkerManagerId] = useState<string | null>(null);
+  const [newWorkerJurisdictionId, setNewWorkerJurisdictionId] = useState<string | null>(null);
 
   // Possible-duplicate warning shown before creating a new worker
   const [duplicateCandidate, setDuplicateCandidate] = useState<Worker | null>(null);
@@ -100,6 +103,7 @@ export default function WorkersPage() {
         phone: newWorkerPhone.trim(),
         teamIds: newWorkerTeamIds,
         managerId: newWorkerManagerId,
+        jurisdictionId: newWorkerJurisdictionId,
       },
       {
         onSuccess: (data) => {
@@ -109,6 +113,7 @@ export default function WorkersPage() {
           setNewWorkerPhone("");
           setNewWorkerTeamIds([]);
           setNewWorkerManagerId(null);
+          setNewWorkerJurisdictionId(null);
         },
       }
     );
@@ -122,6 +127,10 @@ export default function WorkersPage() {
     e.preventDefault();
     if (!newWorkerName.trim()) {
       toast.error("Please enter worker name");
+      return;
+    }
+    if (jurisdictionsList.length > 0 && !newWorkerJurisdictionId) {
+      toast.error("Please select a state");
       return;
     }
     const duplicate = findPossibleDuplicate(newWorkerName.trim(), newWorkerPhone.trim());
@@ -146,6 +155,7 @@ export default function WorkersPage() {
     setNewWorkerPhone("");
     setNewWorkerTeamIds([]);
     setNewWorkerManagerId(null);
+    setNewWorkerJurisdictionId(null);
   };
 
   const handleViewDuplicate = () => {
@@ -262,6 +272,9 @@ export default function WorkersPage() {
         managerCandidates={workersList.filter((w) => w.active)}
         managerId={newWorkerManagerId}
         onManagerChange={setNewWorkerManagerId}
+        jurisdictions={jurisdictionsList}
+        jurisdictionId={newWorkerJurisdictionId}
+        onJurisdictionChange={setNewWorkerJurisdictionId}
       />
 
       <DuplicateWorkerDialog

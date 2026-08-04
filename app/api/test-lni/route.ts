@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { fetchLNIContext } from "@/lib/lni-scraper";
+import { fetchRegulatoryContext } from "@/lib/regulatory-scraper";
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -8,7 +8,7 @@ export async function GET(req: Request) {
   const keyPresent = !!process.env.BRAVE_SEARCH_API_KEY;
 
   try {
-    const result = await fetchLNIContext(topic);
+    const result = await fetchRegulatoryContext(topic, "www.lni.wa.gov", "Washington State L&I");
     return NextResponse.json({
       keyPresent,
       sourcesCount: result.sources.length,

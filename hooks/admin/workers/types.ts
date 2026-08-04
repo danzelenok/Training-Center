@@ -3,6 +3,12 @@ export interface TeamRef {
   name: string;
 }
 
+export interface JurisdictionRef {
+  id: string;
+  code: string;
+  name: string;
+}
+
 export interface ManagerRef {
   id: string;
   name: string;
@@ -95,4 +101,8 @@ export const coursesKeys = {
 
 export const teamsKeys = {
   list: () => ["teams"] as const,
+};
+
+export const jurisdictionsKeys = {
+  list: () => ["jurisdictions"] as const,
 };

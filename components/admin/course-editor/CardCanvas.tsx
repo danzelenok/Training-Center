@@ -8,10 +8,17 @@ import {
   Copy,
   GripHorizontal,
   Loader2,
+  MapPin,
 } from "lucide-react";
 import { slideRegistry } from "./SlideFactory";
 import { useCourseEditor } from "./CourseEditorContext";
 import { useCardCanvas } from "./useCardCanvas";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 export interface Slide {
   id?: string;
@@ -78,6 +85,7 @@ export interface Slide {
   order: number;
   language?: string;
   assetStatus?: "pending" | "generating" | "ready" | "failed";
+  jurisdictionId?: string | null;
 }
 
 export default function CardCanvas() {
@@ -92,6 +100,7 @@ export default function CardCanvas() {
     updateActiveSlideContent,
     openMediaPicker,
     course,
+    jurisdictionsList,
   } = useCourseEditor();
 
   const themeType = course?.themeType || "preset";
@@ -244,6 +253,22 @@ export default function CardCanvas() {
                     />
                   )}
 
+                  {/* Jurisdiction badge — always visible so admins can scan which
+                      slides are base vs. state-specific at a glance. */}
+                  <div className="absolute bottom-2 left-2.5 z-40 select-none no-swipe">
+                    <span
+                      className={`px-1.5 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider border ${
+                        slide.jurisdictionId
+                          ? "bg-[#C8D400]/15 border-[#C8D400]/40 text-[#8a9400] dark:text-[#C8D400]"
+                          : "bg-background/80 border-border text-muted-foreground"
+                      }`}
+                    >
+                      {slide.jurisdictionId
+                        ? jurisdictionsList.find((j) => j.id === slide.jurisdictionId)?.code ?? "?"
+                        : "Base"}
+                    </span>
+                  </div>
+
                   {/* Actions at top-left corner of the card */}
                   {isActive && (
                     <div className="absolute top-2 left-2.5 z-40 flex items-center gap-1.5 select-none no-swipe animate-fade-in">
@@ -258,6 +283,35 @@ export default function CardCanvas() {
                       >
                         <Copy className="h-3 w-3 shrink-0" />
                       </button>
+                      {jurisdictionsList.length > 0 && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              type="button"
+                              onClick={(e) => e.stopPropagation()}
+                              className="p-1.5 rounded-lg border bg-background/80 hover:bg-accent text-foreground transition-colors cursor-pointer shrink-0 border-border"
+                              title="Add state variant"
+                            >
+                              <MapPin className="h-3 w-3 shrink-0" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent
+                            align="start"
+                            className="bg-card border border-border text-foreground rounded-xl shadow-lg p-1 z-50"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {jurisdictionsList.map((j) => (
+                              <DropdownMenuItem
+                                key={j.id}
+                                onClick={() => duplicateSlide(index, j.id)}
+                                className="text-xs cursor-pointer rounded-lg"
+                              >
+                                Add {j.code} variant
+                              </DropdownMenuItem>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
                       {slidesList.length > 1 && (
                         <button
                           type="button"

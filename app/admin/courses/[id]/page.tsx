@@ -15,6 +15,7 @@ import {
   Sparkles,
   Eye,
   Send,
+  MapPin,
 } from "lucide-react";
 import { toast, Toaster } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -93,6 +94,14 @@ function CourseEditorContent() {
     aiUseLNI,
     setAiUseLNI,
     aiGenerating,
+
+    jurisdictionsList,
+    addendumDialogOpen,
+    setAddendumDialogOpen,
+    addendumJurisdictionIds,
+    toggleAddendumJurisdiction,
+    addendumGenerating,
+    handleGenerateAddendum,
 
     publishDialogOpen,
     setPublishDialogOpen,
@@ -852,9 +861,9 @@ function CourseEditorContent() {
 
           <div className="flex items-center justify-between rounded-xl border border-border bg-muted/30 px-4 py-3">
             <div>
-              <p className="text-xs font-bold text-foreground">Use Washington State L&amp;I Materials</p>
+              <p className="text-xs font-bold text-foreground">Use Federal OSHA Materials</p>
               <p className="text-[10px] text-muted-foreground mt-0.5">
-                Enrich slides with official safety references from lni.wa.gov
+                Enrich slides with official federal safety references from osha.gov
               </p>
             </div>
             <button
@@ -897,6 +906,69 @@ function CourseEditorContent() {
               ) : (
                 <>
                   <Sparkles className="h-4 w-4 mr-1.5" />
+                  Generate
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Generate State Variants (addendum) Dialog */}
+      <Dialog open={addendumDialogOpen} onOpenChange={setAddendumDialogOpen}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold text-[#1B2A6B] dark:text-[#C8D400]">
+              Generate State Variants
+            </DialogTitle>
+            <DialogDescription className="text-muted-foreground text-xs mt-1">
+              Adds 2-4 slides per selected state, grounded in that state&apos;s official regulatory materials and layered on top of the base course.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2 py-3">
+            {jurisdictionsList.map((j) => {
+              const checked = addendumJurisdictionIds.includes(j.id);
+              return (
+                <label
+                  key={j.id}
+                  className={`flex items-center gap-2 rounded-xl border px-3 py-2 cursor-pointer transition-colors ${
+                    checked ? "border-[#C8D400]/50 bg-[#C8D400]/10" : "border-border hover:bg-muted/30"
+                  }`}
+                >
+                  <Checkbox
+                    checked={checked}
+                    onCheckedChange={(v) => toggleAddendumJurisdiction(j.id, v === true)}
+                    disabled={addendumGenerating}
+                  />
+                  <span className="text-xs font-medium text-foreground">{j.name} ({j.code})</span>
+                </label>
+              );
+            })}
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setAddendumDialogOpen(false)}
+              disabled={addendumGenerating}
+              className="border-border text-muted-foreground hover:text-foreground text-xs"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleGenerateAddendum}
+              disabled={addendumGenerating || addendumJurisdictionIds.length === 0}
+              className="bg-[#C8D400] hover:bg-[#B6C200] text-[#1B2A6B] font-extrabold border-0 shadow-lg shadow-[#C8D400]/25 text-xs px-4"
+            >
+              {addendumGenerating ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-1.5" />
+                  Generating…
+                </>
+              ) : (
+                <>
+                  <MapPin className="h-4 w-4 mr-1.5" />
                   Generate
                 </>
               )}

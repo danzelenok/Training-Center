@@ -1,10 +1,10 @@
 import { db } from "@/db";
-import { courses, slides } from "@/db/schema";
+import { courses, slides, jurisdictions, courseSources } from "@/db/schema";
 import { requireOrgId } from "@/lib/org";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { NextResponse } from "next/server";
-import { generateCourseStructure } from "@/lib/gemini";
-import { fetchLNIContext } from "@/lib/lni-scraper";
+import { generateCourseStructure, slideNeedsGeneratedAsset } from "@/lib/gemini";
+import { fetchRegulatoryContext } from "@/lib/regulatory-scraper";
 import { inngest } from "@/lib/inngest";
 
 export async function POST(
@@ -37,7 +37,7 @@ export async function POST(
 
     // Parse request body
     const body = await req.json();
-    const { prompt, model, useLNI = true } = body;
+    const { prompt, model, useLNI = true, jurisdictionId } = body;
 
     if (!prompt || typeof prompt !== "string" || !prompt.trim()) {
       return new NextResponse("Prompt is required", { status: 400 });
@@ -46,28 +46,44 @@ export async function POST(
     // Determine target model (fast -> gemini-3.5-flash, advanced -> gemini-2.5-pro)
     const modelIdentifier = model === "fast" ? "gemini-3.5-flash" : "gemini-2.5-pro";
 
-    // Fetch LNI context (non-blocking — generation continues if this fails)
-    let lniContext: string | undefined;
-    let lniDescription: string | undefined;
+    // Resolve which regulator's site to ground the base generation on. Defaults
+    // to the federal OSHA record — the two-step flow (Ticket 5) generates the
+    // base course from federal materials, then layers state-specific addenda
+    // on top via /generate-addendum. Passing jurisdictionId here still lets a
+    // caller ground the base directly on one state when there's no need for
+    // an intermediate federal base.
+    const [jurisdiction] =
+      typeof jurisdictionId === "string" && jurisdictionId
+        ? await db.select().from(jurisdictions).where(eq(jurisdictions.id, jurisdictionId)).limit(1)
+        : await db.select().from(jurisdictions).where(eq(jurisdictions.code, "FEDERAL")).limit(1);
+
+    if (!jurisdiction) {
+      return new NextResponse("Jurisdiction not found", { status: 400 });
+    }
+
+    // Fetch regulatory context (non-blocking — generation continues if this fails)
+    let regulatoryContext: string | undefined;
+    let sourcesDescription: string | undefined;
 
     if (useLNI) {
       try {
-        const lni = await fetchLNIContext(prompt);
-        console.log("[LNI] sources found:", lni.sources.length);
-        if (lni.sources.length > 0) {
-          lniContext = lni.sourcesText;
-          lniDescription = lni.sourcesDescription;
-          console.log("[LNI] lniDescription set:", lniDescription.slice(0, 100));
+        const domain = new URL(jurisdiction.baseSourceUrl).hostname;
+        const reg = await fetchRegulatoryContext(prompt, domain, jurisdiction.regulatorName);
+        console.log("[Regulatory] sources found:", reg.sources.length);
+        if (reg.sources.length > 0) {
+          regulatoryContext = reg.sourcesText;
+          sourcesDescription = reg.sourcesDescription;
+          console.log("[Regulatory] sourcesDescription set:", sourcesDescription.slice(0, 100));
         }
       } catch (err) {
-        console.warn("[LNI] Failed to fetch L&I context, proceeding without it:", err);
+        console.warn("[Regulatory] Failed to fetch context, proceeding without it:", err);
       }
     } else {
-      console.log("[LNI] Skipped by user toggle");
+      console.log("[Regulatory] Skipped by user toggle");
     }
 
     // Call Gemini structure generator with selected model
-    const generatedSlides = await generateCourseStructure(prompt, modelIdentifier, lniContext);
+    const generatedSlides = await generateCourseStructure(prompt, modelIdentifier, regulatoryContext, jurisdiction.regulatorName);
 
     // 1. Delete all existing EN slides for this course
     await db
@@ -80,22 +96,14 @@ export async function POST(
       );
 
     // 2. Prepare slide inserts
-    const slidesToInsert = generatedSlides.map((slide, index) => {
-      const needsAsset =
-        slide.type === "audio" ||
-        slide.type === "dialogue" ||
-        slide.type === "video" ||
-        (slide.type === "text" && !!(slide.content as any).visualKeywords) ||
-        (slide.type === "chat" && (slide.content as any).belowType === "image" && !!(slide.content as any).visualKeywords);
-      return {
-        courseId: id,
-        order: index + 1,
-        type: slide.type,
-        content: slide.content,
-        language: "en",
-        assetStatus: (needsAsset ? "pending" : "ready") as "pending" | "ready",
-      };
-    });
+    const slidesToInsert = generatedSlides.map((slide, index) => ({
+      courseId: id,
+      order: index + 1,
+      type: slide.type,
+      content: slide.content,
+      language: "en",
+      assetStatus: (slideNeedsGeneratedAsset(slide) ? "pending" : "ready") as "pending" | "ready",
+    }));
 
     let finalSlides: any[] = [];
     if (slidesToInsert.length > 0) {
@@ -105,14 +113,37 @@ export async function POST(
         .returning();
     }
 
-    // 3. Update course description with LNI sources if found
-    console.log("[LNI] lniDescription before DB update:", lniDescription ? lniDescription.slice(0, 100) : "undefined");
-    if (lniDescription) {
+    // 3. Update course description with regulatory sources if found
+    console.log("[Regulatory] sourcesDescription before DB update:", sourcesDescription ? sourcesDescription.slice(0, 100) : "undefined");
+    if (sourcesDescription) {
       await db
         .update(courses)
-        .set({ description: lniDescription, updatedAt: new Date() })
+        .set({ description: sourcesDescription, updatedAt: new Date() })
         .where(eq(courses.id, id));
-      console.log("[LNI] description updated in DB");
+      console.log("[Regulatory] description updated in DB");
+
+      // Record the base course source (jurisdictionId null). Nullable columns
+      // don't participate in the (courseId, jurisdictionId) unique constraint's
+      // conflict detection in Postgres, so upsert manually instead of relying
+      // on onConflictDoUpdate.
+      const [existingBaseSource] = await db
+        .select({ id: courseSources.id })
+        .from(courseSources)
+        .where(and(eq(courseSources.courseId, id), isNull(courseSources.jurisdictionId)))
+        .limit(1);
+
+      if (existingBaseSource) {
+        await db
+          .update(courseSources)
+          .set({ sourceUrl: jurisdiction.baseSourceUrl, retrievedAt: new Date() })
+          .where(eq(courseSources.id, existingBaseSource.id));
+      } else {
+        await db.insert(courseSources).values({
+          courseId: id,
+          jurisdictionId: null,
+          sourceUrl: jurisdiction.baseSourceUrl,
+        });
+      }
     }
 
     // 4. Set courses.generationStatus = generating

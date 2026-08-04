@@ -14,6 +14,7 @@ import {
   Upload,
   Sparkles,
   Send,
+  MapPin,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useCourseEditor } from "./CourseEditorContext";
@@ -30,6 +31,9 @@ export default function Sidebar() {
     handlePPTXUpload,
     importing,
     toggleAutoAssignNewWorkers,
+    jurisdictionsList,
+    setAddendumDialogOpen,
+    setAddendumJurisdictionIds,
   } = useCourseEditor();
 
   const injectors = [
@@ -86,6 +90,20 @@ export default function Sidebar() {
             <Sparkles className="h-4 w-4 text-[#C8D400] shrink-0" />
             Generate with AI
           </Button>
+
+          {hasSlides && jurisdictionsList.length > 0 && (
+            <Button
+              onClick={() => {
+                setAddendumJurisdictionIds(jurisdictionsList.map((j) => j.id));
+                setAddendumDialogOpen(true);
+              }}
+              variant="outline"
+              className="w-full bg-card hover:bg-muted text-foreground border border-border font-bold cursor-pointer h-10 px-4 transition-all duration-250 gap-1.5 flex items-center justify-center text-xs rounded-xl"
+            >
+              <MapPin className="h-4 w-4 shrink-0" />
+              Generate state variants
+            </Button>
+          )}
 
           {status === "draft" && (
             <label className="w-full cursor-pointer shrink-0">

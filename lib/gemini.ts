@@ -134,11 +134,82 @@ function shuffleQuizOptions(slide: SlideInput): SlideInput {
   return slide;
 }
 
-const systemInstruction = `You are an expert safety training content creator.
-Generate a structured, cohesive, and educational slide deck for a safety training course based on the topic prompt.
-The course must cover essential safety concepts, scaffolded logically.
+// Slides that reference an externally-generated asset (image/audio/video)
+// start out "pending" until the async asset-generation pipeline fills them in.
+export function slideNeedsGeneratedAsset(slide: { type: string; content: any }): boolean {
+  return (
+    slide.type === "audio" ||
+    slide.type === "dialogue" ||
+    slide.type === "video" ||
+    (slide.type === "text" && !!slide.content?.visualKeywords) ||
+    (slide.type === "chat" && slide.content?.belowType === "image" && !!slide.content?.visualKeywords)
+  );
+}
 
-CRITICAL DESIGN REQUIREMENT: Slides are displayed on a 9:16 vertical mobile screen. You MUST strictly adhere to these length constraints:
+// Parses and validates a Gemini JSON response against SlideInputSchema. Shared
+// by generateCourseStructure and generateJurisdictionAddendum so both go
+// through the exact same validation + quiz-option-shuffling path.
+function parseAndValidateSlides(text: string): SlideInput[] {
+  if (!text) {
+    throw new Error("Received empty response from Gemini API.");
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    console.error("Gemini failed to output valid JSON. Output was:", text);
+    throw new Error("AI generated an invalid response format. Please try again.");
+  }
+
+  if (!Array.isArray(parsed)) {
+    throw new Error("AI response did not return a valid array of slides.");
+  }
+
+  const validatedSlides: SlideInput[] = [];
+  for (let i = 0; i < parsed.length; i++) {
+    const item = parsed[i];
+    const validation = SlideInputSchema.safeParse(item);
+    if (!validation.success) {
+      console.error(`Slide validation failed at index ${i}:`, validation.error.format());
+      console.error("Offending item:", item);
+      throw new Error(`AI generated a slide with an invalid schema at index ${i + 1}.`);
+    }
+    validatedSlides.push(validation.data);
+  }
+
+  if (validatedSlides.length === 0) {
+    throw new Error("AI did not generate any slides.");
+  }
+
+  return validatedSlides.map(shuffleQuizOptions);
+}
+
+// One-line summary of a slide for feeding into the addendum prompt as
+// "here's what the course already covers" context, without shipping the
+// full slide JSON (which would eat into the context budget for no benefit).
+function summarizeSlideForContext(slide: SlideInput): string {
+  switch (slide.type) {
+    case "text":
+    case "audio":
+    case "video":
+      return `${slide.content.heading} — ${slide.content.body}`;
+    case "quiz":
+      return `${slide.content.heading} (quiz)`;
+    case "poll":
+      return `${slide.content.heading} (poll)`;
+    case "dialogue":
+      return slide.content.dialogueBelowType === "quiz"
+        ? `${slide.content.heading} (roleplay + quiz: ${slide.content.belowQuizQuestion})`
+        : `${slide.content.heading} (roleplay: ${slide.content.belowText})`;
+    case "chat":
+      return `${slide.content.heading} (chat)`;
+    default:
+      return "";
+  }
+}
+
+const slideLengthConstraints = `CRITICAL DESIGN REQUIREMENT: Slides are displayed on a 9:16 vertical mobile screen. You MUST strictly adhere to these length constraints:
 
 - Text Slide: heading ≤ 30 chars (max 2 lines), body ≤ 180 chars (2-3 short sentences max).
 - Audio Slide: heading ≤ 25 chars, body ≤ 100 chars, audioScript ≤ 250 chars.
@@ -148,9 +219,9 @@ CRITICAL DESIGN REQUIREMENT: Slides are displayed on a 9:16 vertical mobile scre
 - Quiz Slide: heading (question) ≤ 50 chars, 2 to 8 options each ≤ 25 chars (vary the count across quiz slides in the same course), explanation ≤ 80 chars.
 - Poll (Rate) Slide: heading ≤ 60 chars (a reflection or rating prompt).
 
-You must return a raw JSON array of slides. Do not wrap the JSON in markdown code blocks. Return ONLY the JSON array.
+You must return a raw JSON array of slides. Do not wrap the JSON in markdown code blocks. Return ONLY the JSON array.`;
 
-AVAILABLE SLIDE TYPES — use all of them creatively based on what fits the topic best:
+const slideTypeCatalog = `AVAILABLE SLIDE TYPES — use all of them creatively based on what fits the topic best:
 
 1. Text Slide with background image:
    Use for key facts, rules, or visually-supported concepts. Include "visualKeywords" — 2-4 English keywords for a relevant background photo.
@@ -323,11 +394,33 @@ AVAILABLE SLIDE TYPES — use all of them creatively based on what fits the topi
        "pollType": "stars"
      }
    }
+`;
 
+const systemInstruction = `You are an expert safety training content creator.
+Generate a structured, cohesive, and educational slide deck for a safety training course based on the topic prompt.
+The course must cover essential safety concepts, scaffolded logically.
+
+${slideLengthConstraints}
+
+${slideTypeCatalog}
 Use all slide types creatively. Vary the format to keep learners engaged. All text must be in English.`;
 
+const addendumSystemInstruction = `You are an expert safety training content creator, writing a short addendum to an existing safety training course.
+You will be given a summary of the course's existing slides and official regulatory reference materials for a specific jurisdiction.
 
-export async function generateCourseStructure(prompt: string, modelName: string = "gemini-2.5-pro", lniContext?: string): Promise<SlideInput[]> {
+Generate 2 to 4 NEW slides that add requirements, procedures, or details that are SPECIFIC to that jurisdiction and are not already covered by the existing slides. Ground every factual claim strictly in the reference materials provided — do not introduce safety requirements, numbers, or practices that are not present in them. Do not repeat content the existing slides already cover; if the reference materials don't reveal anything meaningfully different from the base course, it's fine to focus the addendum on jurisdiction-specific context instead (e.g. which agency enforces it, the applicable state plan name) as long as it stays grounded in the reference materials.
+
+${slideLengthConstraints}
+
+${slideTypeCatalog}
+Generate 2 to 4 slides total. All text must be in English.`;
+
+export async function generateCourseStructure(
+  prompt: string,
+  modelName: string = "gemini-2.5-pro",
+  lniContext?: string,
+  regulatorName: string = "Washington State L&I"
+): Promise<SlideInput[]> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new Error("GEMINI_API_KEY environment variable is not configured on the server.");
@@ -342,7 +435,7 @@ export async function generateCourseStructure(prompt: string, modelName: string 
   });
 
   const userMessage = lniContext
-    ? `REFERENCE MATERIALS FROM WASHINGTON STATE L&I:\n${lniContext}\n\nBase all factual claims, requirements, and procedures strictly on the reference materials above. Do not introduce safety requirements, numbers, or practices that are not present in the reference materials. You may vary the structure, wording, examples, and order of presentation freely — but the underlying factual content must come only from the source above. Create a training course based on this topic: ${prompt}`
+    ? `REFERENCE MATERIALS FROM ${regulatorName.toUpperCase()}:\n${lniContext}\n\nBase all factual claims, requirements, and procedures strictly on the reference materials above. Do not introduce safety requirements, numbers, or practices that are not present in the reference materials. You may vary the structure, wording, examples, and order of presentation freely — but the underlying factual content must come only from the source above. Create a training course based on this topic: ${prompt}`
     : `Create a training course based on this topic: ${prompt}`;
 
   const response = await model.generateContent({
@@ -353,40 +446,46 @@ export async function generateCourseStructure(prompt: string, modelName: string 
     },
   });
 
-  const text = response.response.text().trim();
-  if (!text) {
-    throw new Error("Received empty response from Gemini API.");
+  return parseAndValidateSlides(response.response.text().trim());
+}
+
+// Generates 2-4 additional slides that supplement an already-generated base
+// course with content specific to one jurisdiction, grounded in that
+// jurisdiction's regulatory reference materials. Uses a separate system
+// prompt from generateCourseStructure — this is explicitly an addendum, not
+// a full course, and must be told what's already covered so it doesn't repeat it.
+export async function generateJurisdictionAddendum(
+  baseSlides: SlideInput[],
+  jurisdictionName: string,
+  regulatoryContext: string,
+  topic: string,
+  modelName: string = "gemini-2.5-pro"
+): Promise<SlideInput[]> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error("GEMINI_API_KEY environment variable is not configured on the server.");
   }
 
-  // Parse JSON
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch (err) {
-    console.error("Gemini failed to output valid JSON. Output was:", text);
-    throw new Error("AI generated an invalid response format. Please try again.");
-  }
+  const genAI = new GoogleGenerativeAI(apiKey);
 
-  if (!Array.isArray(parsed)) {
-    throw new Error("AI response did not return a valid array of slides.");
-  }
+  const model = genAI.getGenerativeModel({
+    model: modelName,
+    systemInstruction: addendumSystemInstruction,
+  });
 
-  // Validate array elements
-  const validatedSlides: SlideInput[] = [];
-  for (let i = 0; i < parsed.length; i++) {
-    const item = parsed[i];
-    const validation = SlideInputSchema.safeParse(item);
-    if (!validation.success) {
-      console.error(`Slide validation failed at index ${i}:`, validation.error.format());
-      console.error("Offending item:", item);
-      throw new Error(`AI generated a slide with an invalid schema at index ${i + 1}.`);
-    }
-    validatedSlides.push(validation.data);
-  }
+  const baseSlidesSummary = baseSlides
+    .map((slide, i) => `${i + 1}. [${slide.type}] ${summarizeSlideForContext(slide)}`)
+    .join("\n");
 
-  if (validatedSlides.length === 0) {
-    throw new Error("AI did not generate any slides for the course.");
-  }
+  const userMessage = `COURSE TOPIC: ${topic}\n\nEXISTING COURSE SLIDES (do not repeat this content):\n${baseSlidesSummary}\n\nOFFICIAL REFERENCE MATERIALS FROM ${jurisdictionName.toUpperCase()}:\n${regulatoryContext}\n\nGenerate 2-4 additional slides that supplement the course above with requirements specific to ${jurisdictionName}, grounded strictly in the reference materials.`;
 
-  return validatedSlides.map(shuffleQuizOptions);
+  const response = await model.generateContent({
+    contents: [{ role: "user", parts: [{ text: userMessage }] }],
+    generationConfig: {
+      responseMimeType: "application/json",
+      temperature: 0.7,
+    },
+  });
+
+  return parseAndValidateSlides(response.response.text().trim());
 }

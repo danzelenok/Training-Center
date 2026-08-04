@@ -18,7 +18,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { formatPhoneInput } from "@/lib/phone";
-import { workerDisplayName, type TeamRef, type Worker } from "@/hooks/admin/workers/types";
+import { workerDisplayName, type TeamRef, type Worker, type JurisdictionRef } from "@/hooks/admin/workers/types";
 
 const NO_MANAGER = "__none__";
 
@@ -37,6 +37,9 @@ interface AddWorkerDialogProps {
   managerCandidates: Worker[];
   managerId: string | null;
   onManagerChange: (managerId: string | null) => void;
+  jurisdictions: JurisdictionRef[];
+  jurisdictionId: string | null;
+  onJurisdictionChange: (jurisdictionId: string | null) => void;
 }
 
 export function AddWorkerDialog({
@@ -54,6 +57,9 @@ export function AddWorkerDialog({
   managerCandidates,
   managerId,
   onManagerChange,
+  jurisdictions,
+  jurisdictionId,
+  onJurisdictionChange,
 }: AddWorkerDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -115,6 +121,29 @@ export function AddWorkerDialog({
                 </SelectContent>
               </Select>
             </div>
+
+            {jurisdictions.length > 0 && (
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">
+                  State <span className="text-red-400">*</span>
+                </label>
+                <Select
+                  value={jurisdictionId ?? undefined}
+                  onValueChange={(v) => onJurisdictionChange(v)}
+                >
+                  <SelectTrigger className="w-full bg-background border-border rounded-xl h-10">
+                    <SelectValue placeholder="Select state" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-card border border-border text-foreground">
+                    {jurisdictions.map((j) => (
+                      <SelectItem key={j.id} value={j.id}>
+                        {j.code}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             {teams.length > 0 && (
               <div className="space-y-1.5">

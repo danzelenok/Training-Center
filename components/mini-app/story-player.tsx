@@ -6,6 +6,7 @@ import { Award, Sparkles, RotateCcw, BookOpen } from "lucide-react";
 import { Slide } from "@/components/admin/course-editor/CardCanvas";
 import { slideRegistry } from "@/components/admin/course-editor/SlideFactory";
 import { fetchAvatarsList, CHAD_FALLBACK_IMAGE, FLORIN_FALLBACK_IMAGE } from "@/components/admin/course-editor/AvatarSelector";
+import type { JurisdictionRef } from "@/hooks/admin/workers/types";
 
 const CARD_WIDTH = 350;
 const CARD_HEIGHT = 620;
@@ -16,9 +17,13 @@ interface StoryPlayerProps {
   initData?: string;
   themeType?: string;
   themeValue?: string;
+  // Admin-preview only: when set, renders a "Base"/state code badge on each
+  // slide so admins can tell which jurisdiction variant they're looking at.
+  // Left unset for the real worker-facing Mini App.
+  jurisdictionBadges?: JurisdictionRef[];
 }
 
-export function StoryPlayer({ slides, courseId, initData, themeType, themeValue }: StoryPlayerProps) {
+export function StoryPlayer({ slides, courseId, initData, themeType, themeValue, jurisdictionBadges }: StoryPlayerProps) {
   const [safeTop, setSafeTop] = useState(0);
   const [safeBottom, setSafeBottom] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -367,6 +372,21 @@ export function StoryPlayer({ slides, courseId, initData, themeType, themeValue 
             marginTop: 22,
           }}
         >
+          {jurisdictionBadges && (
+            <div className="absolute bottom-2 left-2.5 z-40 select-none">
+              <span
+                className={`px-1.5 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider border ${
+                  slide?.jurisdictionId
+                    ? "bg-[#C8D400]/15 border-[#C8D400]/40 text-[#8a9400] dark:text-[#C8D400]"
+                    : "bg-background/80 border-border text-muted-foreground"
+                }`}
+              >
+                {slide?.jurisdictionId
+                  ? jurisdictionBadges.find((j) => j.id === slide.jurisdictionId)?.code ?? "?"
+                  : "Base"}
+              </span>
+            </div>
+          )}
           {SlideCard && (
             <SlideCard
               slide={slide}

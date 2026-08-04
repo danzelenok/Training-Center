@@ -1,0 +1,1 @@
+ALTER TABLE "jurisdictions" ADD COLUMN "is_state_plan" boolean DEFAULT true NOT NULL;

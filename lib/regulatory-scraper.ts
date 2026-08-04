@@ -1,17 +1,17 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const LNI_FETCH_TIMEOUT_MS = 5000;
+const REGULATORY_FETCH_TIMEOUT_MS = 5000;
 const MAX_TEXT_PER_PAGE = 3000;
 const MAX_TOTAL_CONTEXT = 8000;
 
-async function extractEnglishSearchQuery(prompt: string): Promise<string> {
+async function extractEnglishSearchQuery(prompt: string, regulatorName: string): Promise<string> {
   const geminiKey = process.env.GEMINI_API_KEY;
   if (!geminiKey) return prompt;
   try {
     const genAI = new GoogleGenerativeAI(geminiKey);
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
     const result = await model.generateContent(
-      `You are helping search the Washington State L&I (Labor & Industries) safety website. Read the following course request (in any language) and decide what workplace safety topic to search for. If a specific topic is mentioned, use it. If the request is vague or says "any topic", pick a common workplace safety topic yourself (e.g. fall protection, electrical safety, scaffold safety, PPE, etc.). Reply with 3-5 English keywords only — no explanation, no punctuation.\n\nCourse request: ${prompt}`
+      `You are helping search the ${regulatorName} safety website. Read the following course request (in any language) and decide what workplace safety topic to search for. If a specific topic is mentioned, use it. If the request is vague or says "any topic", pick a common workplace safety topic yourself (e.g. fall protection, electrical safety, scaffold safety, PPE, etc.). Reply with 3-5 English keywords only — no explanation, no punctuation.\n\nCourse request: ${prompt}`
     );
     const keywords = result.response.text().trim().replace(/\n+/g, " ").replace(/\s{2,}/g, " ");
     return keywords.length > 2 ? keywords : prompt;
@@ -34,7 +34,7 @@ function extractPageText(html: string): { title: string; text: string } {
   // Extract title
   const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
   const rawTitle = titleMatch ? titleMatch[1].replace(/\s+/g, " ").trim() : "";
-  const title = rawTitle.replace(/\s*[-|]\s*.*$/, "").trim(); // strip " | Washington State ..." suffix
+  const title = rawTitle.replace(/\s*[-|]\s*.*$/, "").trim(); // strip " | <Site Name> ..." suffix
 
   // Remove script/style blocks
   let text = html
@@ -62,7 +62,11 @@ function extractPageText(html: string): { title: string; text: string } {
   return { title, text };
 }
 
-export async function fetchLNIContext(topic: string): Promise<{
+export async function fetchRegulatoryContext(
+  topic: string,
+  domain: string,
+  regulatorName: string = domain
+): Promise<{
   sources: { url: string; title: string; text: string }[];
   sourcesText: string;
   sourcesDescription: string;
@@ -70,17 +74,17 @@ export async function fetchLNIContext(topic: string): Promise<{
   const apiKey = process.env.BRAVE_SEARCH_API_KEY;
 
   if (!apiKey) {
-    console.warn("[LNI] BRAVE_SEARCH_API_KEY is not set, skipping L&I context fetch.");
+    console.warn("[Regulatory] BRAVE_SEARCH_API_KEY is not set, skipping regulatory context fetch.");
     return { sources: [], sourcesText: "", sourcesDescription: "" };
   }
 
-  const searchQuery = await extractEnglishSearchQuery(topic);
-  console.log("[LNI] search query:", searchQuery);
-  const searchUrl = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(`site:lni.wa.gov ${searchQuery}`)}&count=3`;
-  console.log("[LNI] brave url:", searchUrl);
+  const searchQuery = await extractEnglishSearchQuery(topic, regulatorName);
+  console.log("[Regulatory] search query:", searchQuery);
+  const searchUrl = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(`site:${domain} ${searchQuery}`)}&count=3`;
+  console.log("[Regulatory] brave url:", searchUrl);
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), LNI_FETCH_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), REGULATORY_FETCH_TIMEOUT_MS);
   const searchRes = await fetch(searchUrl, {
     headers: {
       "Accept": "application/json",
@@ -90,12 +94,12 @@ export async function fetchLNIContext(topic: string): Promise<{
     signal: controller.signal,
   }).finally(() => clearTimeout(timer));
 
-  console.log("[LNI] brave status:", searchRes.status);
+  console.log("[Regulatory] brave status:", searchRes.status);
   if (!searchRes.ok) {
     return { sources: [], sourcesText: "", sourcesDescription: "" };
   }
   const data = await searchRes.json();
-  console.log("[LNI] brave results count:", data.web?.results?.length ?? 0);
+  console.log("[Regulatory] brave results count:", data.web?.results?.length ?? 0);
   const braveResults: { url: string; title: string; description: string }[] =
     (data.web?.results || []).map((item: any) => ({
       url: item.url,
@@ -120,7 +124,7 @@ export async function fetchLNIContext(topic: string): Promise<{
       continue;
     }
     try {
-      const pageRes = await withTimeout(result.url, LNI_FETCH_TIMEOUT_MS);
+      const pageRes = await withTimeout(result.url, REGULATORY_FETCH_TIMEOUT_MS);
       if (!pageRes.ok) {
         if (result.description.length > 50) {
           sources.push({ url: result.url, title: result.title || result.url, text: result.description });
@@ -161,7 +165,7 @@ export async function fetchLNIContext(topic: string): Promise<{
   }
 
   const sourcesDescription =
-    "Based on Washington State L&I materials:\n" +
+    `Based on ${regulatorName} materials:\n` +
     sources.map((s) => `- ${s.title} - ${s.url}`).join("\n");
 
   return {
