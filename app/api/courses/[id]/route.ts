@@ -98,6 +98,12 @@ export async function PATCH(
         'assetUrl', 'url', 'audioUrl', 'captions',
       ]);
       const ASSET_GENERATING_TYPES = new Set(['video', 'audio', 'dialogue']);
+      // Even within those types, `url` isn't always Inngest-owned: a manually uploaded
+      // (or mic-recorded) file writes its own permanent URL straight into content.url
+      // client-side, and there's no separate endpoint for it to land through — the
+      // reconcile PATCH below is the only thing that ever persists it. Protecting `url`
+      // in that case just discards the upload on the next save (it never reaches the DB).
+      const CLIENT_SOURCED_MODES = new Set(['upload', 'record']);
 
       const existingSlides = await db
         .select()
@@ -129,7 +135,10 @@ export async function PATCH(
         const clientContent = (slide.content || {}) as Record<string, any>;
         const existingContent = (existingSlide?.content || {}) as Record<string, any>;
         const slideType = slide.type || existingSlide?.type || "text";
-        const protectServerOwned = ASSET_GENERATING_TYPES.has(slideType);
+        const contentMode = slideType === "video" ? clientContent.videoMode
+          : slideType === "audio" ? clientContent.audioMode
+          : undefined;
+        const protectServerOwned = ASSET_GENERATING_TYPES.has(slideType) && !CLIENT_SOURCED_MODES.has(contentMode);
 
         // Build a content patch that excludes SERVER_OWNED keys entirely (asset-bearing
         // slide types only). For existing slides we apply this via `content || $patch::jsonb`
