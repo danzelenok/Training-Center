@@ -67,7 +67,7 @@ export async function GET(req: NextRequest) {
     const courseId = searchParams.get("courseId");
     const workerId = searchParams.get("workerId");
 
-    const conditions = [eq(workers.organizationId, orgId)];
+    const conditions = [eq(workers.organizationId, orgId), eq(workers.active, true)];
     if (courseId) conditions.push(eq(pollResponses.courseId, courseId));
     if (workerId) conditions.push(eq(pollResponses.workerId, workerId));
 

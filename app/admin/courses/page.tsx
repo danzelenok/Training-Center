@@ -38,10 +38,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { useCoursesQuery } from "@/hooks/admin/workers/queries";
 import {
   useCreateCourseMutation,
-  usePublishOrResendCourseMutation,
   useRevokeCourseMutation,
   useDeleteCourseMutation,
 } from "@/hooks/admin/courses/mutations";
+import { PublishCourseDialog } from "@/components/admin/courses/PublishCourseDialog";
 
 interface Course {
   id: string;
@@ -69,19 +69,21 @@ export default function CoursesPage() {
   // Actions states
   const [expandedDescId, setExpandedDescId] = useState<string | null>(null);
 
+  // Publish/Resend dialog — audience picker for a first publish, re-notify
+  // confirmation for an already-published course (see PublishCourseDialog).
+  // Both used to fire straight at POST /api/courses/:id/publish with no
+  // body, which the API defaults to assignTo: "all" — broadcasting (and, on
+  // first publish, assigning) to literally every worker in the org with no
+  // way to scope it. Routing through the same dialog the course editor uses
+  // fixes that.
+  const [publishDialogCourseId, setPublishDialogCourseId] = useState<string | null>(null);
+  const [publishDialogAlreadyPublished, setPublishDialogAlreadyPublished] = useState(false);
+
   const createCourseMutation = useCreateCourseMutation();
-  const publishOrResendMutation = usePublishOrResendCourseMutation();
   const revokeCourseMutation = useRevokeCourseMutation();
   const deleteCourseMutation = useDeleteCourseMutation();
 
   const creating = createCourseMutation.isPending;
-  // A course is only ever draft (shows Publish) or published (shows Resend)
-  // at once, so one shared pending id correctly drives whichever of the two
-  // buttons is actually rendered for a given course — same observable
-  // behavior as the original's separate publishingId/resendingId.
-  const pendingPublishOrResendId = publishOrResendMutation.isPending
-    ? publishOrResendMutation.variables?.courseId ?? null
-    : null;
   const revokingId = revokeCourseMutation.isPending ? revokeCourseMutation.variables ?? null : null;
   const deletingId = deleteCourseMutation.isPending ? deleteCourseMutation.variables ?? null : null;
 
@@ -108,20 +110,11 @@ export default function CoursesPage() {
     }
   };
 
-  // Publish Course — real Telegram DM blast to every assigned worker, so
-  // confirm before sending (this page previously had no confirmation here
-  // at all, unlike Revoke/Delete).
-  const handlePublishCourse = async (id: string) => {
-    if (!confirm("Publish this course? Assigned workers will be notified.")) {
-      return;
-    }
-    const toastId = toast.loading("Publishing course & broadcasting to Telegram...");
-    try {
-      await publishOrResendMutation.mutateAsync({ courseId: id, variant: "publish" });
-      toast.success("Course published and Telegram alert broadcasted!", { id: toastId });
-    } catch (err: any) {
-      toast.error(err.message || "Publishing failed", { id: toastId });
-    }
+  // Publish Course — opens the audience-picker dialog rather than firing
+  // straight at the API; see the publishDialogCourseId comment above.
+  const openPublishDialog = (id: string, alreadyPublished: boolean) => {
+    setPublishDialogAlreadyPublished(alreadyPublished);
+    setPublishDialogCourseId(id);
   };
 
   // Revoke Course (delete Telegram message, reset to draft)
@@ -135,22 +128,6 @@ export default function CoursesPage() {
       toast.success("Course revoked. Telegram message deleted.", { id: toastId });
     } catch (err: any) {
       toast.error(err.message || "Failed to revoke course", { id: toastId });
-    }
-  };
-
-  // Resend Course (send new Telegram announcement) — re-notifies every
-  // worker currently assigned, not just a new subset, so make that explicit
-  // before sending.
-  const handleResendCourse = async (id: string) => {
-    if (!confirm("Resend will notify ALL workers currently assigned to this course again. Continue?")) {
-      return;
-    }
-    const toastId = toast.loading("Resending to Telegram...");
-    try {
-      await publishOrResendMutation.mutateAsync({ courseId: id, variant: "resend" });
-      toast.success("Course resent to Telegram!", { id: toastId });
-    } catch (err: any) {
-      toast.error(err.message || "Failed to resend course", { id: toastId });
     }
   };
 
@@ -353,17 +330,11 @@ export default function CoursesPage() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            disabled={course.slideCount === 0 || pendingPublishOrResendId === course.id}
-                            onClick={() => handlePublishCourse(course.id)}
+                            disabled={course.slideCount === 0}
+                            onClick={() => openPublishDialog(course.id, false)}
                             className="h-9 px-3 text-xs font-semibold text-[#C8D400] hover:bg-[#C8D400]/10 hover:text-[#B6C200] disabled:opacity-40 disabled:hover:bg-transparent rounded-lg cursor-pointer"
                           >
-                            {pendingPublishOrResendId === course.id ? (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            ) : (
-                              <>
-                                <Send className="h-3.5 w-3.5 mr-1" /> Broadcast
-                              </>
-                            )}
+                            <Send className="h-3.5 w-3.5 mr-1" /> Broadcast
                           </Button>
                         )}
 
@@ -372,16 +343,12 @@ export default function CoursesPage() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            disabled={pendingPublishOrResendId === course.id || revokingId === course.id}
-                            onClick={() => handleResendCourse(course.id)}
+                            disabled={revokingId === course.id}
+                            onClick={() => openPublishDialog(course.id, true)}
                             title="Resend to Telegram"
                             className="h-9 w-9 p-0 text-muted-foreground hover:bg-[#C8D400]/10 hover:text-[#C8D400] rounded-lg cursor-pointer"
                           >
-                            {pendingPublishOrResendId === course.id ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <RotateCcw className="h-4 w-4" />
-                            )}
+                            <RotateCcw className="h-4 w-4" />
                           </Button>
                         )}
 
@@ -390,7 +357,7 @@ export default function CoursesPage() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            disabled={revokingId === course.id || pendingPublishOrResendId === course.id}
+                            disabled={revokingId === course.id}
                             onClick={() => handleRevokeCourse(course.id)}
                             title="Revoke course from Telegram"
                             className="h-9 w-9 p-0 text-muted-foreground hover:bg-orange-500/10 hover:text-orange-400 rounded-lg cursor-pointer"
@@ -426,6 +393,13 @@ export default function CoursesPage() {
           </div>
         )}
       </div>
+
+      <PublishCourseDialog
+        open={publishDialogCourseId !== null}
+        onOpenChange={(open) => !open && setPublishDialogCourseId(null)}
+        courseId={publishDialogCourseId}
+        alreadyPublished={publishDialogAlreadyPublished}
+      />
     </div>
   );
 }

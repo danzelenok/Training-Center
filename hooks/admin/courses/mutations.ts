@@ -37,53 +37,6 @@ export function useCreateCourseMutation() {
   });
 }
 
-type PublishOrResendVariant = "publish" | "resend";
-
-interface PublishOrResendVars {
-  courseId: string;
-  variant: PublishOrResendVariant;
-}
-
-interface PublishOrResendResult {
-  telegramMessageId?: string | null;
-  telegramGroupId?: string | null;
-  [key: string]: unknown;
-}
-
-const PUBLISH_OR_RESEND_FALLBACK_ERROR: Record<PublishOrResendVariant, string> = {
-  publish: "Failed to publish course",
-  resend: "Failed to resend course",
-};
-
-// Publish (draft -> published) and Resend (already published) hit the exact
-// same POST /api/courses/:id/publish with no body — the server can't tell
-// them apart, only the client-side toast wording and which button is shown
-// differ. `variant` here only selects the error fallback string; toast
-// framing (loading/success text) stays in the page, same as the rest of
-// this migration's pattern. Sends a real Telegram DM blast to every worker
-// currently assigned to the course — retry:0 is explicit, not relying on
-// the mutation default, so a network blip can never silently re-send it.
-export function usePublishOrResendCourseMutation() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    retry: 0,
-    mutationFn: async ({ courseId, variant }: PublishOrResendVars): Promise<PublishOrResendResult> => {
-      const res = await fetch(`/api/courses/${courseId}/publish`, { method: "POST" });
-      if (!res.ok) {
-        const ct = res.headers.get("content-type") || "";
-        const msg = ct.includes("application/json")
-          ? (await res.json()).error
-          : `Server error ${res.status}`;
-        throw new Error(msg || PUBLISH_OR_RESEND_FALLBACK_ERROR[variant]);
-      }
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["courses"] });
-    },
-  });
-}
-
 // Resets status to draft — does not actually delete the Telegram message
 // (see DAN-12) and does not touch assignments/progress. Behavior and toast
 // wording intentionally unchanged. retry:0 for the same reason as publish/

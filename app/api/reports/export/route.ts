@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
     const courseId = searchParams.get("courseId");
     const status = searchParams.get("status");
 
-    const conditions = [eq(workers.organizationId, orgId)];
+    const conditions = [eq(workers.organizationId, orgId), eq(workers.active, true)];
     if (courseId) {
       conditions.push(eq(assignments.courseId, courseId));
     }
