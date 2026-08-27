@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { organizations } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { env } from "@/env";
+import { ADMIN_ROLE_HEADER, ADMIN_JURISDICTION_HEADER, lookupAdminRole, type RoleContext } from "@/lib/adminRoles";
 
 // Match public routes that should not be protected
 const isPublicRoute = createRouteMatcher([
@@ -14,11 +15,37 @@ const isPublicRoute = createRouteMatcher([
   "/access-denied(.*)",
   "/api/bot(.*)",
   "/api/inngest(.*)",
+  "/api/webhooks(.*)",
   "/mini-app(.*)"
 ]);
 
 // Match any path under /admin
 const isAdminRoute = createRouteMatcher(["/admin(.*)"]);
+
+// Admin API routes that read course/worker ownership and need the caller's
+// role + jurisdiction available without re-querying admin_roles themselves.
+// Scoped to exactly the route groups whose handlers were updated to check
+// role (see lib/adminRoles.ts callers) — not every /api/* path.
+const isAdminApiRoute = createRouteMatcher([
+  "/api/courses(.*)",
+  "/api/slides(.*)",
+  "/api/admin(.*)",
+  "/api/workers(.*)",
+]);
+
+function devMockRole(): RoleContext {
+  return {
+    role: env.MOCK_ADMIN_ROLE ?? "org_admin",
+    jurisdictionId: env.MOCK_ADMIN_ROLE === "jurisdiction_admin" ? env.MOCK_ADMIN_JURISDICTION_ID ?? null : null,
+  };
+}
+
+function withRoleHeaders(req: any, ctx: RoleContext) {
+  const headers = new Headers(req.headers);
+  headers.set(ADMIN_ROLE_HEADER, ctx.role);
+  headers.set(ADMIN_JURISDICTION_HEADER, ctx.jurisdictionId ?? "");
+  return NextResponse.next({ request: { headers } });
+}
 
 const clerkAuthMiddleware = clerkMiddleware(async (auth, req) => {
   // If it's a public route, do not protect it
@@ -32,7 +59,7 @@ const clerkAuthMiddleware = clerkMiddleware(async (auth, req) => {
     await auth.protect();
 
     if (env.NODE_ENV === "development" && env.MOCK_ORG_ID) {
-      return NextResponse.next();
+      return withRoleHeaders(req, devMockRole());
     }
 
     const { userId, orgId } = await auth();
@@ -48,7 +75,15 @@ const clerkAuthMiddleware = clerkMiddleware(async (auth, req) => {
         return NextResponse.redirect(new URL("/access-denied", req.url));
       }
 
-      return NextResponse.next();
+      // Fail-closed: a Clerk member with no admin_roles row yet (invite
+      // accepted but the organizationInvitation.accepted webhook hasn't
+      // landed, or it failed) gets no admin access until that row exists.
+      const roleCtx = await lookupAdminRole(org.id, userId!);
+      if (!roleCtx) {
+        return NextResponse.redirect(new URL("/access-denied", req.url));
+      }
+
+      return withRoleHeaders(req, roleCtx);
     }
 
     const client = await clerkClient();
@@ -62,6 +97,40 @@ const clerkAuthMiddleware = clerkMiddleware(async (auth, req) => {
     }
 
     return NextResponse.redirect(new URL("/onboarding", req.url));
+  }
+
+  // Admin API routes: same org+role resolution as page routes, but a missing
+  // org or role can't redirect to a page — respond with the API's own
+  // unauthorized/forbidden status instead and let the route handler's own
+  // requireOrgId() produce the 401 body it already produces today.
+  if (isAdminApiRoute(req)) {
+    if (env.NODE_ENV === "development" && env.MOCK_ORG_ID) {
+      return withRoleHeaders(req, devMockRole());
+    }
+
+    const { userId, orgId } = await auth();
+    if (!userId || !orgId) {
+      // No active org/session — fall through without role headers so the
+      // route's existing requireOrgId() 401s exactly as it did before this
+      // change (unauthenticated callers were never route-scoped by role).
+      return NextResponse.next();
+    }
+
+    const [org] = await db
+      .select({ id: organizations.id })
+      .from(organizations)
+      .where(eq(organizations.clerkOrgId, orgId))
+      .limit(1);
+    if (!org) {
+      return NextResponse.next();
+    }
+
+    const roleCtx = await lookupAdminRole(org.id, userId);
+    if (!roleCtx) {
+      return NextResponse.json({ error: "No admin role assigned for this organization." }, { status: 403 });
+    }
+
+    return withRoleHeaders(req, roleCtx);
   }
 
   // Allow all other requests to continue normally

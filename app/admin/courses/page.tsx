@@ -19,11 +19,14 @@ import {
   CheckCircle,
   FileText,
   Clock,
+  Copy,
+  Lock,
 } from "lucide-react";
 import { format } from "date-fns";
 import { toast, Toaster } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -35,19 +38,30 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { useCoursesQuery } from "@/hooks/admin/workers/queries";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useCoursesQuery, useJurisdictionsQuery } from "@/hooks/admin/workers/queries";
+import { useMeQuery } from "@/hooks/admin/useMeQuery";
 import {
   useCreateCourseMutation,
   useRevokeCourseMutation,
   useDeleteCourseMutation,
+  useCloneCourseMutation,
 } from "@/hooks/admin/courses/mutations";
 import { PublishCourseDialog } from "@/components/admin/courses/PublishCourseDialog";
+import { BrowseCloneDialog } from "@/components/admin/courses/BrowseCloneDialog";
 
 interface Course {
   id: string;
   title: string;
   description: string;
   status: "draft" | "published";
+  ownerJurisdictionId: string;
   telegramMessageId: string | null;
   telegramGroupId: string | null;
   createdAt: string;
@@ -60,11 +74,21 @@ export default function CoursesPage() {
   const coursesQuery = useCoursesQuery("all");
   const courses = (coursesQuery.data ?? []) as Course[];
   const loading = coursesQuery.isLoading;
+  const meQuery = useMeQuery();
+  const me = meQuery.data;
+  const jurisdictionsQuery = useJurisdictionsQuery();
+  const jurisdictions = jurisdictionsQuery.data ?? [];
+
+  const canWrite = (course: Course) =>
+    me?.role === "org_admin" || (me?.role === "jurisdiction_admin" && course.ownerJurisdictionId === me.jurisdiction?.id);
 
   // New Course Dialog states
   const [openNewDialog, setOpenNewDialog] = useState(false);
+  const [openBrowseDialog, setOpenBrowseDialog] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [newDescription, setNewDescription] = useState("");
+  const [newJurisdictionId, setNewJurisdictionId] = useState<string | null>(null);
+  const cloneCourseMutation = useCloneCourseMutation();
 
   // Actions states
   const [expandedDescId, setExpandedDescId] = useState<string | null>(null);
@@ -91,17 +115,23 @@ export default function CoursesPage() {
   const handleCreateCourse = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim()) return;
+    if (me?.role === "org_admin" && !newJurisdictionId) {
+      toast.error("Pick a state for this course.");
+      return;
+    }
 
     try {
       const data = await createCourseMutation.mutateAsync({
         title: newTitle,
         description: newDescription,
+        jurisdictionId: me?.role === "org_admin" ? newJurisdictionId : undefined,
       });
 
       toast.success("Course created successfully!");
       setOpenNewDialog(false);
       setNewTitle("");
       setNewDescription("");
+      setNewJurisdictionId(null);
 
       // Redirect to course editor
       router.push(`/admin/courses/${data.id}`);
@@ -160,8 +190,17 @@ export default function CoursesPage() {
           </p>
         </div>
 
-        {/* New Course Button + Dialog */}
-        <Dialog open={openNewDialog} onOpenChange={setOpenNewDialog}>
+        {/* Two entry points: start a new course from scratch, or clone an existing one */}
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() => setOpenBrowseDialog(true)}
+            className="h-11 border-border text-foreground gap-2 cursor-pointer"
+          >
+            <Copy className="h-4 w-4" />
+            Clone Existing
+          </Button>
+          <Dialog open={openNewDialog} onOpenChange={setOpenNewDialog}>
           <DialogTrigger asChild>
             <Button className="h-11 bg-[#C8D400] hover:bg-[#B6C200] text-[#1B2A6B] font-bold shadow-lg shadow-[#C8D400]/25 gap-2 border-0 cursor-pointer transition-all duration-200 hover:scale-[1.02]">
               <Plus className="h-5 w-5 stroke-[2.5]" />
@@ -201,6 +240,29 @@ export default function CoursesPage() {
                   className="bg-background border-border focus:border-primary text-foreground rounded-lg min-h-[100px]"
                 />
               </div>
+              {me?.role === "org_admin" ? (
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-muted-foreground">
+                    State <span className="text-red-400">*</span>
+                  </label>
+                  <Select value={newJurisdictionId ?? undefined} onValueChange={setNewJurisdictionId}>
+                    <SelectTrigger className="w-full bg-background border-border rounded-lg">
+                      <SelectValue placeholder="Select state" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-card border border-border text-foreground">
+                      {jurisdictions.map((j) => (
+                        <SelectItem key={j.id} value={j.id}>
+                          {j.name} ({j.code})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : me?.jurisdiction ? (
+                <p className="text-xs text-muted-foreground">
+                  Creating in: <span className="font-semibold text-foreground">{me.jurisdiction.name}</span>
+                </p>
+              ) : null}
               <DialogFooter className="pt-4 border-t border-border">
                 <Button
                   type="button"
@@ -228,6 +290,7 @@ export default function CoursesPage() {
             </form>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       {/* Courses List Container */}
@@ -259,6 +322,7 @@ export default function CoursesPage() {
               <thead>
                 <tr className="border-b border-border bg-muted/30 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                   <th className="px-6 py-4">Title</th>
+                  <th className="px-6 py-4">State</th>
                   <th className="px-6 py-4">Status</th>
                   <th className="px-6 py-4">Slides</th>
                   <th className="px-6 py-4">Created At</th>
@@ -266,7 +330,10 @@ export default function CoursesPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {courses.map((course) => (
+                {courses.map((course) => {
+                  const writable = canWrite(course);
+                  const jurisdictionCode = jurisdictions.find((j) => j.id === course.ownerJurisdictionId)?.code;
+                  return (
                   <tr
                     key={course.id}
                     onClick={() => router.push(`/admin/courses/${course.id}`)}
@@ -287,6 +354,14 @@ export default function CoursesPage() {
                         style={course.description ? { cursor: "pointer" } : undefined}
                       >
                         {course.description || "No description provided"}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-1.5">
+                        <Badge variant="outline" className="text-[10px]">{jurisdictionCode ?? "?"}</Badge>
+                        {!writable && (
+                          <Lock className="h-3.5 w-3.5 text-muted-foreground" aria-label="Read-only — owned by another jurisdiction" />
+                        )}
                       </div>
                     </td>
                     <td className="px-6 py-4">
@@ -314,6 +389,35 @@ export default function CoursesPage() {
                     </td>
                     <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-2">
+                        {!writable && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={cloneCourseMutation.isPending}
+                            onClick={() => {
+                              cloneCourseMutation.mutate(
+                                { courseId: course.id },
+                                {
+                                  onSuccess: (data) => {
+                                    toast.success("Course cloned — it's now an independent draft.");
+                                    router.push(`/admin/courses/${data.id}`);
+                                  },
+                                }
+                              );
+                            }}
+                            title="Clone to my jurisdiction"
+                            className="h-9 px-3 text-xs font-semibold text-foreground hover:bg-muted rounded-lg cursor-pointer gap-1.5"
+                          >
+                            {cloneCourseMutation.isPending && cloneCourseMutation.variables?.courseId === course.id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Copy className="h-3.5 w-3.5" />
+                            )}
+                            Clone
+                          </Button>
+                        )}
+                        {writable && (
+                        <>
                         {/* Edit Button */}
                         <Link href={`/admin/courses/${course.id}`}>
                           <Button
@@ -324,7 +428,7 @@ export default function CoursesPage() {
                             <Edit className="h-4 w-4" />
                           </Button>
                         </Link>
- 
+
                         {/* Publish Button (Only for drafts with slides) */}
                         {course.status === "draft" && (
                           <Button
@@ -384,10 +488,13 @@ export default function CoursesPage() {
                             <Trash2 className="h-4 w-4" />
                           )}
                         </Button>
+                        </>
+                        )}
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -399,6 +506,14 @@ export default function CoursesPage() {
         onOpenChange={(open) => !open && setPublishDialogCourseId(null)}
         courseId={publishDialogCourseId}
         alreadyPublished={publishDialogAlreadyPublished}
+      />
+
+      <BrowseCloneDialog
+        open={openBrowseDialog}
+        onOpenChange={setOpenBrowseDialog}
+        courses={courses}
+        jurisdictions={jurisdictions}
+        me={me}
       />
     </div>
   );

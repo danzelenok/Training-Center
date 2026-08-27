@@ -20,6 +20,13 @@ export const env = createEnv({
     BRAVE_SEARCH_API_KEY: z.string().optional(),
     MINI_APP_URL: z.string().url().optional(),
     MOCK_ORG_ID: z.string().optional(),
+    // Dev-only companions to MOCK_ORG_ID: without these, MOCK_ORG_ID alone would leave every
+    // admin API request without a role header, and the new fail-closed role check would 403
+    // everything in local dev. Defaults to org_admin (full access) when MOCK_ORG_ID is set and
+    // these are left unset, matching the pre-role-check dev behavior.
+    MOCK_ADMIN_ROLE: z.enum(["org_admin", "jurisdiction_admin"]).optional(),
+    MOCK_ADMIN_JURISDICTION_ID: z.string().optional(),
+    CLERK_WEBHOOK_SIGNING_SECRET: z.string().min(1).optional(),
   },
   client: {
     NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: z.string().min(1),
@@ -45,6 +52,9 @@ export const env = createEnv({
     HEYGEN_STUDENT_AVATAR_ID: process.env.HEYGEN_STUDENT_AVATAR_ID,
     BRAVE_SEARCH_API_KEY: process.env.BRAVE_SEARCH_API_KEY,
     MOCK_ORG_ID: process.env.MOCK_ORG_ID,
+    MOCK_ADMIN_ROLE: process.env.MOCK_ADMIN_ROLE,
+    MOCK_ADMIN_JURISDICTION_ID: process.env.MOCK_ADMIN_JURISDICTION_ID,
+    CLERK_WEBHOOK_SIGNING_SECRET: process.env.CLERK_WEBHOOK_SIGNING_SECRET,
     NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
     NEXT_PUBLIC_CLERK_SIGN_IN_URL: process.env.NEXT_PUBLIC_CLERK_SIGN_IN_URL,
     NEXT_PUBLIC_CLERK_SIGN_UP_URL: process.env.NEXT_PUBLIC_CLERK_SIGN_UP_URL,

@@ -141,6 +141,27 @@
       "when": 1785802119621,
       "tag": "0019_cloudy_hellion",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1787856317232,
+      "tag": "0020_add_admin_roles_and_course_owner_jurisdiction",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1787856365257,
+      "tag": "0021_course_owner_jurisdiction_not_null",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1787856947450,
+      "tag": "0022_add_course_source_of_clone",
+      "breakpoints": true
     }
   ]
 }

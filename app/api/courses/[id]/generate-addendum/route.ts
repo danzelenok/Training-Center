@@ -1,6 +1,7 @@
 import { db } from "@/db";
 import { courses, slides, jurisdictions, courseSources } from "@/db/schema";
 import { requireOrgId } from "@/lib/org";
+import { roleOrUnauthorized, canWriteCourse } from "@/lib/adminRoles";
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { generateJurisdictionAddendum, slideNeedsGeneratedAsset, type SlideInput } from "@/lib/gemini";
@@ -27,6 +28,9 @@ export async function POST(
       return new NextResponse("Unauthorized", { status: 401 });
     }
 
+    const roleResult = roleOrUnauthorized(req);
+    if (roleResult instanceof Response) return roleResult;
+
     const [course] = await db
       .select()
       .from(courses)
@@ -35,6 +39,9 @@ export async function POST(
 
     if (!course) {
       return new NextResponse("Course not found", { status: 404 });
+    }
+    if (!canWriteCourse(roleResult, course.ownerJurisdictionId)) {
+      return NextResponse.json({ error: "You can only generate addenda for courses owned by your jurisdiction." }, { status: 403 });
     }
 
     const body = await req.json().catch(() => ({}));

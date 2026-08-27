@@ -1,6 +1,7 @@
 import { db } from "@/db";
 import { courses, slides, jurisdictions, courseSources } from "@/db/schema";
 import { requireOrgId } from "@/lib/org";
+import { roleOrUnauthorized, canWriteCourse } from "@/lib/adminRoles";
 import { and, eq, isNull } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { generateCourseStructure, slideNeedsGeneratedAsset } from "@/lib/gemini";
@@ -20,6 +21,9 @@ export async function POST(
       return new NextResponse("Unauthorized", { status: 401 });
     }
 
+    const roleResult = roleOrUnauthorized(req);
+    if (roleResult instanceof Response) return roleResult;
+
     // Verify course exists and belongs to this organization
     const [course] = await db
       .select()
@@ -29,6 +33,9 @@ export async function POST(
 
     if (!course) {
       return new NextResponse("Course not found", { status: 404 });
+    }
+    if (!canWriteCourse(roleResult, course.ownerJurisdictionId)) {
+      return NextResponse.json({ error: "You can only generate content for courses owned by your jurisdiction." }, { status: 403 });
     }
 
     if (course.generationStatus === "generating") {

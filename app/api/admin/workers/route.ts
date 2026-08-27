@@ -1,6 +1,7 @@
 import { db } from "@/db";
 import { workers, invites, courses, teams, assignments, workerTeams, jurisdictions, organizationJurisdictions } from "@/db/schema";
 import { requireOrgId } from "@/lib/org";
+import { roleOrUnauthorized } from "@/lib/adminRoles";
 import { and, eq, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import crypto from "crypto";
@@ -30,6 +31,9 @@ export async function POST(req: Request) {
     if (!orgId) {
       return new NextResponse("Unauthorized", { status: 401 });
     }
+
+    const roleResult = roleOrUnauthorized(req);
+    if (roleResult instanceof Response) return roleResult;
 
     const body = await req.json().catch(() => ({}));
     const name = typeof body.name === "string" ? body.name.trim() : "";
@@ -96,8 +100,19 @@ export async function POST(req: Request) {
       managerId = manager.id;
     }
 
+    // jurisdiction_admin can only ever create workers in their own jurisdiction —
+    // the client-supplied value, if any, is ignored. org_admin is unrestricted,
+    // as before.
     let jurisdictionId: string | null = null;
-    if (typeof body.jurisdictionId === "string" && body.jurisdictionId) {
+    if (roleResult.role === "jurisdiction_admin") {
+      if (!roleResult.jurisdictionId) {
+        return new NextResponse(
+          JSON.stringify({ error: "Your admin role has no jurisdiction assigned." }),
+          { status: 403, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      jurisdictionId = roleResult.jurisdictionId;
+    } else if (typeof body.jurisdictionId === "string" && body.jurisdictionId) {
       const [jurisdiction] = await db
         .select({ id: jurisdictions.id })
         .from(organizationJurisdictions)

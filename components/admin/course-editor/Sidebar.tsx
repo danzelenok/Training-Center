@@ -1,6 +1,8 @@
 "use client";
 
 import React from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import {
   FileText,
   Image as ImageIcon,
@@ -15,9 +17,58 @@ import {
   Sparkles,
   Send,
   MapPin,
+  Lock,
+  Copy,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useCourseEditor } from "./CourseEditorContext";
+import { useCloneCourseMutation } from "@/hooks/admin/courses/mutations";
+
+function ReadOnlySidebar() {
+  const router = useRouter();
+  const { course } = useCourseEditor();
+  const cloneCourse = useCloneCourseMutation();
+
+  return (
+    <div className="bg-card border border-border rounded-2xl p-4 shadow-md flex flex-col h-[calc(100vh-140px)] xl:sticky xl:top-[100px]">
+      <div className="flex-1 flex flex-col items-center justify-center text-center gap-3 px-2">
+        <div className="p-3 rounded-2xl bg-muted text-muted-foreground">
+          <Lock className="h-6 w-6 shrink-0" />
+        </div>
+        <div>
+          <p className="text-xs font-bold text-foreground">Read-only</p>
+          <p className="text-[10px] text-muted-foreground mt-1 leading-relaxed">
+            This course belongs to another jurisdiction. You can view it, but only its owner can
+            edit or publish it. Clone it to get your own independent, editable copy.
+          </p>
+        </div>
+      </div>
+      <Button
+        disabled={cloneCourse.isPending || !course}
+        onClick={() => {
+          if (!course) return;
+          cloneCourse.mutate(
+            { courseId: course.id },
+            {
+              onSuccess: (data) => {
+                toast.success("Course cloned — it's now an independent draft.");
+                router.push(`/admin/courses/${data.id}`);
+              },
+            }
+          );
+        }}
+        className="w-full bg-[#C8D400] hover:bg-[#B6C200] text-[#1B2A6B] font-extrabold border-0 shadow-lg shadow-[#C8D400]/10 cursor-pointer h-10 gap-1.5 flex items-center justify-center text-xs rounded-xl shrink-0"
+      >
+        {cloneCourse.isPending ? (
+          <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+        ) : (
+          <Copy className="h-4 w-4 shrink-0" />
+        )}
+        Clone to my jurisdiction
+      </Button>
+    </div>
+  );
+}
 
 export default function Sidebar() {
   const {
@@ -25,6 +76,7 @@ export default function Sidebar() {
     handlePublish,
     publishing,
     course,
+    isReadOnly,
     setAiDialogOpen,
     slidesList,
     saveStatus,
@@ -35,6 +87,10 @@ export default function Sidebar() {
     setAddendumDialogOpen,
     setAddendumJurisdictionIds,
   } = useCourseEditor();
+
+  if (isReadOnly) {
+    return <ReadOnlySidebar />;
+  }
 
   const injectors = [
     { type: "text", label: "Card", icon: FileText, desc: "Standard text & bullets" },

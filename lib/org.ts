@@ -100,6 +100,24 @@ export function decodeClerkSessionCookie(cookieHeader: string): {
   }
 }
 
+/**
+ * Like requireOrgId(), but also returns the raw Clerk org id — needed by any
+ * route that has to call the Clerk Backend API directly (organization
+ * membership/invitation management), which only understands Clerk's own id,
+ * not our internal `organizations.id`.
+ *
+ * Has no MOCK_ORG_ID dev bypass: there's no real Clerk organization behind a
+ * mocked org id, so nothing that calls the Clerk API can be exercised in that
+ * mode.
+ */
+export async function requireOrgContext(): Promise<{ id: string; clerkOrgId: string }> {
+  const { orgId } = await auth();
+  if (!orgId) throw new UnauthorizedOrgError("No active organization");
+
+  const id = await lookupOrgId(orgId);
+  return { id, clerkOrgId: orgId };
+}
+
 /** Resolves a Clerk org id (as read from a session cookie/claim) to our internal organizations.id. */
 export async function resolveOrgId(clerkOrgId: string | null): Promise<string | null> {
   if (env.NODE_ENV === "development" && env.MOCK_ORG_ID) {

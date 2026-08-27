@@ -1,0 +1,1 @@
+ALTER TABLE "courses" ALTER COLUMN "owner_jurisdiction_id" SET NOT NULL;

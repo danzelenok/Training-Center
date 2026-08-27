@@ -21,6 +21,7 @@ import {
 } from "@/hooks/admin/course-editor/mutations";
 import { useWorkersQuery, useTeamsQuery, useJurisdictionsQuery } from "@/hooks/admin/workers/queries";
 import type { TeamRef, JurisdictionRef } from "@/hooks/admin/workers/types";
+import { useMeQuery } from "@/hooks/admin/useMeQuery";
 
 export type { Course, MediaLibraryFile };
 
@@ -28,6 +29,12 @@ interface CourseEditorContextType {
   course: Course | null;
   slidesList: Slide[];
   jurisdictionsList: JurisdictionRef[];
+  // True once we know (me query resolved) this course belongs to another
+  // jurisdiction than the caller's own — same check the courses list page
+  // uses to hide write actions. Undefined/false while `me`/`course` are
+  // still loading, so the editor defaults to its normal (writable) look
+  // rather than flashing a read-only state first.
+  isReadOnly: boolean;
   loading: boolean;
   saveStatus: "saved" | "saving" | "error" | null;
   activeSlideIndex: number | null;
@@ -135,6 +142,16 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
   const courseQuery = useCourseQuery(id);
   const loading = courseQuery.isLoading;
 
+  // Same rule the courses list page uses to hide write actions: a
+  // jurisdiction_admin can only write courses owned by their own
+  // jurisdiction; org_admin is unrestricted. Backend 403s regardless — this
+  // just drives the editor's visual read-only state.
+  const meQuery = useMeQuery();
+  const isReadOnly =
+    meQuery.data?.role === "jurisdiction_admin" &&
+    !!course &&
+    course.ownerJurisdictionId !== meQuery.data.jurisdiction?.id;
+
   const autosaveMutation = useAutosaveMutation(id);
   // useMutation() returns a fresh result object every render (TanStack Query
   // doesn't memoize it), so depending on `autosaveMutation` itself below would
@@ -151,6 +168,11 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
   const performAutosave = useCallback(() => {
     const currentCourse = courseRef.current;
     if (!currentCourse) return;
+    // Belt-and-suspenders: the editor UI shouldn't let read-only state
+    // change in the first place (see isReadOnly below), but never let an
+    // autosave actually fire against a course this admin can't write —
+    // the API would 403 it anyway, no point spending the request.
+    if (isReadOnly) return;
 
     // Never let two reconcile PATCHes overlap — defer this one until the
     // in-flight request settles, then run with whatever is freshest by then.
@@ -197,7 +219,7 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
         },
       }
     );
-  }, [autosaveMutate]);
+  }, [autosaveMutate, isReadOnly]);
 
   const triggerAutoSave = useCallback(() => {
     if (loading || !courseRef.current) return;
@@ -904,6 +926,7 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
         course,
         slidesList,
         jurisdictionsList,
+        isReadOnly: !!isReadOnly,
         loading,
         saveStatus,
         activeSlideIndex,

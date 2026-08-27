@@ -101,6 +101,7 @@ export default function CardCanvas() {
     openMediaPicker,
     course,
     jurisdictionsList,
+    isReadOnly,
   } = useCourseEditor();
 
   const themeType = course?.themeType || "preset";
@@ -212,7 +213,7 @@ export default function CardCanvas() {
                 <div
                   key={slide.id || index}
                   data-card-index={index}
-                  draggable={!!isCardDraggable[index]}
+                  draggable={!isReadOnly && !!isCardDraggable[index]}
                   onDragStart={(e) => handleDragStart(index, e)}
                   onDragOver={(e) => handleDragOver(index, e)}
                   onDrop={(e) => handleDrop(index, e)}
@@ -269,6 +270,12 @@ export default function CardCanvas() {
                     </span>
                   </div>
 
+                  {/* Everything below edits slide content/order — inert-blocked as a
+                      genuine visual+functional read-only lock (not just the 403 the
+                      API already enforces): no clicks, no keyboard focus, no drag
+                      start. Carousel navigation above stays fully interactive so a
+                      read-only viewer can still browse the deck. */}
+                  <div inert={isReadOnly}>
                   {/* Actions at top-left corner of the card */}
                   {isActive && (
                     <div className="absolute top-2 left-2.5 z-40 flex items-center gap-1.5 select-none no-swipe animate-fade-in">
@@ -377,6 +384,7 @@ export default function CardCanvas() {
                       />
                     ) : null;
                   })()}
+                  </div>
                 </div>
               );
             })}
@@ -402,8 +410,10 @@ export default function CardCanvas() {
         </button>
       </div>
 
-      {/* 2. DYNAMIC LAYOUT DRAWER (Renders right under the card deck for active slide) */}
-      {activeSlideIndex !== null && (() => {
+      {/* 2. DYNAMIC LAYOUT DRAWER (Renders right under the card deck for active slide) —
+          pure editing tool panel, nothing for a read-only viewer to see, so skip it
+          entirely rather than rendering an inert-but-visible unusable panel. */}
+      {!isReadOnly && activeSlideIndex !== null && (() => {
         const slide = slidesList[activeSlideIndex];
         if (!slide) return null;
 

@@ -28,10 +28,26 @@ export const organizationJurisdictions = pgTable("organization_jurisdictions", {
   unique: unique().on(table.organizationId, table.jurisdictionId),
 }));
 
+// 0.7. ADMIN_ROLES TABLE (per-organization admin role assignment; separate from Clerk membership)
+export const adminRoles = pgTable("admin_roles", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizationId: uuid("organization_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  clerkUserId: text("clerk_user_id").notNull(), // Clerk user id; not a FK, Clerk is the source of truth for the user itself
+  role: text("role").$type<"org_admin" | "jurisdiction_admin">().notNull(),
+  jurisdictionId: uuid("jurisdiction_id").references(() => jurisdictions.id), // null for org_admin, required for jurisdiction_admin
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  uniqueOrgUser: unique().on(table.organizationId, table.clerkUserId),
+}));
+
 // 1. COURSES TABLE
 export const courses = pgTable("courses", {
   id: uuid("id").defaultRandom().primaryKey(),
   organizationId: uuid("organization_id").notNull().references(() => organizations.id),
+  ownerJurisdictionId: uuid("owner_jurisdiction_id").notNull().references(() => jurisdictions.id),
+  // Set only on a course created via "Clone to my jurisdiction"; the clone is
+  // fully independent afterward — this is an audit trail, not a live link.
+  sourceOfCloneId: uuid("source_of_clone_id").references((): AnyPgColumn => courses.id, { onDelete: "set null" }),
   title: text("title").notNull(),
   description: text("description"),
   status: text("status").$type<"draft" | "published">().default("draft").notNull(),

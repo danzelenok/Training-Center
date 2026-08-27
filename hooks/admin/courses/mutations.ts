@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 interface CreateCourseVars {
   title: string;
   description: string;
+  jurisdictionId?: string | null;
 }
 
 interface CreateCourseResult {
@@ -10,6 +11,7 @@ interface CreateCourseResult {
   title: string;
   description: string;
   status: "draft" | "published";
+  ownerJurisdictionId: string;
   telegramMessageId: string | null;
   telegramGroupId: string | null;
   createdAt: string;
@@ -20,18 +22,43 @@ interface CreateCourseResult {
 export function useCreateCourseMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ title, description }: CreateCourseVars): Promise<CreateCourseResult> => {
+    mutationFn: async ({ title, description, jurisdictionId }: CreateCourseVars): Promise<CreateCourseResult> => {
       const res = await fetch("/api/courses", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, description }),
+        body: JSON.stringify({ title, description, jurisdictionId }),
       });
-      if (!res.ok) throw new Error("Failed to create course");
-      return res.json();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Failed to create course");
+      return data;
     },
     onSuccess: () => {
       // Prefix match — covers both ['courses', 'all'] and
       // ['courses', 'published'].
+      queryClient.invalidateQueries({ queryKey: ["courses"] });
+    },
+  });
+}
+
+interface CloneCourseVars {
+  courseId: string;
+  jurisdictionId?: string | null;
+}
+
+export function useCloneCourseMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ courseId, jurisdictionId }: CloneCourseVars): Promise<CreateCourseResult> => {
+      const res = await fetch(`/api/courses/${courseId}/clone`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jurisdictionId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Failed to clone course");
+      return data;
+    },
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["courses"] });
     },
   });

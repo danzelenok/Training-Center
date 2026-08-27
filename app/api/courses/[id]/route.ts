@@ -1,6 +1,7 @@
 import { db } from "@/db";
 import { courses, slides } from "@/db/schema";
 import { requireOrgId } from "@/lib/org";
+import { roleOrUnauthorized, canWriteCourse } from "@/lib/adminRoles";
 import { eq, and, asc, sql, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
@@ -56,6 +57,21 @@ export async function PATCH(
     const orgId = await requireOrgId().catch(() => null);
     if (!orgId) {
       return new NextResponse("Unauthorized", { status: 401 });
+    }
+
+    const roleResult = roleOrUnauthorized(req);
+    if (roleResult instanceof Response) return roleResult;
+
+    const [existingCourse] = await db
+      .select({ id: courses.id, ownerJurisdictionId: courses.ownerJurisdictionId })
+      .from(courses)
+      .where(and(eq(courses.id, id), eq(courses.organizationId, orgId)))
+      .limit(1);
+    if (!existingCourse) {
+      return new NextResponse("Course not found", { status: 404 });
+    }
+    if (!canWriteCourse(roleResult, existingCourse.ownerJurisdictionId)) {
+      return NextResponse.json({ error: "You can only edit courses owned by your jurisdiction." }, { status: 403 });
     }
 
     const body = await req.json();
@@ -229,6 +245,21 @@ export async function DELETE(
     const orgId = await requireOrgId().catch(() => null);
     if (!orgId) {
       return new NextResponse("Unauthorized", { status: 401 });
+    }
+
+    const roleResult = roleOrUnauthorized(req);
+    if (roleResult instanceof Response) return roleResult;
+
+    const [existingCourse] = await db
+      .select({ id: courses.id, ownerJurisdictionId: courses.ownerJurisdictionId })
+      .from(courses)
+      .where(and(eq(courses.id, id), eq(courses.organizationId, orgId)))
+      .limit(1);
+    if (!existingCourse) {
+      return new NextResponse("Course not found", { status: 404 });
+    }
+    if (!canWriteCourse(roleResult, existingCourse.ownerJurisdictionId)) {
+      return NextResponse.json({ error: "You can only delete courses owned by your jurisdiction." }, { status: 403 });
     }
 
     const [deletedCourse] = await db

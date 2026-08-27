@@ -2,6 +2,7 @@ import { db } from "@/db";
 import { courses, slides } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/org";
+import { roleOrUnauthorized, canWriteCourse } from "@/lib/adminRoles";
 import { NextResponse } from "next/server";
 import { inngest } from "@/lib/inngest";
 
@@ -18,6 +19,9 @@ export async function POST(
       return new NextResponse("Unauthorized", { status: 401 });
     }
 
+    const roleResult = roleOrUnauthorized(req);
+    if (roleResult instanceof Response) return roleResult;
+
     // Parse query params to determine if generating audio, image, or video
     const { searchParams } = new URL(req.url);
     const asset = searchParams.get("asset") as "audio" | "video";
@@ -30,17 +34,20 @@ export async function POST(
     }
 
     // Verify slide exists and belongs to this organization (via its course)
-    const [slide] = await db
-      .select({ slide: slides })
+    const [slideRow] = await db
+      .select({ slide: slides, ownerJurisdictionId: courses.ownerJurisdictionId })
       .from(slides)
       .innerJoin(courses, eq(courses.id, slides.courseId))
       .where(and(eq(slides.id, id), eq(courses.organizationId, orgId)))
-      .limit(1)
-      .then((rows) => rows.map((r) => r.slide));
+      .limit(1);
 
-    if (!slide) {
+    if (!slideRow) {
       return new NextResponse("Slide not found", { status: 404 });
     }
+    if (!canWriteCourse(roleResult, slideRow.ownerJurisdictionId)) {
+      return NextResponse.json({ error: "You can only regenerate assets for courses owned by your jurisdiction." }, { status: 403 });
+    }
+    const slide = slideRow.slide;
 
     // Parse request body for optional inline content updates (like audioScript, visualKeywords, or dialogueLines)
     let body: any = {};

@@ -1,6 +1,7 @@
 import { db } from "@/db";
 import { courses, slides, workers, teams, assignments, workerTeams, courseAutoAssignTeams } from "@/db/schema";
 import { requireOrgId } from "@/lib/org";
+import { roleOrUnauthorized, canWriteCourse } from "@/lib/adminRoles";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { sendCourseAnnouncementDMs } from "@/lib/bot";
@@ -15,6 +16,9 @@ export async function POST(
     if (!orgId) {
       return new NextResponse("Unauthorized", { status: 401 });
     }
+
+    const roleResult = roleOrUnauthorized(req);
+    if (roleResult instanceof Response) return roleResult;
 
     const body = await req.json().catch(() => ({}));
     const assignTo: "all" | "teams" | "specific" =
@@ -32,6 +36,9 @@ export async function POST(
 
     if (!course) {
       return new NextResponse("Course not found", { status: 404 });
+    }
+    if (!canWriteCourse(roleResult, course.ownerJurisdictionId)) {
+      return NextResponse.json({ error: "You can only publish courses owned by your jurisdiction." }, { status: 403 });
     }
 
     // Write-time invariant: only ever assign workers/teams that belong to the
@@ -160,6 +167,9 @@ export async function DELETE(
       return new NextResponse("Unauthorized", { status: 401 });
     }
 
+    const roleResult = roleOrUnauthorized(_req);
+    if (roleResult instanceof Response) return roleResult;
+
     const [course] = await db
       .select()
       .from(courses)
@@ -168,6 +178,9 @@ export async function DELETE(
 
     if (!course) {
       return new NextResponse("Course not found", { status: 404 });
+    }
+    if (!canWriteCourse(roleResult, course.ownerJurisdictionId)) {
+      return NextResponse.json({ error: "You can only revoke courses owned by your jurisdiction." }, { status: 403 });
     }
 
     const [updatedCourse] = await db

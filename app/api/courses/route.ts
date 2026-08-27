@@ -1,7 +1,8 @@
 import { db } from "@/db";
-import { courses, slides } from "@/db/schema";
+import { courses, slides, jurisdictions, organizationJurisdictions } from "@/db/schema";
 import { requireOrgId } from "@/lib/org";
-import { desc, eq, sql } from "drizzle-orm";
+import { roleOrUnauthorized } from "@/lib/adminRoles";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 // 1. GET /api/courses - List all courses with slide count
@@ -19,6 +20,7 @@ export async function GET() {
         title: courses.title,
         description: courses.description,
         status: courses.status,
+        ownerJurisdictionId: courses.ownerJurisdictionId,
         telegramMessageId: courses.telegramMessageId,
         telegramGroupId: courses.telegramGroupId,
         createdAt: courses.createdAt,
@@ -53,6 +55,9 @@ export async function POST(req: Request) {
       return new NextResponse("Unauthorized", { status: 401 });
     }
 
+    const roleResult = roleOrUnauthorized(req);
+    if (roleResult instanceof Response) return roleResult;
+
     const body = await req.json();
     const { title, description } = body;
 
@@ -60,10 +65,42 @@ export async function POST(req: Request) {
       return new NextResponse("Title is required", { status: 400 });
     }
 
+    // A new course always needs an owning jurisdiction. jurisdiction_admin
+    // can only ever create courses in their own jurisdiction (the client-
+    // supplied value, if any, is ignored). org_admin has no jurisdiction of
+    // their own, so they must pick one explicitly.
+    let ownerJurisdictionId: string;
+    if (roleResult.role === "jurisdiction_admin") {
+      if (!roleResult.jurisdictionId) {
+        return new NextResponse("Your admin role has no jurisdiction assigned.", { status: 403 });
+      }
+      ownerJurisdictionId = roleResult.jurisdictionId;
+    } else {
+      if (typeof body.jurisdictionId !== "string" || !body.jurisdictionId) {
+        return NextResponse.json({ error: "jurisdictionId is required." }, { status: 400 });
+      }
+      const [jurisdiction] = await db
+        .select({ id: jurisdictions.id })
+        .from(organizationJurisdictions)
+        .innerJoin(jurisdictions, eq(jurisdictions.id, organizationJurisdictions.jurisdictionId))
+        .where(
+          and(
+            eq(organizationJurisdictions.organizationId, orgId),
+            eq(organizationJurisdictions.jurisdictionId, body.jurisdictionId)
+          )
+        )
+        .limit(1);
+      if (!jurisdiction) {
+        return NextResponse.json({ error: "Selected state was not found for this organization." }, { status: 400 });
+      }
+      ownerJurisdictionId = jurisdiction.id;
+    }
+
     const [newCourse] = await db
       .insert(courses)
       .values({
         organizationId: orgId,
+        ownerJurisdictionId,
         title,
         description: description || "",
         status: "draft",

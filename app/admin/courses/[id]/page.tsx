@@ -63,6 +63,7 @@ function CourseEditorContent() {
   const {
     course,
     slidesList,
+    isReadOnly,
     loading,
     saveStatus,
     activeSlideIndex,
@@ -137,7 +138,12 @@ function CourseEditorContent() {
   } = useCourseEditor();
 
   const handlePreview = async () => {
-    await handleSaveCourse();
+    // Nothing to persist for a read-only viewer, and there's nothing to save
+    // anyway — skip straight to opening the preview instead of firing a save
+    // the API would just 403.
+    if (!isReadOnly) {
+      await handleSaveCourse();
+    }
     window.open(`/admin/courses/${id}/preview`, "_blank");
   };
 
@@ -183,7 +189,9 @@ function CourseEditorContent() {
               type="text"
               value={course?.title || ""}
               onChange={(e) => updateCourseMeta("title", e.target.value)}
-              className="text-lg font-extrabold text-[#1B2A6B] dark:text-[#C8D400] bg-transparent border-b border-dashed border-transparent hover:border-border focus:border-[#C8D400] focus:outline-none transition-all px-1 max-w-sm w-full"
+              readOnly={isReadOnly}
+              disabled={isReadOnly}
+              className="text-lg font-extrabold text-[#1B2A6B] dark:text-[#C8D400] bg-transparent border-b border-dashed border-transparent hover:border-border focus:border-[#C8D400] focus:outline-none transition-all px-1 max-w-sm w-full disabled:cursor-not-allowed disabled:opacity-90"
               placeholder="Course Title"
             />
             {course?.status === "published" ? (
@@ -193,6 +201,11 @@ function CourseEditorContent() {
             ) : (
               <span className="inline-flex rounded-full bg-[#C8D400]/10 px-2.5 py-0.5 text-xs font-semibold text-[#C8D400] border border-[#C8D400]/20 dark:bg-[#C8D400]/20 shrink-0">
                 Draft
+              </span>
+            )}
+            {isReadOnly && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold text-muted-foreground border border-border shrink-0">
+                Read-only — another jurisdiction&apos;s course
               </span>
             )}
           </div>
@@ -208,6 +221,7 @@ function CourseEditorContent() {
             <Eye className="h-3.5 w-3.5" />
             Preview
           </Button>
+          {!isReadOnly && (
           <Dialog open={styleDialogOpen} onOpenChange={setStyleDialogOpen}>
             <DialogTrigger asChild>
               <Button
@@ -360,6 +374,7 @@ function CourseEditorContent() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+          )}
         </div>
       </div>
 
