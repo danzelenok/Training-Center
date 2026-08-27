@@ -5,6 +5,7 @@ import { roleOrUnauthorized } from "@/lib/adminRoles";
 import { clerkClient } from "@clerk/nextjs/server";
 import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
+import { env } from "@/env";
 
 export const dynamic = "force-dynamic";
 
@@ -114,12 +115,23 @@ export async function POST(req: Request) {
       jurisdictionId = jurisdiction.id;
     }
 
+    // Without redirectUrl, Clerk lands the invitee on its own Account Portal
+    // ("Development mode... cannot redirect to your application") instead of
+    // /invite, which is where proxy.ts and <OrganizationList> expect them —
+    // same target the existing pending-invitation redirect in proxy.ts uses.
+    // NEXT_PUBLIC_APP_URL is the deployment's canonical URL; fall back to the
+    // request's own origin (matches app/api/bot/setup/route.ts's precedent)
+    // so this still works if that env var isn't set on a given deployment.
+    const baseAppUrl = env.NEXT_PUBLIC_APP_URL || new URL(req.url).origin;
+    const redirectUrl = `${baseAppUrl}/invite`;
+
     const clerk = await clerkClient();
     const invitation = await clerk.organizations.createOrganizationInvitation({
       organizationId: clerkOrgId,
       emailAddress: email,
       role: role === "org_admin" ? "org:admin" : "org:member",
       publicMetadata: { role, jurisdictionId },
+      redirectUrl,
     });
 
     return NextResponse.json({ id: invitation.id, email: invitation.emailAddress });
