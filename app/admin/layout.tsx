@@ -18,16 +18,20 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { QueryProvider } from "@/providers/query-provider";
+import { useMeQuery } from "@/hooks/admin/useMeQuery";
 
-const navigation = [
+const baseNavigation = [
   { name: "Dashboard", href: "/admin", icon: LayoutDashboard },
   { name: "Courses", href: "/admin/courses", icon: BookOpen },
   { name: "Media Library", href: "/admin/media", icon: FolderOpen },
   { name: "Workers", href: "/admin/workers", icon: Users },
   { name: "Teams", href: "/admin/teams", icon: Users2 },
   { name: "Reports", href: "/admin/reports", icon: FileBarChart2 },
-  { name: "Settings", href: "/admin/settings/team", icon: Settings },
 ];
+// Team management (invite/remove admins, assign roles) is org_admin-only —
+// see app/api/admin/team/route.ts. The page 403s for jurisdiction_admin
+// rather than rendering anything useful, so don't link to it for them.
+const settingsNavItem = { name: "Settings", href: "/admin/settings/team", icon: Settings };
 
 export default function AdminLayout({
   children,
@@ -35,8 +39,6 @@ export default function AdminLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-
   const isCourseEditor = pathname?.startsWith("/admin/courses/") && pathname !== "/admin/courses";
 
   if (isCourseEditor) {
@@ -55,6 +57,26 @@ export default function AdminLayout({
 
   return (
     <QueryProvider>
+      <AdminLayoutContent pathname={pathname}>{children}</AdminLayoutContent>
+    </QueryProvider>
+  );
+}
+
+// useMeQuery() needs a QueryClientProvider ancestor, which only exists
+// inside <QueryProvider> above — split out so this runs as its child,
+// not alongside it in AdminLayout itself.
+function AdminLayoutContent({
+  pathname,
+  children,
+}: {
+  pathname: string | null;
+  children: React.ReactNode;
+}) {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { data: me } = useMeQuery();
+  const navigation = me?.role === "jurisdiction_admin" ? baseNavigation : [...baseNavigation, settingsNavItem];
+
+  return (
       <div className="flex h-screen overflow-hidden bg-background text-foreground font-sans transition-colors duration-300">
         {/* Mobile Sidebar Overlay */}
         {sidebarOpen && (
@@ -176,6 +198,5 @@ export default function AdminLayout({
           </main>
         </div>
       </div>
-    </QueryProvider>
   );
 }

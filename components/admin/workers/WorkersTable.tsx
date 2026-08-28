@@ -10,6 +10,7 @@ import {
   Unlink,
   UserX,
   UserCheck,
+  Lock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SearchInput } from "@/components/ui/search-input";
@@ -24,6 +25,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatPhoneDisplay } from "@/lib/phone";
 import { workerDisplayName, type Worker, type Course } from "@/hooks/admin/workers/types";
+import { useMeQuery } from "@/hooks/admin/useMeQuery";
 
 interface WorkersTableProps {
   workers: Worker[];
@@ -56,6 +58,12 @@ export function WorkersTable({
 }: WorkersTableProps) {
   const [search, setSearch] = useState("");
   const [statusTab, setStatusTab] = useState<"active" | "deactivated">("active");
+  const { data: me } = useMeQuery();
+  // Same rule as WorkerDetailSheet: every action in this row's dropdown now
+  // 403s server-side for a worker outside a jurisdiction_admin's own state
+  // (see app/api/workers/[id]/{assign,invites,unbind} and app/api/reports/[id]).
+  const canEdit = (worker: Worker) =>
+    me?.role === "org_admin" || (me?.role === "jurisdiction_admin" && worker.jurisdictionId === me.jurisdiction?.id);
 
   const filteredWorkers = workers.filter((w) => {
     if (statusTab === "active" && !w.active) return false;
@@ -203,6 +211,14 @@ export function WorkersTable({
                     </span>
                   </td>
                   <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
+                    {!canEdit(worker) ? (
+                      <span
+                        className="inline-flex items-center gap-1.5 text-xs text-muted-foreground px-3 h-9"
+                        title="Read-only — another jurisdiction"
+                      >
+                        <Lock className="h-3.5 w-3.5" />
+                      </span>
+                    ) : (
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button
@@ -277,6 +293,7 @@ export function WorkersTable({
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
+                    )}
                   </td>
                 </tr>
               ))}

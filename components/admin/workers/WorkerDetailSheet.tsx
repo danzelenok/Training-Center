@@ -41,6 +41,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { formatPhoneDisplay, formatPhoneInput } from "@/lib/phone";
 import { useWorkerDetailQuery } from "@/hooks/admin/workers/queries";
+import { useMeQuery } from "@/hooks/admin/useMeQuery";
 import {
   useSaveWorkerEditMutation,
   useRemoveCourseMutation,
@@ -181,6 +182,22 @@ export function WorkerDetailSheet({
   onOpenJurisdictionPicker,
 }: WorkerDetailSheetProps) {
   const { data: worker, isLoading: loadingDetail } = useWorkerDetailQuery(workerId);
+  const { data: me } = useMeQuery();
+  // Same rule the courses list uses to hide write actions for a course owned
+  // by another jurisdiction: jurisdiction_admin can only write workers whose
+  // jurisdiction matches their own, org_admin is unrestricted. Every mutation
+  // this sheet can trigger (rename, deactivate, reissue/unbind, manager,
+  // teams, course assignment, delete) now 403s server-side for a foreign
+  // worker too (see app/api/workers/[id], .../assign, .../invites, .../unbind,
+  // app/api/reports/[id]) — this just keeps the UI from offering a button
+  // that would only ever fail.
+  const canEdit =
+    !!worker && (me?.role === "org_admin" || (me?.role === "jurisdiction_admin" && worker.jurisdiction?.id === me.jurisdiction?.id));
+  // A jurisdiction_admin's state is fixed — the picker can only ever no-op
+  // for them (see JurisdictionPickerDialog/app/api/workers/[id] route), so
+  // don't offer it at all rather than show an edit control that quietly
+  // does nothing useful.
+  const canEditJurisdiction = me?.role !== "jurisdiction_admin";
 
   const [editingWorker, setEditingWorker] = useState(false);
   const [editName, setEditName] = useState("");
@@ -282,7 +299,7 @@ export function WorkerDetailSheet({
           ) : (
             <SheetTitle className="text-xl font-extrabold text-[#1B2A6B] dark:text-[#C8D400] flex items-center gap-2">
               {worker ? workerDisplayName(worker) : "Loading..."}
-              {worker && (
+              {worker && canEdit && (
                 <button
                   onClick={startEditingWorker}
                   className="p-1 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
@@ -308,6 +325,11 @@ export function WorkerDetailSheet({
                 <span className="block font-normal text-foreground">Phone: {formatPhoneDisplay(worker.phone)}</span>
               )}
               <div className="pt-1 flex flex-wrap gap-1.5">
+                {!canEdit && (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-muted text-muted-foreground border border-border text-xs font-bold">
+                    <MapPin className="h-3.5 w-3.5" /> Read-only — another jurisdiction
+                  </span>
+                )}
                 {!worker.active && (
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-destructive/10 text-destructive border border-destructive/20 text-xs font-bold">
                     <UserX className="h-3.5 w-3.5" /> Deactivated
@@ -342,6 +364,7 @@ export function WorkerDetailSheet({
           <div className="flex flex-col gap-6 mt-4 px-4 pb-6">
 
             {/* Action bar for invites */}
+            {canEdit && (
             <div className="flex flex-wrap gap-2">
               <Button
                 variant="outline"
@@ -387,6 +410,7 @@ export function WorkerDetailSheet({
                 {worker.active ? "Deactivate" : "Reactivate"}
               </Button>
             </div>
+            )}
 
             {/* Summary stats */}
             <div className="grid grid-cols-3 gap-3">
@@ -416,13 +440,15 @@ export function WorkerDetailSheet({
                   <UserCog className="h-3.5 w-3.5" />
                   Manager
                 </h3>
-                <button
-                  onClick={onOpenManagerPicker}
-                  className="p-1 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                  title="Edit manager"
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                </button>
+                {canEdit && (
+                  <button
+                    onClick={onOpenManagerPicker}
+                    className="p-1 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                    title="Edit manager"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                )}
               </div>
               {worker.manager ? (
                 <span className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-muted/30 px-3 py-1.5 text-xs font-medium text-foreground">
@@ -443,13 +469,15 @@ export function WorkerDetailSheet({
                   <MapPin className="h-3.5 w-3.5" />
                   State
                 </h3>
-                <button
-                  onClick={onOpenJurisdictionPicker}
-                  className="p-1 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                  title="Edit state"
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                </button>
+                {canEditJurisdiction && (
+                  <button
+                    onClick={onOpenJurisdictionPicker}
+                    className="p-1 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                    title="Edit state"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                )}
               </div>
               {worker.jurisdiction ? (
                 <span className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-muted/30 px-3 py-1.5 text-xs font-medium text-foreground">
@@ -470,13 +498,15 @@ export function WorkerDetailSheet({
                   <Users className="h-3.5 w-3.5" />
                   Teams
                 </h3>
-                <button
-                  onClick={onOpenTeamPicker}
-                  className="p-1 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                  title="Edit teams"
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                </button>
+                {canEdit && (
+                  <button
+                    onClick={onOpenTeamPicker}
+                    className="p-1 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                    title="Edit teams"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                )}
               </div>
               {worker.teams.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
@@ -534,17 +564,19 @@ export function WorkerDetailSheet({
                             <Icon className="h-3 w-3" />
                             {cfg.label}
                           </span>
-                          <button
-                            onClick={() => handleRemoveCourse(c.assignmentId)}
-                            disabled={isRemoving}
-                            className="p-1 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors disabled:opacity-50"
-                            title="Remove course"
-                          >
-                            {isRemoving
-                              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                              : <Trash2 className="h-3.5 w-3.5" />
-                            }
-                          </button>
+                          {canEdit && (
+                            <button
+                              onClick={() => handleRemoveCourse(c.assignmentId)}
+                              disabled={isRemoving}
+                              className="p-1 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors disabled:opacity-50"
+                              title="Remove course"
+                            >
+                              {isRemoving
+                                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                : <Trash2 className="h-3.5 w-3.5" />
+                              }
+                            </button>
+                          )}
                         </div>
                       </div>
 
@@ -587,7 +619,7 @@ export function WorkerDetailSheet({
                         )}
                       </div>
 
-                      {c.status !== "completed" && (
+                      {c.status !== "completed" && canEdit && (
                         <button
                           onClick={() => handleMarkCompleted(c.progressId, c.assignmentId)}
                           disabled={isMarkingCompleted}
@@ -638,7 +670,7 @@ export function WorkerDetailSheet({
             </div>
 
             {/* Assign new course from sheet */}
-            {worker.active && (
+            {worker.active && canEdit && (
               <div className="pt-2 border-t border-border">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -679,6 +711,7 @@ export function WorkerDetailSheet({
               </div>
             )}
 
+            {canEdit && (
             <div className="pt-2 border-t border-border">
               <Button
                 variant="outline"
@@ -697,6 +730,7 @@ export function WorkerDetailSheet({
                 )}
               </Button>
             </div>
+            )}
           </div>
         ) : null}
       </SheetContent>

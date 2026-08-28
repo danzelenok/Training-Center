@@ -21,6 +21,8 @@ import {
   Clock,
   Copy,
   Lock,
+  Search,
+  X,
 } from "lucide-react";
 import { format } from "date-fns";
 import { toast, Toaster } from "sonner";
@@ -92,6 +94,28 @@ export default function CoursesPage() {
 
   // Actions states
   const [expandedDescId, setExpandedDescId] = useState<string | null>(null);
+
+  // List filters — all client-side over the already-fetched `courses` array
+  // (GET /api/courses already returns ownerJurisdictionId/status/slideCount
+  // for every course, so nothing here needs a new API call).
+  const [searchQuery, setSearchQuery] = useState("");
+  const [jurisdictionFilter, setJurisdictionFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "draft" | "published">("all");
+
+  const hasActiveFilters = searchQuery.trim() !== "" || jurisdictionFilter !== "all" || statusFilter !== "all";
+  const clearFilters = () => {
+    setSearchQuery("");
+    setJurisdictionFilter("all");
+    setStatusFilter("all");
+  };
+
+  const filteredCourses = courses.filter((course) => {
+    if (jurisdictionFilter !== "all" && course.ownerJurisdictionId !== jurisdictionFilter) return false;
+    if (statusFilter !== "all" && course.status !== statusFilter) return false;
+    const q = searchQuery.trim().toLowerCase();
+    if (q && !course.title.toLowerCase().includes(q) && !course.description.toLowerCase().includes(q)) return false;
+    return true;
+  });
 
   // Publish/Resend dialog — audience picker for a first publish, re-notify
   // confirmation for an already-published course (see PublishCourseDialog).
@@ -293,6 +317,54 @@ export default function CoursesPage() {
         </div>
       </div>
 
+      {/* Filters */}
+      {courses.length > 0 && (
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="relative flex-1 min-w-0">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search title or description..."
+              className="bg-card border-border pl-9 rounded-xl h-10"
+            />
+          </div>
+          <Select value={jurisdictionFilter} onValueChange={setJurisdictionFilter}>
+            <SelectTrigger className="w-full sm:w-[160px] bg-card border-border rounded-xl h-10">
+              <SelectValue placeholder="State" />
+            </SelectTrigger>
+            <SelectContent className="bg-card border border-border text-foreground">
+              <SelectItem value="all">All states</SelectItem>
+              {jurisdictions.map((j) => (
+                <SelectItem key={j.id} value={j.id}>
+                  {j.code} &middot; {j.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as "all" | "draft" | "published")}>
+            <SelectTrigger className="w-full sm:w-[150px] bg-card border-border rounded-xl h-10">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent className="bg-card border border-border text-foreground">
+              <SelectItem value="all">All statuses</SelectItem>
+              <SelectItem value="draft">Draft</SelectItem>
+              <SelectItem value="published">Published</SelectItem>
+            </SelectContent>
+          </Select>
+          {hasActiveFilters && (
+            <Button
+              variant="outline"
+              onClick={clearFilters}
+              className="h-10 border-border text-muted-foreground hover:text-foreground gap-1.5 shrink-0"
+            >
+              <X className="h-3.5 w-3.5" />
+              Clear
+            </Button>
+          )}
+        </div>
+      )}
+
       {/* Courses List Container */}
       <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-xl">
         {loading ? (
@@ -316,6 +388,22 @@ export default function CoursesPage() {
               <Plus className="mr-2 h-4 w-4" /> Create First Course
             </Button>
           </div>
+        ) : filteredCourses.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-center px-4">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted border border-border text-muted-foreground mb-4">
+              <Search className="h-7 w-7" />
+            </div>
+            <h3 className="text-lg font-bold text-[#1B2A6B] dark:text-[#C8D400] mb-1">No courses match your filters</h3>
+            <p className="text-muted-foreground text-sm max-w-md mb-6">
+              Try a different search term or clear the filters below.
+            </p>
+            <Button
+              onClick={clearFilters}
+              className="bg-muted hover:bg-muted/80 text-foreground border border-border cursor-pointer"
+            >
+              <X className="mr-2 h-4 w-4" /> Clear filters
+            </Button>
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
@@ -330,7 +418,7 @@ export default function CoursesPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {courses.map((course) => {
+                {filteredCourses.map((course) => {
                   const writable = canWrite(course);
                   const jurisdictionCode = jurisdictions.find((j) => j.id === course.ownerJurisdictionId)?.code;
                   return (

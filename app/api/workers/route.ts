@@ -23,6 +23,7 @@ export async function GET() {
         lastName: workers.lastName,
         displayName: workers.displayName,
         phone: workers.phone,
+        jurisdictionId: workers.jurisdictionId,
         active: workers.active,
         deactivatedAt: workers.deactivatedAt,
         createdAt: workers.createdAt,

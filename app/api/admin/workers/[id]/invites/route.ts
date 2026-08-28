@@ -1,6 +1,7 @@
 import { db } from "@/db";
 import { workers, invites } from "@/db/schema";
 import { requireOrgId } from "@/lib/org";
+import { roleOrUnauthorized } from "@/lib/adminRoles";
 import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import crypto from "crypto";
@@ -18,7 +19,7 @@ function generateInviteToken(): string {
 }
 
 export async function POST(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -26,6 +27,9 @@ export async function POST(
     if (!orgId) {
       return new NextResponse("Unauthorized", { status: 401 });
     }
+
+    const roleResult = roleOrUnauthorized(req);
+    if (roleResult instanceof Response) return roleResult;
 
     const { id } = await params;
 
@@ -40,6 +44,9 @@ export async function POST(
         JSON.stringify({ error: "Worker not found" }),
         { status: 404, headers: { "Content-Type": "application/json" } }
       );
+    }
+    if (roleResult.role === "jurisdiction_admin" && worker.jurisdictionId !== roleResult.jurisdictionId) {
+      return NextResponse.json({ error: "You can only manage workers in your jurisdiction." }, { status: 403 });
     }
 
     // Revoke previous pending invites

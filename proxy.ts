@@ -35,6 +35,7 @@ const isAdminApiRoute = createRouteMatcher([
   "/api/slides(.*)",
   "/api/admin(.*)",
   "/api/workers(.*)",
+  "/api/reports(.*)",
 ]);
 
 function devMockRole(): RoleContext {

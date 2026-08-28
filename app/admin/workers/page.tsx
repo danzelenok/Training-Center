@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { toast, Toaster } from "sonner";
 import { normalizePhone } from "@/lib/phone";
 import { useWorkersQuery, useCoursesQuery, useTeamsQuery, useJurisdictionsQuery } from "@/hooks/admin/workers/queries";
+import { useMeQuery } from "@/hooks/admin/useMeQuery";
 import {
   useCreateWorkerMutation,
   useReissueInviteMutation,
@@ -30,10 +31,13 @@ export default function WorkersPage() {
   const coursesQuery = useCoursesQuery();
   const teamsQuery = useTeamsQuery();
   const jurisdictionsQuery = useJurisdictionsQuery();
+  const meQuery = useMeQuery();
+  const me = meQuery.data;
   const workersList = workersQuery.data?.workers ?? [];
   const publishedCourses = coursesQuery.data ?? [];
   const teamsList = teamsQuery.data ?? [];
   const jurisdictionsList = jurisdictionsQuery.data ?? [];
+  const lockedJurisdiction = me?.role === "jurisdiction_admin" ? me.jurisdiction ?? null : null;
 
   const createWorker = useCreateWorkerMutation();
   const reissueInvite = useReissueInviteMutation();
@@ -105,7 +109,10 @@ export default function WorkersPage() {
         phone: newWorkerPhone.trim(),
         teamIds: newWorkerTeamIds,
         managerId: newWorkerManagerId,
-        jurisdictionId: newWorkerJurisdictionId,
+        // The API ignores this for a jurisdiction_admin anyway (forces their
+        // own jurisdiction), but send the real value rather than whatever's
+        // left in state from a picker they can't see.
+        jurisdictionId: lockedJurisdiction ? lockedJurisdiction.id : newWorkerJurisdictionId,
       },
       {
         onSuccess: (data) => {
@@ -131,7 +138,7 @@ export default function WorkersPage() {
       toast.error("Please enter worker name");
       return;
     }
-    if (jurisdictionsList.length > 0 && !newWorkerJurisdictionId) {
+    if (!lockedJurisdiction && jurisdictionsList.length > 0 && !newWorkerJurisdictionId) {
       toast.error("Please select a state");
       return;
     }
@@ -277,6 +284,7 @@ export default function WorkersPage() {
         jurisdictions={jurisdictionsList}
         jurisdictionId={newWorkerJurisdictionId}
         onJurisdictionChange={setNewWorkerJurisdictionId}
+        lockedJurisdiction={lockedJurisdiction}
       />
 
       <DuplicateWorkerDialog

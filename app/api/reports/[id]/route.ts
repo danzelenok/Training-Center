@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { progress, assignments, workers } from "@/db/schema";
 import { requireOrgId } from "@/lib/org";
+import { roleOrUnauthorized } from "@/lib/adminRoles";
 import { and, eq } from "drizzle-orm";
 
 // PATCH /api/reports/[id] — mark as completed.
@@ -11,15 +12,22 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const orgId = await requireOrgId().catch(() => null);
     if (!orgId) return new NextResponse("Unauthorized", { status: 401 });
 
+    const roleResult = roleOrUnauthorized(req);
+    if (roleResult instanceof Response) return roleResult;
+
     const { id } = await params;
 
     const [existingProgress] = await db
-      .select({ progress })
+      .select({ progress, workerJurisdictionId: workers.jurisdictionId })
       .from(progress)
       .innerJoin(workers, and(eq(workers.id, progress.workerId), eq(workers.organizationId, orgId)))
       .where(eq(progress.id, id))
       .limit(1)
-      .then((rows) => rows.map((r) => r.progress));
+      .then((rows) => rows.map((r) => ({ ...r.progress, workerJurisdictionId: r.workerJurisdictionId })));
+
+    if (existingProgress && roleResult.role === "jurisdiction_admin" && existingProgress.workerJurisdictionId !== roleResult.jurisdictionId) {
+      return NextResponse.json({ error: "You can only manage workers in your jurisdiction." }, { status: 403 });
+    }
 
     if (existingProgress) {
       const [updated] = await db
@@ -36,13 +44,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     // No progress row — id must be an assignmentId; upsert progress as completed
     const [assignment] = await db
-      .select({ assignments })
+      .select({ assignments, workerJurisdictionId: workers.jurisdictionId })
       .from(assignments)
       .innerJoin(workers, and(eq(workers.id, assignments.workerId), eq(workers.organizationId, orgId)))
       .where(eq(assignments.id, id))
       .limit(1)
-      .then((rows) => rows.map((r) => r.assignments));
+      .then((rows) => rows.map((r) => ({ ...r.assignments, workerJurisdictionId: r.workerJurisdictionId })));
     if (!assignment) return new NextResponse("Not found", { status: 404 });
+    if (roleResult.role === "jurisdiction_admin" && assignment.workerJurisdictionId !== roleResult.jurisdictionId) {
+      return NextResponse.json({ error: "You can only manage workers in your jurisdiction." }, { status: 403 });
+    }
 
     // Check if a progress row already exists for this worker+course (via a different path)
     const [existingForPair] = await db
@@ -77,15 +88,21 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     const orgId = await requireOrgId().catch(() => null);
     if (!orgId) return new NextResponse("Unauthorized", { status: 401 });
 
+    const roleResult = roleOrUnauthorized(req);
+    if (roleResult instanceof Response) return roleResult;
+
     const { id } = await params;
 
     const [ownedAssignment] = await db
-      .select({ id: assignments.id })
+      .select({ id: assignments.id, workerJurisdictionId: workers.jurisdictionId })
       .from(assignments)
       .innerJoin(workers, and(eq(workers.id, assignments.workerId), eq(workers.organizationId, orgId)))
       .where(eq(assignments.id, id))
       .limit(1);
     if (!ownedAssignment) return new NextResponse("Not found", { status: 404 });
+    if (roleResult.role === "jurisdiction_admin" && ownedAssignment.workerJurisdictionId !== roleResult.jurisdictionId) {
+      return NextResponse.json({ error: "You can only manage workers in your jurisdiction." }, { status: 403 });
+    }
 
     await db.delete(assignments).where(eq(assignments.id, id));
 

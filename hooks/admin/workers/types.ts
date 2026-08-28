@@ -22,6 +22,7 @@ export interface Worker {
   lastName: string | null;
   displayName: string | null;
   phone?: string | null;
+  jurisdictionId: string | null;
   active: boolean;
   deactivatedAt: string | null;
   createdAt: string;

@@ -40,6 +40,11 @@ interface AddWorkerDialogProps {
   jurisdictions: JurisdictionRef[];
   jurisdictionId: string | null;
   onJurisdictionChange: (jurisdictionId: string | null) => void;
+  // Set when the caller is a jurisdiction_admin: the state is fixed to their
+  // own and not editable — the server ignores any other value anyway (see
+  // app/api/admin/workers/route.ts), this just keeps the UI honest instead
+  // of offering a choice that silently doesn't do what it says.
+  lockedJurisdiction?: JurisdictionRef | null;
 }
 
 export function AddWorkerDialog({
@@ -60,6 +65,7 @@ export function AddWorkerDialog({
   jurisdictions,
   jurisdictionId,
   onJurisdictionChange,
+  lockedJurisdiction,
 }: AddWorkerDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -122,7 +128,16 @@ export function AddWorkerDialog({
               </Select>
             </div>
 
-            {jurisdictions.length > 0 && (
+            {lockedJurisdiction ? (
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">
+                  State
+                </label>
+                <div className="w-full bg-muted/40 border border-border rounded-xl h-10 px-3 flex items-center text-xs font-medium text-foreground">
+                  {lockedJurisdiction.code} &middot; {lockedJurisdiction.name}
+                </div>
+              </div>
+            ) : jurisdictions.length > 0 && (
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">
                   State <span className="text-red-400">*</span>

@@ -1,6 +1,7 @@
 import { db } from "@/db";
 import { workers, progress, courses, pollResponses, slides, assignments, workerTeams, teams, workerStatusEvents, jurisdictions, organizationJurisdictions } from "@/db/schema";
 import { requireOrgId } from "@/lib/org";
+import { roleOrUnauthorized } from "@/lib/adminRoles";
 import { and, count, eq, inArray, sql } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { autoAssignTeamCoursesForNewMemberships } from "@/lib/teamAutoAssign";
@@ -157,13 +158,23 @@ export async function PATCH(
     const orgId = await requireOrgId().catch(() => null);
     if (!orgId) return new NextResponse("Unauthorized", { status: 401 });
 
+    const roleResult = roleOrUnauthorized(req);
+    if (roleResult instanceof Response) return roleResult;
+
     const { id } = await params;
     const [ownedWorker] = await db
-      .select({ id: workers.id })
+      .select({ id: workers.id, jurisdictionId: workers.jurisdictionId })
       .from(workers)
       .where(and(eq(workers.id, id), eq(workers.organizationId, orgId)))
       .limit(1);
     if (!ownedWorker) return new NextResponse("Not found", { status: 404 });
+
+    // jurisdiction_admin can only edit workers already in their own
+    // jurisdiction, and can never move a worker into a different one —
+    // same invariant as worker creation (app/api/admin/workers/route.ts).
+    if (roleResult.role === "jurisdiction_admin" && ownedWorker.jurisdictionId !== roleResult.jurisdictionId) {
+      return NextResponse.json({ error: "You can only edit workers in your jurisdiction." }, { status: 403 });
+    }
 
     const body = await req.json().catch(() => ({}));
 
@@ -226,7 +237,12 @@ export async function PATCH(
     }
 
     if ("jurisdictionId" in body) {
-      if (body.jurisdictionId === null) {
+      if (roleResult.role === "jurisdiction_admin") {
+        // Same as create: the client-supplied value is ignored — a
+        // jurisdiction_admin can't move a worker to (or out of, via null)
+        // any jurisdiction other than their own.
+        updates.jurisdictionId = roleResult.jurisdictionId;
+      } else if (body.jurisdictionId === null) {
         updates.jurisdictionId = null;
       } else if (typeof body.jurisdictionId === "string") {
         const [jurisdiction] = await db
@@ -337,13 +353,26 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const orgId = await requireOrgId().catch(() => null);
   if (!orgId) return new NextResponse("Unauthorized", { status: 401 });
 
+  const roleResult = roleOrUnauthorized(req);
+  if (roleResult instanceof Response) return roleResult;
+
   const { id } = await params;
+
+  const [targetWorker] = await db
+    .select({ id: workers.id, jurisdictionId: workers.jurisdictionId })
+    .from(workers)
+    .where(and(eq(workers.id, id), eq(workers.organizationId, orgId)))
+    .limit(1);
+  if (!targetWorker) return new NextResponse("Not found", { status: 404 });
+  if (roleResult.role === "jurisdiction_admin" && targetWorker.jurisdictionId !== roleResult.jurisdictionId) {
+    return NextResponse.json({ error: "You can only delete workers in your jurisdiction." }, { status: 403 });
+  }
 
   await db.delete(workers).where(and(eq(workers.id, id), eq(workers.organizationId, orgId)));
 
