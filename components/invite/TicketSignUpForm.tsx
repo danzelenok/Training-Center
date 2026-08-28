@@ -62,7 +62,21 @@ export function TicketSignUpForm({ ticket }: TicketSignUpFormProps) {
     }
 
     const { error: finalizeError } = await signUp.finalize({
-      navigate: () => {
+      navigate: async () => {
+        // Bootstrap this admin's own admin_roles row synchronously here,
+        // before navigating — otherwise proxy.ts's role check on the very
+        // first /admin request can lose the race against the async
+        // organizationInvitation.accepted webhook and bounce them to
+        // /access-denied. Best-effort: if this fails, the webhook is still
+        // the fallback, so don't block navigation on it.
+        try {
+          const res = await fetch("/api/admin/team/finalize-invite", { method: "POST" });
+          if (!res.ok) {
+            console.error("finalize-invite failed:", await res.text().catch(() => res.statusText));
+          }
+        } catch (err) {
+          console.error("finalize-invite request failed:", err);
+        }
         router.push("/admin");
       },
     });

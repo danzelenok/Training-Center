@@ -16,6 +16,10 @@ const isPublicRoute = createRouteMatcher([
   "/api/bot(.*)",
   "/api/inngest(.*)",
   "/api/webhooks(.*)",
+  // Called by a brand-new admin's own sign-up flow before they have an
+  // admin_roles row yet (see the route for why) — must not go through the
+  // role-header gate below, which would 403 them for exactly that reason.
+  "/api/admin/team/finalize-invite",
   "/mini-app(.*)"
 ]);
 
@@ -47,6 +51,16 @@ function withRoleHeaders(req: any, ctx: RoleContext) {
   return NextResponse.next({ request: { headers } });
 }
 
+// This decision is only ever valid for the instant it was made — the very
+// next request from the same admin (e.g. immediately after a role finishes
+// being provisioned) must be re-evaluated, never served a cached "denied"
+// from a moment ago.
+function accessDenied(req: any) {
+  const res = NextResponse.redirect(new URL("/access-denied", req.url));
+  res.headers.set("Cache-Control", "no-store");
+  return res;
+}
+
 const clerkAuthMiddleware = clerkMiddleware(async (auth, req) => {
   // If it's a public route, do not protect it
   if (isPublicRoute(req)) {
@@ -72,15 +86,18 @@ const clerkAuthMiddleware = clerkMiddleware(async (auth, req) => {
         .limit(1);
 
       if (!org) {
-        return NextResponse.redirect(new URL("/access-denied", req.url));
+        return accessDenied(req);
       }
 
       // Fail-closed: a Clerk member with no admin_roles row yet (invite
       // accepted but the organizationInvitation.accepted webhook hasn't
       // landed, or it failed) gets no admin access until that row exists.
+      // TicketSignUpForm calls /api/admin/team/finalize-invite synchronously
+      // before redirecting here specifically to avoid hitting this — this
+      // remains the fallback for every other path into the org.
       const roleCtx = await lookupAdminRole(org.id, userId!);
       if (!roleCtx) {
-        return NextResponse.redirect(new URL("/access-denied", req.url));
+        return accessDenied(req);
       }
 
       return withRoleHeaders(req, roleCtx);
