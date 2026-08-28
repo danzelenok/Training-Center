@@ -256,6 +256,7 @@ export default function WorkersPage() {
         loading={workersQuery.isLoading}
         deactivatedCount={workersQuery.data?.deactivatedCount ?? 0}
         publishedCourses={publishedCourses}
+        jurisdictions={jurisdictionsList}
         assigningWorkerId={assigningWorkerId}
         reissuingWorkerId={reissuingWorkerId}
         togglingActiveId={togglingActiveId}

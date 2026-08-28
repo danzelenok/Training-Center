@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, Trash2, UserPlus } from "lucide-react";
+import { Loader2, Trash2, UserPlus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -29,8 +29,8 @@ import {
 } from "@/components/ui/dialog";
 import { useJurisdictionsQuery } from "@/hooks/admin/workers/queries";
 import { useTeamQuery } from "@/hooks/admin/team/queries";
-import { useChangeAdminRoleMutation, useRemoveAdminMutation } from "@/hooks/admin/team/mutations";
-import type { TeamMember } from "@/hooks/admin/team/types";
+import { useChangeAdminRoleMutation, useRemoveAdminMutation, useRevokeInvitationMutation } from "@/hooks/admin/team/mutations";
+import type { TeamMember, PendingTeamInvitation } from "@/hooks/admin/team/types";
 import { InviteAdminDialog } from "@/components/admin/team/InviteAdminDialog";
 
 function memberName(m: TeamMember) {
@@ -60,9 +60,11 @@ export default function TeamSettingsPage() {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [removeTarget, setRemoveTarget] = useState<TeamMember | null>(null);
   const [editTarget, setEditTarget] = useState<TeamMember | null>(null);
+  const [revokeTarget, setRevokeTarget] = useState<PendingTeamInvitation | null>(null);
 
   const changeRole = useChangeAdminRoleMutation();
   const removeAdmin = useRemoveAdminMutation();
+  const revokeInvitation = useRevokeInvitationMutation();
 
   const members = teamQuery.data?.members ?? [];
   const pendingInvitations = teamQuery.data?.pendingInvitations ?? [];
@@ -159,6 +161,17 @@ export default function TeamSettingsPage() {
                           <Badge variant="outline">unknown role</Badge>
                         )}
                       </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="text-xs rounded-lg border-red-300 text-red-500 hover:bg-red-50 dark:hover:bg-red-950"
+                          onClick={() => setRevokeTarget(inv)}
+                          title="Revoke invitation"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </Button>
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -229,6 +242,42 @@ export default function TeamSettingsPage() {
               className="bg-red-500 hover:bg-red-600 text-white font-extrabold text-xs px-4 rounded-xl"
             >
               {removeAdmin.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Remove"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Revoke invitation confirmation */}
+      <Dialog open={!!revokeTarget} onOpenChange={(o) => !o && setRevokeTarget(null)}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold text-red-500">Revoke Invitation?</DialogTitle>
+            <DialogDescription className="text-muted-foreground text-xs mt-2 leading-relaxed">
+              The invite link sent to <strong className="text-foreground">{revokeTarget?.email ?? ""}</strong> will
+              stop working immediately. This cannot be undone — you&apos;ll need to send a new invite if you change
+              your mind.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 pt-2">
+            <Button
+              variant="outline"
+              onClick={() => setRevokeTarget(null)}
+              className="border-border text-muted-foreground text-xs rounded-xl"
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={revokeInvitation.isPending}
+              onClick={() => {
+                if (!revokeTarget) return;
+                revokeInvitation.mutate(
+                  { invitationId: revokeTarget.id },
+                  { onSuccess: () => setRevokeTarget(null) }
+                );
+              }}
+              className="bg-red-500 hover:bg-red-600 text-white font-extrabold text-xs px-4 rounded-xl"
+            >
+              {revokeInvitation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Revoke"}
             </Button>
           </DialogFooter>
         </DialogContent>

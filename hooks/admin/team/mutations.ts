@@ -78,3 +78,22 @@ export function useRemoveAdminMutation() {
     },
   });
 }
+
+export function useRevokeInvitationMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ invitationId }: { invitationId: string }) => {
+      const res = await fetch(`/api/admin/team/invitations/${invitationId}`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Failed to revoke invitation");
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: teamKeys.all() });
+      toast.success("Invitation revoked");
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || "Could not revoke invitation");
+    },
+  });
+}

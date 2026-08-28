@@ -23,8 +23,15 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { formatPhoneDisplay } from "@/lib/phone";
-import { workerDisplayName, type Worker, type Course } from "@/hooks/admin/workers/types";
+import { workerDisplayName, type Worker, type Course, type JurisdictionRef } from "@/hooks/admin/workers/types";
 import { useMeQuery } from "@/hooks/admin/useMeQuery";
 
 interface WorkersTableProps {
@@ -32,6 +39,7 @@ interface WorkersTableProps {
   loading: boolean;
   deactivatedCount: number;
   publishedCourses: Course[];
+  jurisdictions: JurisdictionRef[];
   assigningWorkerId: string | null;
   reissuingWorkerId: string | null;
   togglingActiveId: string | null;
@@ -47,6 +55,7 @@ export function WorkersTable({
   loading,
   deactivatedCount,
   publishedCourses,
+  jurisdictions,
   assigningWorkerId,
   reissuingWorkerId,
   togglingActiveId,
@@ -58,6 +67,7 @@ export function WorkersTable({
 }: WorkersTableProps) {
   const [search, setSearch] = useState("");
   const [statusTab, setStatusTab] = useState<"active" | "deactivated">("active");
+  const [jurisdictionFilter, setJurisdictionFilter] = useState<string>("all");
   const { data: me } = useMeQuery();
   // Same rule as WorkerDetailSheet: every action in this row's dropdown now
   // 403s server-side for a worker outside a jurisdiction_admin's own state
@@ -68,32 +78,52 @@ export function WorkersTable({
   const filteredWorkers = workers.filter((w) => {
     if (statusTab === "active" && !w.active) return false;
     if (statusTab === "deactivated" && w.active) return false;
+    if (jurisdictionFilter !== "all" && w.jurisdictionId !== jurisdictionFilter) return false;
 
     const displayName = w.displayName?.toLowerCase() || "";
     const firstName = w.firstName?.toLowerCase() || "";
     const lastName = w.lastName?.toLowerCase() || "";
     const phoneDigits = w.phone?.replace(/\D/g, "") || "";
+    const teamNames = w.teams.map((t) => t.name.toLowerCase());
     const query = search.toLowerCase();
     const queryDigits = search.replace(/\D/g, "");
     return (
       displayName.includes(query) ||
       firstName.includes(query) ||
       lastName.includes(query) ||
-      (queryDigits.length > 0 && phoneDigits.includes(queryDigits))
+      (queryDigits.length > 0 && phoneDigits.includes(queryDigits)) ||
+      teamNames.some((t) => t.includes(query))
     );
   });
 
   return (
     <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-xl">
       <div className="p-4 border-b border-border flex flex-col sm:flex-row gap-3 items-center justify-between">
-        <div className="w-full sm:w-80">
-          <SearchInput
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            onClear={() => setSearch("")}
-            placeholder="Search worker by name or phone..."
-            className="bg-background border-border text-foreground rounded-xl placeholder-muted-foreground focus-visible:ring-primary h-10 text-xs"
-          />
+        <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+          <div className="w-full sm:w-80">
+            <SearchInput
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onClear={() => setSearch("")}
+              placeholder="Search worker by name, phone, or team..."
+              className="bg-background border-border text-foreground rounded-xl placeholder-muted-foreground focus-visible:ring-primary h-10 text-xs"
+            />
+          </div>
+          {jurisdictions.length > 0 && (
+            <Select value={jurisdictionFilter} onValueChange={setJurisdictionFilter}>
+              <SelectTrigger className="w-full sm:w-[150px] bg-background border-border rounded-xl h-10 text-xs">
+                <SelectValue placeholder="State" />
+              </SelectTrigger>
+              <SelectContent className="bg-card border border-border text-foreground">
+                <SelectItem value="all">All states</SelectItem>
+                {jurisdictions.map((j) => (
+                  <SelectItem key={j.id} value={j.id}>
+                    {j.code} &middot; {j.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
         <Tabs value={statusTab} onValueChange={(v) => setStatusTab(v as "active" | "deactivated")}>
           <TabsList>
