@@ -1,7 +1,8 @@
 import { db } from "@/db";
-import { workers, progress, courses, pollResponses, slides, assignments, workerTeams, teams, workerStatusEvents, jurisdictions, organizationJurisdictions } from "@/db/schema";
+import { workers, progress, courses, pollResponses, slides, assignments, workerTeams, teams, employmentEvents, jobRoles, jurisdictions, organizationJurisdictions } from "@/db/schema";
 import { requireOrgId } from "@/lib/org";
 import { roleOrUnauthorized } from "@/lib/adminRoles";
+import { auth } from "@clerk/nextjs/server";
 import { and, count, eq, inArray, sql } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { autoAssignTeamCoursesForNewMemberships } from "@/lib/teamAutoAssign";
@@ -91,11 +92,19 @@ export async function GET(
       .innerJoin(teams, eq(teams.id, workerTeams.teamId))
       .where(eq(workerTeams.workerId, id));
 
-    const statusHistory = await db
-      .select({ id: workerStatusEvents.id, status: workerStatusEvents.status, changedAt: workerStatusEvents.changedAt })
-      .from(workerStatusEvents)
-      .where(eq(workerStatusEvents.workerId, id))
-      .orderBy(workerStatusEvents.changedAt);
+    const employmentHistory = await db
+      .select({
+        id: employmentEvents.id,
+        eventType: employmentEvents.eventType,
+        eventDate: employmentEvents.eventDate,
+        newRoleId: employmentEvents.newRoleId,
+        newRoleName: jobRoles.name,
+        note: employmentEvents.note,
+      })
+      .from(employmentEvents)
+      .leftJoin(jobRoles, eq(jobRoles.id, employmentEvents.newRoleId))
+      .where(eq(employmentEvents.workerId, id))
+      .orderBy(employmentEvents.eventDate);
 
     let manager: { id: string; name: string } | null = null;
     if (worker[0].managerId) {
@@ -122,13 +131,24 @@ export async function GET(
       jurisdiction = jurisdictionRow ?? null;
     }
 
+    let role: { id: string; name: string } | null = null;
+    if (worker[0].roleId) {
+      const [roleRow] = await db
+        .select({ id: jobRoles.id, name: jobRoles.name })
+        .from(jobRoles)
+        .where(eq(jobRoles.id, worker[0].roleId))
+        .limit(1);
+      role = roleRow ?? null;
+    }
+
     return NextResponse.json({
       ...worker[0],
       telegramUserId: worker[0].telegramUserId?.toString() ?? null,
       teams: workerTeamsList,
       manager,
       jurisdiction,
-      statusHistory,
+      role,
+      employmentHistory,
       courses: courseProgress.map((r) => ({
         assignmentId: r.assignmentId,
         progressId: r.progressId ?? null,
@@ -163,11 +183,13 @@ export async function PATCH(
 
     const { id } = await params;
     const [ownedWorker] = await db
-      .select({ id: workers.id, jurisdictionId: workers.jurisdictionId })
+      .select({ id: workers.id, jurisdictionId: workers.jurisdictionId, roleId: workers.roleId })
       .from(workers)
       .where(and(eq(workers.id, id), eq(workers.organizationId, orgId)))
       .limit(1);
     if (!ownedWorker) return new NextResponse("Not found", { status: 404 });
+
+    const { userId: actingAdminId } = await auth();
 
     // jurisdiction_admin can only edit workers already in their own
     // jurisdiction, and can never move a worker into a different one —
@@ -263,6 +285,28 @@ export async function PATCH(
       }
     }
 
+    let roleChanged = false;
+    let newRoleId: string | null = null;
+    if ("roleId" in body) {
+      if (body.roleId === null) {
+        roleChanged = ownedWorker.roleId !== null;
+        newRoleId = null;
+        updates.roleId = null;
+      } else if (typeof body.roleId === "string") {
+        const [jobRole] = await db
+          .select({ id: jobRoles.id })
+          .from(jobRoles)
+          .where(and(eq(jobRoles.id, body.roleId), eq(jobRoles.organizationId, orgId)))
+          .limit(1);
+        if (!jobRole) {
+          return NextResponse.json({ error: "Selected role was not found." }, { status: 400 });
+        }
+        roleChanged = ownedWorker.roleId !== jobRole.id;
+        newRoleId = jobRole.id;
+        updates.roleId = jobRole.id;
+      }
+    }
+
     let statusChanged = false;
     let statusChangedAt: Date | null = null;
     if (typeof body.active === "boolean") {
@@ -307,10 +351,21 @@ export async function PATCH(
     }
 
     if (statusChanged && statusChangedAt) {
-      await db.insert(workerStatusEvents).values({
+      await db.insert(employmentEvents).values({
         workerId: id,
-        status: body.active ? "active" : "deactivated",
-        changedAt: statusChangedAt,
+        eventType: body.active ? "reactivated" : "deactivated",
+        eventDate: statusChangedAt,
+        createdByAdminId: actingAdminId ?? null,
+      });
+    }
+
+    if (roleChanged) {
+      await db.insert(employmentEvents).values({
+        workerId: id,
+        eventType: "role_changed",
+        eventDate: new Date(),
+        newRoleId,
+        createdByAdminId: actingAdminId ?? null,
       });
     }
 

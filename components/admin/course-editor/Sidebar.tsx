@@ -21,6 +21,7 @@ import {
   Copy,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useCourseEditor } from "./CourseEditorContext";
 import { useCloneCourseMutation } from "@/hooks/admin/courses/mutations";
 
@@ -84,6 +85,8 @@ export default function Sidebar() {
     importing,
     toggleAutoAssignNewWorkers,
     jurisdictionsList,
+    jobRolesList,
+    toggleCourseRole,
     setAddendumDialogOpen,
     setAddendumJurisdictionIds,
   } = useCourseEditor();
@@ -204,6 +207,33 @@ export default function Sidebar() {
           )}
         </div>
 
+        {jobRolesList.length > 0 && (
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block px-1">
+              Roles {(course?.roleIds.length ?? 0) === 0 && <span className="text-red-400">(required to publish)</span>}
+            </label>
+            <div className="space-y-1.5 max-h-32 overflow-y-auto">
+              {jobRolesList.map((r) => {
+                const checked = course?.roleIds.includes(r.id) ?? false;
+                return (
+                  <label
+                    key={r.id}
+                    className={`flex items-center gap-2 rounded-xl border px-3 py-2 cursor-pointer transition-colors ${
+                      checked ? "border-[#C8D400]/50 bg-[#C8D400]/10" : "border-border hover:bg-muted/30"
+                    }`}
+                  >
+                    <Checkbox
+                      checked={checked}
+                      onCheckedChange={(v) => toggleCourseRole(r.id, v === true)}
+                    />
+                    <span className="text-xs font-medium text-foreground">{r.name}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         <button
           onClick={toggleAutoAssignNewWorkers}
           className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl border border-border bg-background/50 hover:bg-muted/50 transition-colors text-xs text-foreground"
@@ -225,7 +255,7 @@ export default function Sidebar() {
         {status === "draft" && (
           <Button
             onClick={handlePublish}
-            disabled={publishing || !hasSlides || saveStatus === "saving"}
+            disabled={publishing || !hasSlides || (course?.roleIds.length ?? 0) === 0 || saveStatus === "saving"}
             className="w-full bg-[#C8D400] hover:bg-[#B6C200] text-[#1B2A6B] font-extrabold border-0 shadow-lg shadow-[#C8D400]/10 cursor-pointer h-10 transition-transform duration-200 hover:scale-[1.02] gap-1.5 flex items-center justify-center text-xs rounded-xl"
           >
             {publishing ? (

@@ -101,6 +101,7 @@ export const workers = pgTable("workers", {
   phone: text("phone"),
   managerId: uuid("manager_id").references((): AnyPgColumn => workers.id, { onDelete: "set null" }),
   jurisdictionId: uuid("jurisdiction_id").references(() => jurisdictions.id),
+  roleId: uuid("role_id").references((): AnyPgColumn => jobRoles.id, { onDelete: "set null" }),
   active: boolean("active").default(true).notNull(),
   deactivatedAt: timestamp("deactivated_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -108,11 +109,38 @@ export const workers = pgTable("workers", {
 });
 
 // 3.05. WORKER_STATUS_EVENTS TABLE (audit trail of active/deactivated transitions)
+// Superseded by EMPLOYMENT_EVENTS below — no longer read or written by app code.
+// Kept here (and in the DB) until a follow-up migration drops it once the
+// employment_events backfill is confirmed trustworthy in production.
 export const workerStatusEvents = pgTable("worker_status_events", {
   id: uuid("id").defaultRandom().primaryKey(),
   workerId: uuid("worker_id").notNull().references(() => workers.id, { onDelete: "cascade" }),
   status: text("status").$type<"active" | "deactivated">().notNull(),
   changedAt: timestamp("changed_at").defaultNow().notNull(),
+});
+
+// 3.06. JOB_ROLES TABLE (organization-level role reference data)
+export const jobRoles = pgTable("job_roles", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizationId: uuid("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  uniqueOrgRoleName: unique().on(table.organizationId, table.name),
+}));
+
+// 3.07. EMPLOYMENT_EVENTS TABLE (append-only audit log; a worker's state as of
+// date X is reconstructed as the latest row with eventDate <= X)
+export const employmentEvents = pgTable("employment_events", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  workerId: uuid("worker_id").notNull().references(() => workers.id, { onDelete: "cascade" }),
+  eventType: text("event_type").$type<"hired" | "role_changed" | "deactivated" | "reactivated">().notNull(),
+  eventDate: timestamp("event_date").notNull(),
+  newRoleId: uuid("new_role_id").references(() => jobRoles.id, { onDelete: "set null" }),
+  createdByAdminId: text("created_by_admin_id"), // Clerk user id; not a FK, same convention as admin_roles.clerk_user_id. Null for backfilled/system-generated rows.
+  note: text("note"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 // 3.1. TEAMS TABLE
@@ -144,6 +172,17 @@ export const courseAutoAssignTeams = pgTable("course_auto_assign_teams", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => ({
   uniqueCourseTeam: unique().on(table.courseId, table.teamId),
+}));
+
+// 3.4. COURSE_ROLES TABLE (many-to-many; supersedes the earlier single
+// nullable courses.role_id — a course can target more than one job role)
+export const courseRoles = pgTable("course_roles", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  courseId: uuid("course_id").notNull().references(() => courses.id, { onDelete: "cascade" }),
+  roleId: uuid("role_id").notNull().references(() => jobRoles.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  uniqueCourseRole: unique().on(table.courseId, table.roleId),
 }));
 
 // 3.5. INVITES TABLE

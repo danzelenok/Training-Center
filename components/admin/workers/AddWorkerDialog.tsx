@@ -18,9 +18,10 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { formatPhoneInput } from "@/lib/phone";
-import { workerDisplayName, type TeamRef, type Worker, type JurisdictionRef } from "@/hooks/admin/workers/types";
+import { workerDisplayName, type TeamRef, type Worker, type JurisdictionRef, type JobRoleRef } from "@/hooks/admin/workers/types";
 
 const NO_MANAGER = "__none__";
+const NO_ROLE = "__none__";
 
 interface AddWorkerDialogProps {
   open: boolean;
@@ -45,6 +46,9 @@ interface AddWorkerDialogProps {
   // app/api/admin/workers/route.ts), this just keeps the UI honest instead
   // of offering a choice that silently doesn't do what it says.
   lockedJurisdiction?: JurisdictionRef | null;
+  jobRoles: JobRoleRef[];
+  roleId: string | null;
+  onRoleChange: (roleId: string | null) => void;
 }
 
 export function AddWorkerDialog({
@@ -66,6 +70,9 @@ export function AddWorkerDialog({
   jurisdictionId,
   onJurisdictionChange,
   lockedJurisdiction,
+  jobRoles,
+  roleId,
+  onRoleChange,
 }: AddWorkerDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -127,6 +134,30 @@ export function AddWorkerDialog({
                 </SelectContent>
               </Select>
             </div>
+
+            {jobRoles.length > 0 && (
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">
+                  Role
+                </label>
+                <Select
+                  value={roleId ?? NO_ROLE}
+                  onValueChange={(v) => onRoleChange(v === NO_ROLE ? null : v)}
+                >
+                  <SelectTrigger className="w-full bg-background border-border rounded-xl h-10">
+                    <SelectValue placeholder="No role" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-card border border-border text-foreground">
+                    <SelectItem value={NO_ROLE}>No role</SelectItem>
+                    {jobRoles.map((r) => (
+                      <SelectItem key={r.id} value={r.id}>
+                        {r.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             {lockedJurisdiction ? (
               <div className="space-y-1.5">

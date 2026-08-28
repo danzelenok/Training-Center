@@ -5,7 +5,7 @@ import { UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast, Toaster } from "sonner";
 import { normalizePhone } from "@/lib/phone";
-import { useWorkersQuery, useCoursesQuery, useTeamsQuery, useJurisdictionsQuery } from "@/hooks/admin/workers/queries";
+import { useWorkersQuery, useCoursesQuery, useTeamsQuery, useJurisdictionsQuery, useJobRolesQuery } from "@/hooks/admin/workers/queries";
 import { useMeQuery } from "@/hooks/admin/useMeQuery";
 import {
   useCreateWorkerMutation,
@@ -31,12 +31,14 @@ export default function WorkersPage() {
   const coursesQuery = useCoursesQuery();
   const teamsQuery = useTeamsQuery();
   const jurisdictionsQuery = useJurisdictionsQuery();
+  const jobRolesQuery = useJobRolesQuery();
   const meQuery = useMeQuery();
   const me = meQuery.data;
   const workersList = workersQuery.data?.workers ?? [];
   const publishedCourses = coursesQuery.data ?? [];
   const teamsList = teamsQuery.data ?? [];
   const jurisdictionsList = jurisdictionsQuery.data ?? [];
+  const jobRolesList = jobRolesQuery.data ?? [];
   const lockedJurisdiction = me?.role === "jurisdiction_admin" ? me.jurisdiction ?? null : null;
 
   const createWorker = useCreateWorkerMutation();
@@ -52,6 +54,7 @@ export default function WorkersPage() {
   const [newWorkerTeamIds, setNewWorkerTeamIds] = useState<string[]>([]);
   const [newWorkerManagerId, setNewWorkerManagerId] = useState<string | null>(null);
   const [newWorkerJurisdictionId, setNewWorkerJurisdictionId] = useState<string | null>(null);
+  const [newWorkerRoleId, setNewWorkerRoleId] = useState<string | null>(null);
 
   // Possible-duplicate warning shown before creating a new worker
   const [duplicateCandidate, setDuplicateCandidate] = useState<Worker | null>(null);
@@ -113,6 +116,7 @@ export default function WorkersPage() {
         // own jurisdiction), but send the real value rather than whatever's
         // left in state from a picker they can't see.
         jurisdictionId: lockedJurisdiction ? lockedJurisdiction.id : newWorkerJurisdictionId,
+        roleId: newWorkerRoleId,
       },
       {
         onSuccess: (data) => {
@@ -123,6 +127,7 @@ export default function WorkersPage() {
           setNewWorkerTeamIds([]);
           setNewWorkerManagerId(null);
           setNewWorkerJurisdictionId(null);
+          setNewWorkerRoleId(null);
         },
       }
     );
@@ -165,6 +170,7 @@ export default function WorkersPage() {
     setNewWorkerTeamIds([]);
     setNewWorkerManagerId(null);
     setNewWorkerJurisdictionId(null);
+    setNewWorkerRoleId(null);
   };
 
   const handleViewDuplicate = () => {
@@ -286,6 +292,9 @@ export default function WorkersPage() {
         jurisdictionId={newWorkerJurisdictionId}
         onJurisdictionChange={setNewWorkerJurisdictionId}
         lockedJurisdiction={lockedJurisdiction}
+        jobRoles={jobRolesList}
+        roleId={newWorkerRoleId}
+        onRoleChange={setNewWorkerRoleId}
       />
 
       <DuplicateWorkerDialog

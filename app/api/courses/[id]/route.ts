@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { courses, slides } from "@/db/schema";
+import { courses, slides, jobRoles, courseRoles } from "@/db/schema";
 import { requireOrgId } from "@/lib/org";
 import { roleOrUnauthorized, canWriteCourse } from "@/lib/adminRoles";
 import { eq, and, asc, sql, inArray } from "drizzle-orm";
@@ -33,11 +33,17 @@ export async function GET(
       .where(eq(slides.courseId, id))
       .orderBy(asc(slides.order));
 
+    const courseRoleRows = await db
+      .select({ roleId: courseRoles.roleId })
+      .from(courseRoles)
+      .where(eq(courseRoles.courseId, id));
+
     const responseData = {
       ...course,
       telegramMessageId: course.telegramMessageId ? course.telegramMessageId.toString() : null,
       telegramGroupId: course.telegramGroupId ? course.telegramGroupId.toString() : null,
       slides: courseSlides,
+      roleIds: courseRoleRows.map((r) => r.roleId),
     };
 
     return NextResponse.json(responseData);
@@ -75,7 +81,17 @@ export async function PATCH(
     }
 
     const body = await req.json();
-    const { title, description, themeType, themeValue, autoAssignNewWorkers, slides: updatedSlides, generationStatus } = body;
+    const { title, description, themeType, themeValue, autoAssignNewWorkers, slides: updatedSlides, generationStatus, roleIds: requestedRoleIds } = body;
+
+    // Write-time invariant: only ever link roles that belong to this organization.
+    const roleIds: string[] | null = Array.isArray(requestedRoleIds)
+      ? (
+          await db
+            .select({ id: jobRoles.id })
+            .from(jobRoles)
+            .where(and(inArray(jobRoles.id, requestedRoleIds), eq(jobRoles.organizationId, orgId)))
+        ).map((r) => r.id)
+      : null;
 
     // 1. Update Course details
     const [updatedCourse] = await db
@@ -94,6 +110,32 @@ export async function PATCH(
 
     if (!updatedCourse) {
       return new NextResponse("Course not found or could not be updated", { status: 404 });
+    }
+
+    // 1.5. Reconcile course roles (if provided) — same add/remove-diff pattern
+    // as worker_teams reconciliation in app/api/workers/[id]/route.ts.
+    if (roleIds !== null) {
+      const existingRoles = await db
+        .select({ roleId: courseRoles.roleId })
+        .from(courseRoles)
+        .where(eq(courseRoles.courseId, id));
+      const existingRoleIds = new Set(existingRoles.map((r) => r.roleId));
+
+      const toAdd = roleIds.filter((rid) => !existingRoleIds.has(rid));
+      const toRemove = [...existingRoleIds].filter((rid) => !roleIds.includes(rid));
+
+      if (toRemove.length > 0) {
+        await db
+          .delete(courseRoles)
+          .where(and(eq(courseRoles.courseId, id), inArray(courseRoles.roleId, toRemove)));
+      }
+
+      if (toAdd.length > 0) {
+        await db
+          .insert(courseRoles)
+          .values(toAdd.map((roleId) => ({ courseId: id, roleId })))
+          .onConflictDoNothing({ target: [courseRoles.courseId, courseRoles.roleId] });
+      }
     }
 
     // 2. Reconcile Slides (if provided)
@@ -219,9 +261,15 @@ export async function PATCH(
       .where(eq(slides.courseId, id))
       .orderBy(asc(slides.order));
 
+    const finalRoleRows = await db
+      .select({ roleId: courseRoles.roleId })
+      .from(courseRoles)
+      .where(eq(courseRoles.courseId, id));
+
     const result = {
       ...updatedCourse,
       slides: finalSlides,
+      roleIds: finalRoleRows.map((r) => r.roleId),
     };
 
     return NextResponse.json({

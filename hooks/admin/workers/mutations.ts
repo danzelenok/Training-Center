@@ -20,6 +20,7 @@ interface CreateWorkerVars {
   teamIds: string[];
   managerId: string | null;
   jurisdictionId: string | null;
+  roleId: string | null;
 }
 
 interface CreateWorkerResult {
@@ -30,11 +31,11 @@ interface CreateWorkerResult {
 export function useCreateWorkerMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ name, phone, teamIds, managerId, jurisdictionId }: CreateWorkerVars): Promise<CreateWorkerResult> => {
+    mutationFn: async ({ name, phone, teamIds, managerId, jurisdictionId, roleId }: CreateWorkerVars): Promise<CreateWorkerResult> => {
       const res = await fetch("/api/admin/workers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, phone, teamIds, managerId, jurisdictionId }),
+        body: JSON.stringify({ name, phone, teamIds, managerId, jurisdictionId, roleId }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to create worker");
@@ -360,6 +361,36 @@ export function useUpdateWorkerJurisdictionMutation() {
     },
     onError: (err: Error) => {
       toast.error(err.message || "Could not update state");
+    },
+  });
+}
+
+// --- Update worker's role ---
+
+interface UpdateWorkerRoleVars {
+  workerId: string;
+  roleId: string | null;
+}
+
+export function useUpdateWorkerRoleMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ workerId, roleId }: UpdateWorkerRoleVars) => {
+      const res = await fetch(`/api/workers/${workerId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ roleId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to update role");
+      return data;
+    },
+    onSuccess: (_data, { workerId }) => {
+      invalidateWorkerAndList(queryClient, workerId);
+      toast.success("Role updated");
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || "Could not update role");
     },
   });
 }

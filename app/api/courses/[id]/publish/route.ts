@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { courses, slides, workers, teams, assignments, workerTeams, courseAutoAssignTeams } from "@/db/schema";
+import { courses, slides, workers, teams, assignments, workerTeams, courseAutoAssignTeams, courseRoles } from "@/db/schema";
 import { requireOrgId } from "@/lib/org";
 import { roleOrUnauthorized, canWriteCourse } from "@/lib/adminRoles";
 import { and, eq, inArray, sql } from "drizzle-orm";
@@ -70,6 +70,21 @@ export async function POST(
     if (slideCount === 0) {
       return new NextResponse(
         JSON.stringify({ error: "Cannot publish a course with no slides. Please add slides first." }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    // A course must target at least one job role before it can go live —
+    // there's no DB-level way to express "at least one row in course_roles
+    // per course" (it's a many-to-many join table), so this is enforced here.
+    const [roleCountResult] = await db
+      .select({ count: sql<number>`cast(count(${courseRoles.id}) as int)` })
+      .from(courseRoles)
+      .where(eq(courseRoles.courseId, id));
+
+    if ((roleCountResult?.count || 0) === 0) {
+      return new NextResponse(
+        JSON.stringify({ error: "Cannot publish a course with no role assigned. Please select at least one role first." }),
         { status: 400, headers: { "Content-Type": "application/json" } }
       );
     }

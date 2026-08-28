@@ -14,6 +14,11 @@ export interface ManagerRef {
   name: string;
 }
 
+export interface JobRoleRef {
+  id: string;
+  name: string;
+}
+
 export interface Worker {
   id: string;
   telegramUserId: string | null;
@@ -23,6 +28,7 @@ export interface Worker {
   displayName: string | null;
   phone?: string | null;
   jurisdictionId: string | null;
+  roleId: string | null;
   active: boolean;
   deactivatedAt: string | null;
   createdAt: string;
@@ -61,18 +67,22 @@ export interface WorkerPollResponse {
   question: string | null;
 }
 
-export interface WorkerStatusEvent {
+export interface EmploymentEvent {
   id: string;
-  status: "active" | "deactivated";
-  changedAt: string;
+  eventType: "hired" | "role_changed" | "deactivated" | "reactivated";
+  eventDate: string;
+  newRoleId: string | null;
+  newRoleName: string | null;
+  note: string | null;
 }
 
 export interface WorkerDetail extends Worker {
   manager: ManagerRef | null;
   jurisdiction: JurisdictionRef | null;
+  role: JobRoleRef | null;
   courses: WorkerCourseProgress[];
   pollResponses: WorkerPollResponse[];
-  statusHistory: WorkerStatusEvent[];
+  employmentHistory: EmploymentEvent[];
 }
 
 export interface WorkersListResponse {
@@ -107,4 +117,8 @@ export const teamsKeys = {
 
 export const jurisdictionsKeys = {
   list: () => ["jurisdictions"] as const,
+};
+
+export const jobRolesKeys = {
+  list: () => ["job-roles"] as const,
 };

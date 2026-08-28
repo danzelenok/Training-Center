@@ -19,8 +19,8 @@ import {
   usePPTXUploadMutation,
   usePublishCourseMutation,
 } from "@/hooks/admin/course-editor/mutations";
-import { useWorkersQuery, useTeamsQuery, useJurisdictionsQuery } from "@/hooks/admin/workers/queries";
-import type { TeamRef, JurisdictionRef } from "@/hooks/admin/workers/types";
+import { useWorkersQuery, useTeamsQuery, useJurisdictionsQuery, useJobRolesQuery } from "@/hooks/admin/workers/queries";
+import type { TeamRef, JurisdictionRef, JobRoleRef } from "@/hooks/admin/workers/types";
 import { useMeQuery } from "@/hooks/admin/useMeQuery";
 
 export type { Course, MediaLibraryFile };
@@ -29,6 +29,7 @@ interface CourseEditorContextType {
   course: Course | null;
   slidesList: Slide[];
   jurisdictionsList: JurisdictionRef[];
+  jobRolesList: JobRoleRef[];
   // True once we know (me query resolved) this course belongs to another
   // jurisdiction than the caller's own — same check the courses list page
   // uses to hide write actions. Undefined/false while `me`/`course` are
@@ -104,6 +105,7 @@ interface CourseEditorContextType {
   handleSelectFromLibrary: (file: MediaLibraryFile) => void;
   updateCourseMeta: (field: "title" | "description", value: string) => void;
   toggleAutoAssignNewWorkers: () => void;
+  toggleCourseRole: (roleId: string, checked: boolean) => void;
   addSlide: (type: Slide["type"]) => void;
   deleteSlide: (indexToDelete: number) => void;
   duplicateSlide: (indexToDuplicate: number, jurisdictionId?: string | null) => void;
@@ -189,6 +191,7 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
         themeType: currentCourse.themeType || "preset",
         themeValue: currentCourse.themeValue || "linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)",
         autoAssignNewWorkers: currentCourse.autoAssignNewWorkers,
+        roleIds: currentCourse.roleIds,
         slides: slidesListRef.current,
       },
       {
@@ -323,6 +326,8 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
   const teamsQuery = useTeamsQuery();
   const jurisdictionsQuery = useJurisdictionsQuery();
   const jurisdictionsList = jurisdictionsQuery.data ?? [];
+  const jobRolesQuery = useJobRolesQuery();
+  const jobRolesList = jobRolesQuery.data ?? [];
 
   const publishWorkersList = useMemo(
     () =>
@@ -554,6 +559,18 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
   const toggleAutoAssignNewWorkers = () => {
     if (!course) return;
     setCourse({ ...course, autoAssignNewWorkers: !course.autoAssignNewWorkers });
+  };
+
+  // roleIds isn't in the debounced-effect's dependency list (title/description/
+  // theme only), so trigger the save explicitly rather than relying on that
+  // effect to notice the change.
+  const toggleCourseRole = (roleId: string, checked: boolean) => {
+    if (!course) return;
+    const roleIds = checked
+      ? [...course.roleIds, roleId]
+      : course.roleIds.filter((id) => id !== roleId);
+    setCourse({ ...course, roleIds });
+    triggerAutoSave();
   };
 
   // Add slide manually
@@ -926,6 +943,7 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
         course,
         slidesList,
         jurisdictionsList,
+        jobRolesList,
         isReadOnly: !!isReadOnly,
         loading,
         saveStatus,
@@ -980,6 +998,7 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
         handleSelectFromLibrary,
         updateCourseMeta,
         toggleAutoAssignNewWorkers,
+        toggleCourseRole,
         addSlide,
         deleteSlide,
         duplicateSlide,

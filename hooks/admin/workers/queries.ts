@@ -4,10 +4,12 @@ import {
   coursesKeys,
   teamsKeys,
   jurisdictionsKeys,
+  jobRolesKeys,
   type WorkersListResponse,
   type Course,
   type TeamRef,
   type JurisdictionRef,
+  type JobRoleRef,
   type WorkerDetail,
 } from "./types";
 
@@ -67,6 +69,19 @@ export function useJurisdictionsQuery() {
   return useQuery({
     queryKey: jurisdictionsKeys.list(),
     queryFn: fetchJurisdictions,
+  });
+}
+
+async function fetchJobRoles(): Promise<JobRoleRef[]> {
+  const res = await fetch("/api/job-roles");
+  if (!res.ok) throw new Error("Failed to fetch job roles");
+  return res.json();
+}
+
+export function useJobRolesQuery() {
+  return useQuery({
+    queryKey: jobRolesKeys.list(),
+    queryFn: fetchJobRoles,
   });
 }
 

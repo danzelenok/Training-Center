@@ -40,16 +40,33 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { formatPhoneDisplay, formatPhoneInput } from "@/lib/phone";
-import { useWorkerDetailQuery } from "@/hooks/admin/workers/queries";
+import { useWorkerDetailQuery, useJobRolesQuery } from "@/hooks/admin/workers/queries";
 import { useMeQuery } from "@/hooks/admin/useMeQuery";
 import {
   useSaveWorkerEditMutation,
   useRemoveCourseMutation,
   useMarkCompletedMutation,
   useDeleteWorkerMutation,
+  useUpdateWorkerRoleMutation,
 } from "@/hooks/admin/workers/mutations";
 import { workerDisplayName, type Worker, type Course, type WorkerDetail } from "@/hooks/admin/workers/types";
 import { STATUS_CONFIG } from "./status-config";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+const NO_ROLE = "__none__";
+
+const EMPLOYMENT_EVENT_LABELS: Record<string, string> = {
+  hired: "Hired",
+  role_changed: "Role Changed",
+  deactivated: "Deactivated",
+  reactivated: "Reactivated",
+};
 
 function escapeHtml(value: string) {
   return value
@@ -68,16 +85,13 @@ function printWorkerReport(worker: WorkerDetail) {
     : null;
   const completedCount = worker.courses.filter((c) => c.status === "completed").length;
 
-  const historyRows = [
-    `<tr><td>Hired</td><td>${created}</td></tr>`,
-    ...worker.statusHistory.map(
-      (e) =>
-        `<tr><td>${e.status === "deactivated" ? "Deactivated" : "Reactivated"}</td><td>${format(
-          new Date(e.changedAt),
-          "dd MMM yyyy"
-        )}</td></tr>`
-    ),
-  ].join("");
+  const historyRows = worker.employmentHistory
+    .map((e) => {
+      const label = EMPLOYMENT_EVENT_LABELS[e.eventType] ?? e.eventType;
+      const detail = e.newRoleName ? ` (${escapeHtml(e.newRoleName)})` : "";
+      return `<tr><td>${label}${detail}</td><td>${format(new Date(e.eventDate), "dd MMM yyyy")}</td></tr>`;
+    })
+    .join("");
 
   const rows = worker.courses
     .map((c) => {
@@ -202,11 +216,14 @@ export function WorkerDetailSheet({
   const [editingWorker, setEditingWorker] = useState(false);
   const [editName, setEditName] = useState("");
   const [editPhone, setEditPhone] = useState("");
+  const [editingRole, setEditingRole] = useState(false);
 
   const saveEdit = useSaveWorkerEditMutation();
   const removeCourse = useRemoveCourseMutation();
   const markCompleted = useMarkCompletedMutation();
   const deleteWorker = useDeleteWorkerMutation();
+  const updateRole = useUpdateWorkerRoleMutation();
+  const { data: jobRoles = [] } = useJobRolesQuery();
 
   const startEditingWorker = () => {
     if (!worker) return;
@@ -235,6 +252,14 @@ export function WorkerDetailSheet({
   const handleMarkCompleted = (progressId: string | null, assignmentId: string) => {
     if (!worker) return;
     markCompleted.mutate({ progressId, assignmentId, workerId: worker.id });
+  };
+
+  const handleRoleChange = (roleId: string) => {
+    if (!worker) return;
+    updateRole.mutate(
+      { workerId: worker.id, roleId: roleId === NO_ROLE ? null : roleId },
+      { onSuccess: () => setEditingRole(false) }
+    );
   };
 
   const handleDeleteWorker = () => {
@@ -458,6 +483,54 @@ export function WorkerDetailSheet({
               ) : (
                 <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
                   No manager assigned yet.
+                </div>
+              )}
+            </div>
+
+            {/* Job role */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                  <UserCog className="h-3.5 w-3.5" />
+                  Role
+                </h3>
+                {canEdit && !editingRole && (
+                  <button
+                    onClick={() => setEditingRole(true)}
+                    className="p-1 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                    title="Edit role"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+              {editingRole ? (
+                <Select
+                  value={worker.role?.id ?? NO_ROLE}
+                  onValueChange={handleRoleChange}
+                  open
+                  onOpenChange={(open) => !open && setEditingRole(false)}
+                >
+                  <SelectTrigger className="w-full bg-background border-border rounded-xl h-10">
+                    <SelectValue placeholder="No role" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-card border border-border text-foreground">
+                    <SelectItem value={NO_ROLE}>No role</SelectItem>
+                    {jobRoles.map((r) => (
+                      <SelectItem key={r.id} value={r.id}>
+                        {r.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : worker.role ? (
+                <span className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-muted/30 px-3 py-1.5 text-xs font-medium text-foreground">
+                  <UserCog className="h-3 w-3 text-muted-foreground" />
+                  {worker.role.name}
+                </span>
+              ) : (
+                <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+                  No role assigned yet.
                 </div>
               )}
             </div>

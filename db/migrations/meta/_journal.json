@@ -162,6 +162,20 @@
       "when": 1787856947450,
       "tag": "0022_add_course_source_of_clone",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1787944869458,
+      "tag": "0023_jazzy_catseye",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1787949041944,
+      "tag": "0024_yummy_darwin",
+      "breakpoints": true
     }
   ]
 }

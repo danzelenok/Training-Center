@@ -10,6 +10,7 @@ import {
   BookOpen,
   Users,
   Users2,
+  Briefcase,
   FileBarChart2,
   FolderOpen,
   Menu,
@@ -26,6 +27,7 @@ const baseNavigation = [
   { name: "Media Library", href: "/admin/media", icon: FolderOpen },
   { name: "Workers", href: "/admin/workers", icon: Users },
   { name: "Teams", href: "/admin/teams", icon: Users2 },
+  { name: "Roles", href: "/admin/roles", icon: Briefcase },
   { name: "Reports", href: "/admin/reports", icon: FileBarChart2 },
 ];
 // Team management (invite/remove admins, assign roles) is org_admin-only —

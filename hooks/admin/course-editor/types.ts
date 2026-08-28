@@ -16,6 +16,7 @@ export interface Course {
   description: string;
   status: "draft" | "published";
   ownerJurisdictionId: string;
+  roleIds: string[];
   autoAssignNewWorkers: boolean;
   telegramMessageId: string | null;
   telegramGroupId: string | null;

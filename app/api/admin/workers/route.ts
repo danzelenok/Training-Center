@@ -1,7 +1,8 @@
 import { db } from "@/db";
-import { workers, invites, courses, teams, assignments, workerTeams, jurisdictions, organizationJurisdictions } from "@/db/schema";
+import { workers, invites, courses, teams, assignments, workerTeams, jurisdictions, organizationJurisdictions, jobRoles, employmentEvents } from "@/db/schema";
 import { requireOrgId } from "@/lib/org";
 import { roleOrUnauthorized } from "@/lib/adminRoles";
+import { auth } from "@clerk/nextjs/server";
 import { and, eq, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import crypto from "crypto";
@@ -133,6 +134,22 @@ export async function POST(req: Request) {
       jurisdictionId = jurisdiction.id;
     }
 
+    let roleId: string | null = null;
+    if (typeof body.roleId === "string" && body.roleId) {
+      const [jobRole] = await db
+        .select({ id: jobRoles.id })
+        .from(jobRoles)
+        .where(and(eq(jobRoles.id, body.roleId), eq(jobRoles.organizationId, orgId)))
+        .limit(1);
+      if (!jobRole) {
+        return new NextResponse(
+          JSON.stringify({ error: "Selected role was not found." }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      roleId = jobRole.id;
+    }
+
     // 1. Create worker
     const [worker] = await db
       .insert(workers)
@@ -145,8 +162,18 @@ export async function POST(req: Request) {
         phone: phone || null,
         managerId,
         jurisdictionId,
+        roleId,
       })
       .returning();
+
+    const { userId: actingAdminId } = await auth();
+    await db.insert(employmentEvents).values({
+      workerId: worker.id,
+      eventType: "hired",
+      eventDate: worker.createdAt,
+      newRoleId: roleId,
+      createdByAdminId: actingAdminId ?? null,
+    });
 
     // 1.5. Assign to teams, and auto-assign any courses those teams grant new members
     if (teamIds.length > 0) {

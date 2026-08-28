@@ -8,6 +8,7 @@ interface AutosavePayload {
   themeType: string;
   themeValue: string;
   autoAssignNewWorkers: boolean;
+  roleIds: string[];
   slides: Slide[];
 }
 
