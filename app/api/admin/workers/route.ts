@@ -1,12 +1,11 @@
 import { db } from "@/db";
-import { workers, invites, courses, teams, assignments, workerTeams, jurisdictions, organizationJurisdictions, jobRoles, employmentEvents } from "@/db/schema";
+import { workers, invites, courses, assignments, jurisdictions, organizationJurisdictions, jobRoles, employmentEvents } from "@/db/schema";
 import { requireOrgId } from "@/lib/org";
 import { roleOrUnauthorized } from "@/lib/adminRoles";
 import { auth } from "@clerk/nextjs/server";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import crypto from "crypto";
-import { autoAssignTeamCoursesForNewMemberships } from "@/lib/teamAutoAssign";
 import { normalizePhone } from "@/lib/phone";
 
 export const dynamic = "force-dynamic";
@@ -74,16 +73,6 @@ export async function POST(req: Request) {
     const nameParts = name.split(/\s+/);
     const firstName = nameParts[0] || null;
     const lastName = nameParts.length > 1 ? nameParts.slice(1).join(" ") : null;
-    const requestedTeamIds: string[] = Array.isArray(body.teamIds) ? body.teamIds : [];
-    // Write-time invariant: only ever link teams that belong to this organization.
-    const teamIds = requestedTeamIds.length
-      ? (
-          await db
-            .select({ id: teams.id })
-            .from(teams)
-            .where(and(inArray(teams.id, requestedTeamIds), eq(teams.organizationId, orgId)))
-        ).map((t) => t.id)
-      : [];
 
     let managerId: string | null = null;
     if (typeof body.managerId === "string" && body.managerId) {
@@ -174,18 +163,6 @@ export async function POST(req: Request) {
       newRoleId: roleId,
       createdByAdminId: actingAdminId ?? null,
     });
-
-    // 1.5. Assign to teams, and auto-assign any courses those teams grant new members
-    if (teamIds.length > 0) {
-      await db
-        .insert(workerTeams)
-        .values(teamIds.map((teamId) => ({ workerId: worker.id, teamId })))
-        .onConflictDoNothing({ target: [workerTeams.workerId, workerTeams.teamId] });
-
-      await autoAssignTeamCoursesForNewMemberships(
-        teamIds.map((teamId) => ({ workerId: worker.id, teamId }))
-      );
-    }
 
     // 2. Auto-assign published courses that have autoAssignNewWorkers = true,
     // but only ones published within a week of this worker's hire date.

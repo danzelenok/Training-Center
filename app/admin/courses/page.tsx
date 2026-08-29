@@ -47,7 +47,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useCoursesQuery, useJurisdictionsQuery } from "@/hooks/admin/workers/queries";
+import { useCoursesQuery, useJurisdictionsQuery, useJobRolesQuery } from "@/hooks/admin/workers/queries";
+import { RoleMultiSelect } from "@/components/admin/RoleMultiSelect";
 import { useMeQuery } from "@/hooks/admin/useMeQuery";
 import {
   useCreateCourseMutation,
@@ -64,6 +65,7 @@ interface Course {
   description: string;
   status: "draft" | "published";
   ownerJurisdictionId: string;
+  roleIds: string[];
   telegramMessageId: string | null;
   telegramGroupId: string | null;
   createdAt: string;
@@ -80,6 +82,8 @@ export default function CoursesPage() {
   const me = meQuery.data;
   const jurisdictionsQuery = useJurisdictionsQuery();
   const jurisdictions = jurisdictionsQuery.data ?? [];
+  const jobRolesQuery = useJobRolesQuery();
+  const jobRoles = jobRolesQuery.data ?? [];
 
   const canWrite = (course: Course) =>
     me?.role === "org_admin" || (me?.role === "jurisdiction_admin" && course.ownerJurisdictionId === me.jurisdiction?.id);
@@ -101,17 +105,24 @@ export default function CoursesPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [jurisdictionFilter, setJurisdictionFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "draft" | "published">("all");
+  const [roleFilter, setRoleFilter] = useState<string[]>([]);
 
-  const hasActiveFilters = searchQuery.trim() !== "" || jurisdictionFilter !== "all" || statusFilter !== "all";
+  const hasActiveFilters =
+    searchQuery.trim() !== "" || jurisdictionFilter !== "all" || statusFilter !== "all" || roleFilter.length > 0;
   const clearFilters = () => {
     setSearchQuery("");
     setJurisdictionFilter("all");
     setStatusFilter("all");
+    setRoleFilter([]);
+  };
+  const toggleRoleFilter = (roleId: string, checked: boolean) => {
+    setRoleFilter((prev) => (checked ? [...prev, roleId] : prev.filter((id) => id !== roleId)));
   };
 
   const filteredCourses = courses.filter((course) => {
     if (jurisdictionFilter !== "all" && course.ownerJurisdictionId !== jurisdictionFilter) return false;
     if (statusFilter !== "all" && course.status !== statusFilter) return false;
+    if (roleFilter.length > 0 && !course.roleIds.some((id) => roleFilter.includes(id))) return false;
     const q = searchQuery.trim().toLowerCase();
     if (q && !course.title.toLowerCase().includes(q) && !course.description.toLowerCase().includes(q)) return false;
     return true;
@@ -352,6 +363,16 @@ export default function CoursesPage() {
               <SelectItem value="published">Published</SelectItem>
             </SelectContent>
           </Select>
+          {jobRoles.length > 0 && (
+            <div className="w-full sm:w-[180px]">
+              <RoleMultiSelect
+                roles={jobRoles}
+                selectedIds={roleFilter}
+                onToggle={toggleRoleFilter}
+                placeholder="Any role"
+              />
+            </div>
+          )}
           {hasActiveFilters && (
             <Button
               variant="outline"

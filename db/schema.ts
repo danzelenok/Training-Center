@@ -143,37 +143,6 @@ export const employmentEvents = pgTable("employment_events", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// 3.1. TEAMS TABLE
-export const teams = pgTable("teams", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  organizationId: uuid("organization_id").notNull().references(() => organizations.id),
-  name: text("name").notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-}, (table) => ({
-  uniqueOrgTeamName: unique().on(table.organizationId, table.name),
-}));
-
-// 3.2. WORKER_TEAMS TABLE (many-to-many)
-export const workerTeams = pgTable("worker_teams", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  workerId: uuid("worker_id").notNull().references(() => workers.id, { onDelete: "cascade" }),
-  teamId: uuid("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => ({
-  uniqueWorkerTeam: unique().on(table.workerId, table.teamId),
-}));
-
-// 3.3. COURSE_AUTO_ASSIGN_TEAMS TABLE
-export const courseAutoAssignTeams = pgTable("course_auto_assign_teams", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  courseId: uuid("course_id").notNull().references(() => courses.id, { onDelete: "cascade" }),
-  teamId: uuid("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => ({
-  uniqueCourseTeam: unique().on(table.courseId, table.teamId),
-}));
-
 // 3.4. COURSE_ROLES TABLE (many-to-many; supersedes the earlier single
 // nullable courses.role_id — a course can target more than one job role)
 export const courseRoles = pgTable("course_roles", {

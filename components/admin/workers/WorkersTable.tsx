@@ -84,15 +84,13 @@ export function WorkersTable({
     const firstName = w.firstName?.toLowerCase() || "";
     const lastName = w.lastName?.toLowerCase() || "";
     const phoneDigits = w.phone?.replace(/\D/g, "") || "";
-    const teamNames = w.teams.map((t) => t.name.toLowerCase());
     const query = search.toLowerCase();
     const queryDigits = search.replace(/\D/g, "");
     return (
       displayName.includes(query) ||
       firstName.includes(query) ||
       lastName.includes(query) ||
-      (queryDigits.length > 0 && phoneDigits.includes(queryDigits)) ||
-      teamNames.some((t) => t.includes(query))
+      (queryDigits.length > 0 && phoneDigits.includes(queryDigits))
     );
   });
 
@@ -105,7 +103,7 @@ export function WorkersTable({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               onClear={() => setSearch("")}
-              placeholder="Search worker by name, phone, or team..."
+              placeholder="Search worker by name or phone..."
               className="bg-background border-border text-foreground rounded-xl placeholder-muted-foreground focus-visible:ring-primary h-10 text-xs"
             />
           </div>
@@ -179,7 +177,6 @@ export function WorkersTable({
               <tr className="border-b border-border bg-muted/30 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                 <th className="px-6 py-4">Name</th>
                 <th className="px-6 py-4">Status</th>
-                <th className="px-6 py-4">Teams</th>
                 <th className="px-6 py-4">Created Date</th>
                 <th className="px-6 py-4">Courses Assigned</th>
                 <th className="px-6 py-4 text-right">Actions</th>
@@ -213,22 +210,6 @@ export function WorkersTable({
                         <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-slate-500/10 text-slate-400 border border-slate-500/20 text-xs font-semibold">
                           <Clock className="h-3 w-3" /> Not Connected
                         </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex flex-wrap gap-1 max-w-[160px]">
-                      {worker.teams.length === 0 ? (
-                        <span className="text-xs text-muted-foreground">—</span>
-                      ) : (
-                        worker.teams.map((t) => (
-                          <span
-                            key={t.id}
-                            className="inline-flex items-center px-2 py-0.5 rounded-full bg-[#1B2A6B]/10 text-[#1B2A6B] dark:bg-[#C8D400]/10 dark:text-[#C8D400] text-[10px] font-semibold border border-border"
-                          >
-                            {t.name}
-                          </span>
-                        ))
                       )}
                     </div>
                   </td>

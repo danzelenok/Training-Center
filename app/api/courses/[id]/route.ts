@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { courses, slides, jobRoles, courseRoles } from "@/db/schema";
+import { courses, slides, jobRoles, courseRoles, jurisdictions, organizationJurisdictions } from "@/db/schema";
 import { requireOrgId } from "@/lib/org";
 import { roleOrUnauthorized, canWriteCourse } from "@/lib/adminRoles";
 import { eq, and, asc, sql, inArray } from "drizzle-orm";
@@ -81,7 +81,7 @@ export async function PATCH(
     }
 
     const body = await req.json();
-    const { title, description, themeType, themeValue, autoAssignNewWorkers, slides: updatedSlides, generationStatus, roleIds: requestedRoleIds } = body;
+    const { title, description, themeType, themeValue, autoAssignNewWorkers, slides: updatedSlides, generationStatus, roleIds: requestedRoleIds, jurisdictionId: requestedJurisdictionId } = body;
 
     // Write-time invariant: only ever link roles that belong to this organization.
     const roleIds: string[] | null = Array.isArray(requestedRoleIds)
@@ -93,6 +93,32 @@ export async function PATCH(
         ).map((r) => r.id)
       : null;
 
+    // Reassigning ownerJurisdictionId changes who can edit this course, so
+    // only org_admin can do it — same invariant as course creation
+    // (app/api/courses/route.ts). A jurisdiction_admin's value is silently
+    // ignored rather than erroring, matching how their jurisdictionId is
+    // ignored elsewhere (workers, course creation): they can already only
+    // ever reach this branch for a course they own, so there's nothing for
+    // them to change it to that wouldn't just give the course away.
+    let newOwnerJurisdictionId: string | undefined;
+    if (typeof requestedJurisdictionId === "string" && requestedJurisdictionId && roleResult.role === "org_admin") {
+      const [jurisdiction] = await db
+        .select({ id: jurisdictions.id })
+        .from(organizationJurisdictions)
+        .innerJoin(jurisdictions, eq(jurisdictions.id, organizationJurisdictions.jurisdictionId))
+        .where(
+          and(
+            eq(organizationJurisdictions.organizationId, orgId),
+            eq(organizationJurisdictions.jurisdictionId, requestedJurisdictionId)
+          )
+        )
+        .limit(1);
+      if (!jurisdiction) {
+        return NextResponse.json({ error: "Selected state was not found for this organization." }, { status: 400 });
+      }
+      newOwnerJurisdictionId = jurisdiction.id;
+    }
+
     // 1. Update Course details
     const [updatedCourse] = await db
       .update(courses)
@@ -103,6 +129,7 @@ export async function PATCH(
         themeValue: themeValue !== undefined ? themeValue : undefined,
         autoAssignNewWorkers: autoAssignNewWorkers !== undefined ? autoAssignNewWorkers : undefined,
         generationStatus: generationStatus !== undefined ? generationStatus : undefined,
+        ownerJurisdictionId: newOwnerJurisdictionId,
         updatedAt: new Date(),
       })
       .where(and(eq(courses.id, id), eq(courses.organizationId, orgId)))

@@ -1,5 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
-import { reportsKeys, pollResponsesKeys, type Report, type PollResponse } from "./types";
+import {
+  reportsKeys,
+  pollResponsesKeys,
+  reportCoursesKeys,
+  courseSnapshotKeys,
+  type Report,
+  type PollResponse,
+  type ReportCourseListItem,
+  type CourseSnapshotResponse,
+} from "./types";
 
 async function fetchReports(courseId?: string, status?: string): Promise<Report[]> {
   const params = new URLSearchParams();
@@ -29,5 +38,35 @@ export function usePollResponsesQuery(courseId?: string) {
   return useQuery({
     queryKey: pollResponsesKeys.list(courseId),
     queryFn: () => fetchPollResponses(courseId),
+  });
+}
+
+async function fetchReportCourses(): Promise<ReportCourseListItem[]> {
+  const res = await fetch("/api/reports/courses");
+  if (!res.ok) throw new Error("Failed to fetch courses");
+  return res.json();
+}
+
+export function useReportCoursesQuery() {
+  return useQuery({
+    queryKey: reportCoursesKeys.list(),
+    queryFn: fetchReportCourses,
+  });
+}
+
+async function fetchCourseSnapshot(courseId: string): Promise<CourseSnapshotResponse> {
+  const res = await fetch(`/api/reports/courses/${courseId}`);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to fetch course snapshot");
+  }
+  return res.json();
+}
+
+export function useCourseSnapshotQuery(courseId: string | null) {
+  return useQuery({
+    queryKey: courseSnapshotKeys.detail(courseId ?? ""),
+    queryFn: () => fetchCourseSnapshot(courseId as string),
+    enabled: courseId !== null,
   });
 }

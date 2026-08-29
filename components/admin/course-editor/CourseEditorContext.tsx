@@ -19,8 +19,8 @@ import {
   usePPTXUploadMutation,
   usePublishCourseMutation,
 } from "@/hooks/admin/course-editor/mutations";
-import { useWorkersQuery, useTeamsQuery, useJurisdictionsQuery, useJobRolesQuery } from "@/hooks/admin/workers/queries";
-import type { TeamRef, JurisdictionRef, JobRoleRef } from "@/hooks/admin/workers/types";
+import { useWorkersQuery, useJurisdictionsQuery, useJobRolesQuery } from "@/hooks/admin/workers/queries";
+import type { JurisdictionRef, JobRoleRef } from "@/hooks/admin/workers/types";
 import { useMeQuery } from "@/hooks/admin/useMeQuery";
 
 export type { Course, MediaLibraryFile };
@@ -62,12 +62,10 @@ interface CourseEditorContextType {
   addendumGenerating: boolean;
 
   publishDialogOpen: boolean;
-  publishAssignTo: "all" | "teams" | "specific";
+  publishAssignTo: "all" | "specific";
   publishWorkerIds: string[];
-  publishTeamIds: string[];
   publishNotifyTelegram: boolean;
   publishWorkersList: { id: string; label: string }[];
-  publishTeamsList: { id: string; label: string; memberCount: number }[];
   publishWorkersLoading: boolean;
 
   setSlidesList: React.Dispatch<React.SetStateAction<Slide[]>>;
@@ -89,9 +87,8 @@ interface CourseEditorContextType {
   handleGenerateAddendum: () => Promise<void>;
 
   setPublishDialogOpen: (open: boolean) => void;
-  setPublishAssignTo: (value: "all" | "teams" | "specific") => void;
+  setPublishAssignTo: (value: "all" | "specific") => void;
   setPublishWorkerIds: React.Dispatch<React.SetStateAction<string[]>>;
-  setPublishTeamIds: React.Dispatch<React.SetStateAction<string[]>>;
   setPublishNotifyTelegram: (value: boolean) => void;
   confirmPublish: () => Promise<void>;
 
@@ -106,6 +103,7 @@ interface CourseEditorContextType {
   updateCourseMeta: (field: "title" | "description", value: string) => void;
   toggleAutoAssignNewWorkers: () => void;
   toggleCourseRole: (roleId: string, checked: boolean) => void;
+  updateCourseJurisdiction: (jurisdictionId: string) => void;
   addSlide: (type: Slide["type"]) => void;
   deleteSlide: (indexToDelete: number) => void;
   duplicateSlide: (indexToDuplicate: number, jurisdictionId?: string | null) => void;
@@ -192,6 +190,7 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
         themeValue: currentCourse.themeValue || "linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)",
         autoAssignNewWorkers: currentCourse.autoAssignNewWorkers,
         roleIds: currentCourse.roleIds,
+        jurisdictionId: currentCourse.ownerJurisdictionId,
         slides: slidesListRef.current,
       },
       {
@@ -313,17 +312,15 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
 
   // Publish dialog UI state — picker selections + toggle, all still local.
   const [publishDialogOpen, setPublishDialogOpen] = useState(false);
-  const [publishAssignTo, setPublishAssignTo] = useState<"all" | "teams" | "specific">("all");
+  const [publishAssignTo, setPublishAssignTo] = useState<"all" | "specific">("all");
   const [publishWorkerIds, setPublishWorkerIds] = useState<string[]>([]);
-  const [publishTeamIds, setPublishTeamIds] = useState<string[]>([]);
   const [publishNotifyTelegram, setPublishNotifyTelegram] = useState(true);
 
-  // Publish dialog pickers — reuse the same workers/teams queries the
-  // Workers admin page already uses (hooks/admin/workers/queries.ts).
-  // Shared query cache: if the admin already visited /admin/workers this
-  // session, these can resolve from cache with no extra network request.
+  // Publish dialog pickers — reuse the same workers query the Workers admin
+  // page already uses (hooks/admin/workers/queries.ts). Shared query cache:
+  // if the admin already visited /admin/workers this session, this can
+  // resolve from cache with no extra network request.
   const workersQuery = useWorkersQuery();
-  const teamsQuery = useTeamsQuery();
   const jurisdictionsQuery = useJurisdictionsQuery();
   const jurisdictionsList = jurisdictionsQuery.data ?? [];
   const jobRolesQuery = useJobRolesQuery();
@@ -340,21 +337,7 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
     [workersQuery.data]
   );
 
-  const publishTeamsList = useMemo(
-    () =>
-      // GET /api/teams returns memberCount per team (see app/api/teams/route.ts),
-      // but TeamRef in hooks/admin/workers/types.ts doesn't declare it since no
-      // current workers-page consumer needs it — widen locally rather than
-      // touching that shared type.
-      ((teamsQuery.data ?? []) as (TeamRef & { memberCount: number })[]).map((t) => ({
-        id: t.id,
-        label: t.name,
-        memberCount: t.memberCount,
-      })),
-    [teamsQuery.data]
-  );
-
-  const publishWorkersLoading = workersQuery.isLoading || teamsQuery.isLoading;
+  const publishWorkersLoading = workersQuery.isLoading;
 
   // Sync course + slidesList from the server whenever a fresh payload for
   // this courseId arrives — mirrors the old fetchCourse() success path.
@@ -573,6 +556,14 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
     triggerAutoSave();
   };
 
+  // Same reasoning as toggleCourseRole — not in the debounced-effect deps,
+  // so trigger the save explicitly.
+  const updateCourseJurisdiction = (jurisdictionId: string) => {
+    if (!course) return;
+    setCourse({ ...course, ownerJurisdictionId: jurisdictionId });
+    triggerAutoSave();
+  };
+
   // Add slide manually
   const addSlide = (type: Slide["type"]) => {
     let newContent = {};
@@ -781,10 +772,10 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
   const publishCourseMutation = usePublishCourseMutation(id);
 
   // Open publish dialog (validate first, save, then open). Pickers no
-  // longer fetched here — publishWorkersList/publishTeamsList above are
-  // derived from the shared useWorkersQuery/useTeamsQuery, which are always
-  // mounted (not conditional on dialog open), so their data is either
-  // already in cache or already in flight by the time the dialog renders.
+  // longer fetched here — publishWorkersList above is derived from the
+  // shared useWorkersQuery, which is always mounted (not conditional on
+  // dialog open), so its data is either already in cache or already in
+  // flight by the time the dialog renders.
   const handlePublish = async () => {
     if (slidesList.length === 0) {
       toast.error("Cannot publish a course without slides. Add cards or import a PPTX first.");
@@ -795,7 +786,6 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
     // Reset dialog state
     setPublishAssignTo("all");
     setPublishWorkerIds([]);
-    setPublishTeamIds([]);
     setPublishNotifyTelegram(true);
 
     setPublishDialogOpen(true);
@@ -814,7 +804,6 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
       const data = await publishCourseMutation.mutateAsync({
         assignTo: publishAssignTo,
         workerIds: publishAssignTo === "specific" ? publishWorkerIds : [],
-        teamIds: publishAssignTo === "teams" ? publishTeamIds : [],
         notifyWorkers: publishNotifyTelegram,
       });
 
@@ -999,6 +988,7 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
         updateCourseMeta,
         toggleAutoAssignNewWorkers,
         toggleCourseRole,
+        updateCourseJurisdiction,
         addSlide,
         deleteSlide,
         duplicateSlide,
@@ -1010,15 +1000,12 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
         publishDialogOpen,
         publishAssignTo,
         publishWorkerIds,
-        publishTeamIds,
         publishNotifyTelegram,
         publishWorkersList,
-        publishTeamsList,
         publishWorkersLoading,
         setPublishDialogOpen,
         setPublishAssignTo,
         setPublishWorkerIds,
-        setPublishTeamIds,
         setPublishNotifyTelegram,
         confirmPublish,
       }}

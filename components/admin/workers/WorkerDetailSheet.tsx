@@ -10,7 +10,6 @@ import {
   UserCheck,
   CheckCircle,
   Clock,
-  Users,
   UserCog,
   MapPin,
   BookOpen,
@@ -174,7 +173,6 @@ interface WorkerDetailSheetProps {
   assigningWorkerId: string | null;
   onAssignCourse: (workerId: string, courseId: string) => void;
   onOpenUnbindConfirm: (worker: Worker) => void;
-  onOpenTeamPicker: () => void;
   onOpenManagerPicker: () => void;
   onOpenJurisdictionPicker: () => void;
 }
@@ -191,7 +189,6 @@ export function WorkerDetailSheet({
   assigningWorkerId,
   onAssignCourse,
   onOpenUnbindConfirm,
-  onOpenTeamPicker,
   onOpenManagerPicker,
   onOpenJurisdictionPicker,
 }: WorkerDetailSheetProps) {
@@ -201,7 +198,7 @@ export function WorkerDetailSheet({
   // by another jurisdiction: jurisdiction_admin can only write workers whose
   // jurisdiction matches their own, org_admin is unrestricted. Every mutation
   // this sheet can trigger (rename, deactivate, reissue/unbind, manager,
-  // teams, course assignment, delete) now 403s server-side for a foreign
+  // course assignment, delete) now 403s server-side for a foreign
   // worker too (see app/api/workers/[id], .../assign, .../invites, .../unbind,
   // app/api/reports/[id]) — this just keeps the UI from offering a button
   // that would only ever fail.
@@ -560,42 +557,6 @@ export function WorkerDetailSheet({
               ) : (
                 <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
                   No state assigned yet.
-                </div>
-              )}
-            </div>
-
-            {/* Teams */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                  <Users className="h-3.5 w-3.5" />
-                  Teams
-                </h3>
-                {canEdit && (
-                  <button
-                    onClick={onOpenTeamPicker}
-                    className="p-1 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                    title="Edit teams"
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </button>
-                )}
-              </div>
-              {worker.teams.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-                  No team assigned yet.
-                </div>
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  {worker.teams.map((team) => (
-                    <span
-                      key={team.id}
-                      className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-muted/30 px-3 py-1.5 text-xs font-medium text-foreground"
-                    >
-                      <Users className="h-3 w-3 text-muted-foreground" />
-                      {team.name}
-                    </span>
-                  ))}
                 </div>
               )}
             </div>

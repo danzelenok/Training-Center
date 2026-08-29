@@ -1,7 +1,6 @@
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -18,7 +17,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { formatPhoneInput } from "@/lib/phone";
-import { workerDisplayName, type TeamRef, type Worker, type JurisdictionRef, type JobRoleRef } from "@/hooks/admin/workers/types";
+import { workerDisplayName, type Worker, type JurisdictionRef, type JobRoleRef } from "@/hooks/admin/workers/types";
 
 const NO_MANAGER = "__none__";
 const NO_ROLE = "__none__";
@@ -32,9 +31,6 @@ interface AddWorkerDialogProps {
   onPhoneChange: (value: string) => void;
   onSubmit: (e: React.FormEvent) => void;
   creating: boolean;
-  teams: TeamRef[];
-  teamIds: string[];
-  onToggleTeam: (teamId: string, checked: boolean) => void;
   managerCandidates: Worker[];
   managerId: string | null;
   onManagerChange: (managerId: string | null) => void;
@@ -60,9 +56,6 @@ export function AddWorkerDialog({
   onPhoneChange,
   onSubmit,
   creating,
-  teams,
-  teamIds,
-  onToggleTeam,
   managerCandidates,
   managerId,
   onManagerChange,
@@ -188,33 +181,6 @@ export function AddWorkerDialog({
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
-            )}
-
-            {teams.length > 0 && (
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">
-                  Teams
-                </label>
-                <div className="space-y-2 max-h-40 overflow-y-auto">
-                  {teams.map((team) => {
-                    const checked = teamIds.includes(team.id);
-                    return (
-                      <label
-                        key={team.id}
-                        className={`flex items-center gap-2 rounded-xl border px-3 py-2 cursor-pointer transition-colors ${
-                          checked ? "border-[#C8D400]/50 bg-[#C8D400]/10" : "border-border hover:bg-muted/30"
-                        }`}
-                      >
-                        <Checkbox
-                          checked={checked}
-                          onCheckedChange={(v) => onToggleTeam(team.id, v === true)}
-                        />
-                        <span className="text-xs font-medium text-foreground">{team.name}</span>
-                      </label>
-                    );
-                  })}
-                </div>
               </div>
             )}
           </div>

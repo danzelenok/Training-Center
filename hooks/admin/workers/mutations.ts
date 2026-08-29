@@ -17,7 +17,6 @@ function invalidateWorkerAndList(
 interface CreateWorkerVars {
   name: string;
   phone: string;
-  teamIds: string[];
   managerId: string | null;
   jurisdictionId: string | null;
   roleId: string | null;
@@ -31,11 +30,11 @@ interface CreateWorkerResult {
 export function useCreateWorkerMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ name, phone, teamIds, managerId, jurisdictionId, roleId }: CreateWorkerVars): Promise<CreateWorkerResult> => {
+    mutationFn: async ({ name, phone, managerId, jurisdictionId, roleId }: CreateWorkerVars): Promise<CreateWorkerResult> => {
       const res = await fetch("/api/admin/workers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, phone, teamIds, managerId, jurisdictionId, roleId }),
+        body: JSON.stringify({ name, phone, managerId, jurisdictionId, roleId }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to create worker");
@@ -272,35 +271,6 @@ export function useToggleWorkerActiveMutation() {
     },
     onError: (err: Error) => {
       toast.error(err.message || "Could not update worker status");
-    },
-  });
-}
-
-// --- Update worker's teams (replaces handleToggleWorkerTeam) ---
-
-interface UpdateWorkerTeamsVars {
-  workerId: string;
-  teamIds: string[];
-  checked: boolean;
-}
-
-export function useUpdateWorkerTeamsMutation() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ workerId, teamIds }: UpdateWorkerTeamsVars) => {
-      const res = await fetch(`/api/workers/${workerId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ teamIds }),
-      });
-      if (!res.ok) throw new Error("Failed to update teams");
-    },
-    onSuccess: (_data, { workerId, checked }) => {
-      invalidateWorkerAndList(queryClient, workerId);
-      toast.success(checked ? "Added to team" : "Removed from team");
-    },
-    onError: (err: Error) => {
-      toast.error(err.message || "Could not update teams");
     },
   });
 }

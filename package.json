@@ -26,6 +26,7 @@
     "drizzle-orm": "^0.45.2",
     "embla-carousel-react": "^8.6.0",
     "embla-carousel-wheel-gestures": "^8.1.0",
+    "exceljs": "^4.4.0",
     "grammy": "^1.43.0",
     "inngest": "^4.5.0",
     "input-otp": "^1.4.2",

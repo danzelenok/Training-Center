@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { courses, slides, jurisdictions, organizationJurisdictions } from "@/db/schema";
+import { courses, slides, jurisdictions, organizationJurisdictions, courseRoles } from "@/db/schema";
 import { requireOrgId } from "@/lib/org";
 import { roleOrUnauthorized } from "@/lib/adminRoles";
 import { and, desc, eq, sql } from "drizzle-orm";
@@ -33,11 +33,25 @@ export async function GET() {
       .groupBy(courses.id)
       .orderBy(desc(courses.createdAt));
 
+    const roleLinks = await db
+      .select({ courseId: courseRoles.courseId, roleId: courseRoles.roleId })
+      .from(courseRoles)
+      .innerJoin(courses, eq(courses.id, courseRoles.courseId))
+      .where(eq(courses.organizationId, orgId));
+
+    const roleIdsByCourse = new Map<string, string[]>();
+    for (const link of roleLinks) {
+      const list = roleIdsByCourse.get(link.courseId) ?? [];
+      list.push(link.roleId);
+      roleIdsByCourse.set(link.courseId, list);
+    }
+
     // Convert bigints to strings/numbers to avoid JSON serialization errors
     const serializedResults = results.map(row => ({
       ...row,
       telegramMessageId: row.telegramMessageId ? row.telegramMessageId.toString() : null,
       telegramGroupId: row.telegramGroupId ? row.telegramGroupId.toString() : null,
+      roleIds: roleIdsByCourse.get(row.id) ?? [],
     }));
 
     return NextResponse.json(serializedResults);

@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { courses, slides, workers, teams, assignments, workerTeams, courseAutoAssignTeams, courseRoles } from "@/db/schema";
+import { courses, slides, workers, assignments, courseRoles } from "@/db/schema";
 import { requireOrgId } from "@/lib/org";
 import { roleOrUnauthorized, canWriteCourse } from "@/lib/adminRoles";
 import { and, eq, inArray, sql } from "drizzle-orm";
@@ -21,10 +21,8 @@ export async function POST(
     if (roleResult instanceof Response) return roleResult;
 
     const body = await req.json().catch(() => ({}));
-    const assignTo: "all" | "teams" | "specific" =
-      body.assignTo === "specific" ? "specific" : body.assignTo === "teams" ? "teams" : "all";
+    const assignTo: "all" | "specific" = body.assignTo === "specific" ? "specific" : "all";
     const requestedWorkerIds: string[] = Array.isArray(body.workerIds) ? body.workerIds : [];
-    const requestedTeamIds: string[] = Array.isArray(body.teamIds) ? body.teamIds : [];
     const notifyWorkers: boolean = body.notifyWorkers ?? body.notifyTelegram ?? true;
 
     // 1. Fetch the course, scoped to this organization
@@ -41,16 +39,8 @@ export async function POST(
       return NextResponse.json({ error: "You can only publish courses owned by your jurisdiction." }, { status: 403 });
     }
 
-    // Write-time invariant: only ever assign workers/teams that belong to the
+    // Write-time invariant: only ever assign workers that belong to the
     // same organization as the course, even if the client passed foreign ids.
-    const teamIds = requestedTeamIds.length
-      ? (
-          await db
-            .select({ id: teams.id })
-            .from(teams)
-            .where(and(inArray(teams.id, requestedTeamIds), eq(teams.organizationId, orgId)))
-        ).map((t) => t.id)
-      : [];
     const workerIds = requestedWorkerIds.length
       ? (
           await db
@@ -101,25 +91,6 @@ export async function POST(
             .values(allWorkers.map((w) => ({ workerId: w.id, courseId: id })))
             .onConflictDoNothing({ target: [assignments.workerId, assignments.courseId] });
         }
-      } else if (assignTo === "teams" && teamIds.length > 0) {
-        const teamWorkers = await db
-          .selectDistinct({ id: workers.id })
-          .from(workerTeams)
-          .innerJoin(workers, eq(workers.id, workerTeams.workerId))
-          .where(and(inArray(workerTeams.teamId, teamIds), eq(workers.active, true)));
-
-        if (teamWorkers.length > 0) {
-          await db
-            .insert(assignments)
-            .values(teamWorkers.map((w) => ({ workerId: w.id, courseId: id })))
-            .onConflictDoNothing({ target: [assignments.workerId, assignments.courseId] });
-        }
-
-        // Remember these teams so workers added to them later auto-assign too.
-        await db
-          .insert(courseAutoAssignTeams)
-          .values(teamIds.map((teamId) => ({ courseId: id, teamId })))
-          .onConflictDoNothing({ target: [courseAutoAssignTeams.courseId, courseAutoAssignTeams.teamId] });
       } else if (workerIds.length > 0) {
         await db
           .insert(assignments)

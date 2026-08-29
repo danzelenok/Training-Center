@@ -15,8 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
-import { useWorkersQuery, useTeamsQuery } from "@/hooks/admin/workers/queries";
-import type { TeamRef } from "@/hooks/admin/workers/types";
+import { useWorkersQuery } from "@/hooks/admin/workers/queries";
 import { usePublishCourseMutation } from "@/hooks/admin/course-editor/mutations";
 
 interface PublishCourseDialogProps {
@@ -26,20 +25,18 @@ interface PublishCourseDialogProps {
   // Draft courses get the full audience picker (this is the one and only
   // moment assignments are created — see app/api/courses/[id]/publish/route.ts,
   // the "isFirstPublish" branch). Already-published courses can only re-notify
-  // whoever is already assigned; the endpoint silently ignores assignTo/workerIds/
-  // teamIds once isFirstPublish is false, so the picker would just be inert UI.
+  // whoever is already assigned; the endpoint silently ignores assignTo/workerIds
+  // once isFirstPublish is false, so the picker would just be inert UI.
   alreadyPublished: boolean;
 }
 
 export function PublishCourseDialog({ open, onOpenChange, courseId, alreadyPublished }: PublishCourseDialogProps) {
   const queryClient = useQueryClient();
   const workersQuery = useWorkersQuery();
-  const teamsQuery = useTeamsQuery();
   const publishMutation = usePublishCourseMutation(courseId ?? "");
 
-  const [assignTo, setAssignTo] = useState<"all" | "teams" | "specific">("all");
+  const [assignTo, setAssignTo] = useState<"all" | "specific">("all");
   const [workerIds, setWorkerIds] = useState<string[]>([]);
-  const [teamIds, setTeamIds] = useState<string[]>([]);
   const [notifyTelegram, setNotifyTelegram] = useState(true);
   const [wasOpen, setWasOpen] = useState(open);
 
@@ -51,7 +48,6 @@ export function PublishCourseDialog({ open, onOpenChange, courseId, alreadyPubli
     if (open) {
       setAssignTo("all");
       setWorkerIds([]);
-      setTeamIds([]);
       setNotifyTelegram(true);
     }
   }
@@ -62,8 +58,7 @@ export function PublishCourseDialog({ open, onOpenChange, courseId, alreadyPubli
       id: w.id,
       label: w.displayName || [w.firstName, w.lastName].filter(Boolean).join(" ") || w.telegramUsername || w.telegramUserId || "",
     }));
-  const teamsList = (teamsQuery.data ?? []) as (TeamRef & { memberCount: number })[];
-  const pickersLoading = workersQuery.isLoading || teamsQuery.isLoading;
+  const pickersLoading = workersQuery.isLoading;
 
   const handleConfirm = async () => {
     if (!courseId) return;
@@ -75,7 +70,6 @@ export function PublishCourseDialog({ open, onOpenChange, courseId, alreadyPubli
       await publishMutation.mutateAsync({
         assignTo,
         workerIds: assignTo === "specific" ? workerIds : [],
-        teamIds: assignTo === "teams" ? teamIds : [],
         notifyWorkers: notifyTelegram,
       });
       queryClient.invalidateQueries({ queryKey: ["courses"] });
@@ -113,7 +107,7 @@ export function PublishCourseDialog({ open, onOpenChange, courseId, alreadyPubli
               </p>
               <RadioGroup
                 value={assignTo}
-                onValueChange={(v) => setAssignTo(v as "all" | "teams" | "specific")}
+                onValueChange={(v) => setAssignTo(v as "all" | "specific")}
                 className="space-y-2"
               >
                 <label className="flex items-start gap-3 rounded-xl border border-border p-3 cursor-pointer hover:bg-muted/30 transition-colors">
@@ -123,44 +117,6 @@ export function PublishCourseDialog({ open, onOpenChange, courseId, alreadyPubli
                     <p className="text-[10px] text-muted-foreground mt-0.5">
                       Every registered worker gets access immediately. Future workers will also be auto-assigned.
                     </p>
-                  </div>
-                </label>
-                <label className="flex items-start gap-3 rounded-xl border border-border p-3 cursor-pointer hover:bg-muted/30 transition-colors">
-                  <RadioGroupItem value="teams" className="mt-0.5" />
-                  <div className="w-full">
-                    <p className="text-xs font-bold text-foreground">Team(s)</p>
-                    <p className="text-[10px] text-muted-foreground mt-0.5">
-                      Only members of the selected team(s) will see this course. Workers added to
-                      these teams later will get it automatically too.
-                    </p>
-                    {assignTo === "teams" && (
-                      <div className="mt-3 max-h-40 overflow-y-auto space-y-1 pr-1">
-                        {pickersLoading ? (
-                          <p className="text-[10px] text-muted-foreground">Loading teams…</p>
-                        ) : teamsList.length === 0 ? (
-                          <p className="text-[10px] text-muted-foreground">
-                            No teams yet — create one from the Teams page first.
-                          </p>
-                        ) : (
-                          teamsList.map((t) => (
-                            <label key={t.id} className="flex items-center gap-2 cursor-pointer">
-                              <Checkbox
-                                checked={teamIds.includes(t.id)}
-                                onCheckedChange={(checked) =>
-                                  setTeamIds((prev) =>
-                                    checked ? [...prev, t.id] : prev.filter((x) => x !== t.id)
-                                  )
-                                }
-                              />
-                              <span className="text-xs text-foreground">
-                                {t.name}{" "}
-                                <span className="text-muted-foreground">({t.memberCount})</span>
-                              </span>
-                            </label>
-                          ))
-                        )}
-                      </div>
-                    )}
                   </div>
                 </label>
                 <label className="flex items-start gap-3 rounded-xl border border-border p-3 cursor-pointer hover:bg-muted/30 transition-colors">
@@ -236,8 +192,7 @@ export function PublishCourseDialog({ open, onOpenChange, courseId, alreadyPubli
             onClick={handleConfirm}
             disabled={
               publishMutation.isPending ||
-              (!alreadyPublished && assignTo === "specific" && workerIds.length === 0) ||
-              (!alreadyPublished && assignTo === "teams" && teamIds.length === 0)
+              (!alreadyPublished && assignTo === "specific" && workerIds.length === 0)
             }
             className="bg-[#C8D400] hover:bg-[#B6C200] text-[#1B2A6B] font-extrabold border-0 text-xs px-4"
           >

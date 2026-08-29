@@ -2,12 +2,10 @@ import { useQuery } from "@tanstack/react-query";
 import {
   workersKeys,
   coursesKeys,
-  teamsKeys,
   jurisdictionsKeys,
   jobRolesKeys,
   type WorkersListResponse,
   type Course,
-  type TeamRef,
   type JurisdictionRef,
   type JobRoleRef,
   type WorkerDetail,
@@ -43,19 +41,6 @@ export function useCoursesQuery(status: "published" | "all" = "published") {
       const courses = await fetchCourses();
       return status === "all" ? courses : courses.filter((c) => c.status === "published");
     },
-  });
-}
-
-async function fetchTeams(): Promise<TeamRef[]> {
-  const res = await fetch("/api/teams");
-  if (!res.ok) throw new Error("Failed to fetch teams");
-  return res.json();
-}
-
-export function useTeamsQuery() {
-  return useQuery({
-    queryKey: teamsKeys.list(),
-    queryFn: fetchTeams,
   });
 }
 

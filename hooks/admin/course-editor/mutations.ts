@@ -9,6 +9,7 @@ interface AutosavePayload {
   themeValue: string;
   autoAssignNewWorkers: boolean;
   roleIds: string[];
+  jurisdictionId: string;
   slides: Slide[];
 }
 
@@ -156,9 +157,8 @@ export function usePPTXUploadMutation(courseId: string) {
 }
 
 interface PublishCourseVars {
-  assignTo: "all" | "teams" | "specific";
+  assignTo: "all" | "specific";
   workerIds: string[];
-  teamIds: string[];
   notifyWorkers: boolean;
 }
 

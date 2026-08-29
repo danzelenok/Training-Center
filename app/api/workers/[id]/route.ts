@@ -1,11 +1,10 @@
 import { db } from "@/db";
-import { workers, progress, courses, pollResponses, slides, assignments, workerTeams, teams, employmentEvents, jobRoles, jurisdictions, organizationJurisdictions } from "@/db/schema";
+import { workers, progress, courses, pollResponses, slides, assignments, employmentEvents, jobRoles, jurisdictions, organizationJurisdictions } from "@/db/schema";
 import { requireOrgId } from "@/lib/org";
 import { roleOrUnauthorized } from "@/lib/adminRoles";
 import { auth } from "@clerk/nextjs/server";
-import { and, count, eq, inArray, sql } from "drizzle-orm";
+import { and, count, eq, sql } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
-import { autoAssignTeamCoursesForNewMemberships } from "@/lib/teamAutoAssign";
 import { normalizePhone } from "@/lib/phone";
 
 export const dynamic = "force-dynamic";
@@ -86,12 +85,6 @@ export async function GET(
       .where(eq(pollResponses.workerId, id))
       .orderBy(pollResponses.courseId, pollResponses.slideIndex);
 
-    const workerTeamsList = await db
-      .select({ id: teams.id, name: teams.name })
-      .from(workerTeams)
-      .innerJoin(teams, eq(teams.id, workerTeams.teamId))
-      .where(eq(workerTeams.workerId, id));
-
     const employmentHistory = await db
       .select({
         id: employmentEvents.id,
@@ -144,7 +137,6 @@ export async function GET(
     return NextResponse.json({
       ...worker[0],
       telegramUserId: worker[0].telegramUserId?.toString() ?? null,
-      teams: workerTeamsList,
       manager,
       jurisdiction,
       role,
@@ -323,32 +315,16 @@ export async function PATCH(
       updates.deactivatedAt = body.active ? null : statusChangedAt;
     }
 
-    const requestedTeamIds: string[] | null = Array.isArray(body.teamIds) ? body.teamIds : null;
-    const teamIds: string[] | null = requestedTeamIds
-      ? (
-          await db
-            .select({ id: teams.id })
-            .from(teams)
-            .where(and(inArray(teams.id, requestedTeamIds), eq(teams.organizationId, orgId)))
-        ).map((t) => t.id)
-      : null;
-
-    if (Object.keys(updates).length === 0 && teamIds === null) {
+    if (Object.keys(updates).length === 0) {
       return NextResponse.json({ error: "No valid fields to update." }, { status: 400 });
     }
 
-    let updated = null;
-    if (Object.keys(updates).length > 0) {
-      [updated] = await db
-        .update(workers)
-        .set(updates)
-        .where(eq(workers.id, id))
-        .returning();
-      if (!updated) return new NextResponse("Not found", { status: 404 });
-    } else {
-      [updated] = await db.select().from(workers).where(eq(workers.id, id)).limit(1);
-      if (!updated) return new NextResponse("Not found", { status: 404 });
-    }
+    const [updated] = await db
+      .update(workers)
+      .set(updates)
+      .where(eq(workers.id, id))
+      .returning();
+    if (!updated) return new NextResponse("Not found", { status: 404 });
 
     if (statusChanged && statusChangedAt) {
       await db.insert(employmentEvents).values({
@@ -367,34 +343,6 @@ export async function PATCH(
         newRoleId,
         createdByAdminId: actingAdminId ?? null,
       });
-    }
-
-    if (teamIds !== null) {
-      const existing = await db
-        .select({ teamId: workerTeams.teamId })
-        .from(workerTeams)
-        .where(eq(workerTeams.workerId, id));
-      const existingIds = new Set(existing.map((r) => r.teamId));
-
-      const toAdd = teamIds.filter((tid) => !existingIds.has(tid));
-      const toRemove = [...existingIds].filter((tid) => !teamIds.includes(tid));
-
-      if (toRemove.length > 0) {
-        await db
-          .delete(workerTeams)
-          .where(and(eq(workerTeams.workerId, id), inArray(workerTeams.teamId, toRemove)));
-      }
-
-      if (toAdd.length > 0) {
-        await db
-          .insert(workerTeams)
-          .values(toAdd.map((teamId) => ({ workerId: id, teamId })))
-          .onConflictDoNothing({ target: [workerTeams.workerId, workerTeams.teamId] });
-
-        await autoAssignTeamCoursesForNewMemberships(
-          toAdd.map((teamId) => ({ workerId: id, teamId }))
-        );
-      }
     }
 
     return NextResponse.json({

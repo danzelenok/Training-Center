@@ -1,8 +1,3 @@
-export interface TeamRef {
-  id: string;
-  name: string;
-}
-
 export interface JurisdictionRef {
   id: string;
   code: string;
@@ -34,7 +29,6 @@ export interface Worker {
   createdAt: string;
   updatedAt: string;
   coursesAssigned: number;
-  teams: TeamRef[];
 }
 
 export interface Course {
@@ -109,10 +103,6 @@ export const workersKeys = {
 export const coursesKeys = {
   published: () => ["courses", "published"] as const,
   all: () => ["courses", "all"] as const,
-};
-
-export const teamsKeys = {
-  list: () => ["teams"] as const,
 };
 
 export const jurisdictionsKeys = {

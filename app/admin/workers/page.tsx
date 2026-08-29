@@ -5,7 +5,7 @@ import { UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast, Toaster } from "sonner";
 import { normalizePhone } from "@/lib/phone";
-import { useWorkersQuery, useCoursesQuery, useTeamsQuery, useJurisdictionsQuery, useJobRolesQuery } from "@/hooks/admin/workers/queries";
+import { useWorkersQuery, useCoursesQuery, useJurisdictionsQuery, useJobRolesQuery } from "@/hooks/admin/workers/queries";
 import { useMeQuery } from "@/hooks/admin/useMeQuery";
 import {
   useCreateWorkerMutation,
@@ -21,7 +21,6 @@ import { AddWorkerDialog } from "@/components/admin/workers/AddWorkerDialog";
 import { DuplicateWorkerDialog } from "@/components/admin/workers/DuplicateWorkerDialog";
 import { InviteLinkDialog } from "@/components/admin/workers/InviteLinkDialog";
 import { UnbindConfirmDialog } from "@/components/admin/workers/UnbindConfirmDialog";
-import { TeamPickerDialog } from "@/components/admin/workers/TeamPickerDialog";
 import { ManagerPickerDialog } from "@/components/admin/workers/ManagerPickerDialog";
 import { JurisdictionPickerDialog } from "@/components/admin/workers/JurisdictionPickerDialog";
 import { WorkerDetailSheet } from "@/components/admin/workers/WorkerDetailSheet";
@@ -29,14 +28,12 @@ import { WorkerDetailSheet } from "@/components/admin/workers/WorkerDetailSheet"
 export default function WorkersPage() {
   const workersQuery = useWorkersQuery();
   const coursesQuery = useCoursesQuery();
-  const teamsQuery = useTeamsQuery();
   const jurisdictionsQuery = useJurisdictionsQuery();
   const jobRolesQuery = useJobRolesQuery();
   const meQuery = useMeQuery();
   const me = meQuery.data;
   const workersList = workersQuery.data?.workers ?? [];
   const publishedCourses = coursesQuery.data ?? [];
-  const teamsList = teamsQuery.data ?? [];
   const jurisdictionsList = jurisdictionsQuery.data ?? [];
   const jobRolesList = jobRolesQuery.data ?? [];
   const lockedJurisdiction = me?.role === "jurisdiction_admin" ? me.jurisdiction ?? null : null;
@@ -51,7 +48,6 @@ export default function WorkersPage() {
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [newWorkerName, setNewWorkerName] = useState("");
   const [newWorkerPhone, setNewWorkerPhone] = useState("");
-  const [newWorkerTeamIds, setNewWorkerTeamIds] = useState<string[]>([]);
   const [newWorkerManagerId, setNewWorkerManagerId] = useState<string | null>(null);
   const [newWorkerJurisdictionId, setNewWorkerJurisdictionId] = useState<string | null>(null);
   const [newWorkerRoleId, setNewWorkerRoleId] = useState<string | null>(null);
@@ -69,10 +65,9 @@ export default function WorkersPage() {
   const [unbindConfirmOpen, setUnbindConfirmOpen] = useState(false);
   const [unbindTargetWorker, setUnbindTargetWorker] = useState<Worker | null>(null);
 
-  // Worker detail sheet + team picker (opened from within the sheet)
+  // Worker detail sheet (pickers opened from within the sheet)
   const [sheetOpen, setSheetOpen] = useState(false);
   const [selectedWorkerId, setSelectedWorkerId] = useState<string | null>(null);
-  const [teamPickerOpen, setTeamPickerOpen] = useState(false);
   const [managerPickerOpen, setManagerPickerOpen] = useState(false);
   const [jurisdictionPickerOpen, setJurisdictionPickerOpen] = useState(false);
 
@@ -110,7 +105,6 @@ export default function WorkersPage() {
       {
         name: newWorkerName.trim(),
         phone: newWorkerPhone.trim(),
-        teamIds: newWorkerTeamIds,
         managerId: newWorkerManagerId,
         // The API ignores this for a jurisdiction_admin anyway (forces their
         // own jurisdiction), but send the real value rather than whatever's
@@ -124,17 +118,12 @@ export default function WorkersPage() {
           openInviteModal(data.worker.displayName || newWorkerName, data.inviteUrl);
           setNewWorkerName("");
           setNewWorkerPhone("");
-          setNewWorkerTeamIds([]);
           setNewWorkerManagerId(null);
           setNewWorkerJurisdictionId(null);
           setNewWorkerRoleId(null);
         },
       }
     );
-  };
-
-  const handleToggleNewWorkerTeam = (teamId: string, checked: boolean) => {
-    setNewWorkerTeamIds((prev) => (checked ? [...prev, teamId] : prev.filter((id) => id !== teamId)));
   };
 
   const handleCreateWorkerSubmit = (e: React.FormEvent) => {
@@ -167,7 +156,6 @@ export default function WorkersPage() {
     setCreateModalOpen(false);
     setNewWorkerName("");
     setNewWorkerPhone("");
-    setNewWorkerTeamIds([]);
     setNewWorkerManagerId(null);
     setNewWorkerJurisdictionId(null);
     setNewWorkerRoleId(null);
@@ -282,9 +270,6 @@ export default function WorkersPage() {
         onPhoneChange={setNewWorkerPhone}
         onSubmit={handleCreateWorkerSubmit}
         creating={createWorker.isPending}
-        teams={teamsList}
-        teamIds={newWorkerTeamIds}
-        onToggleTeam={handleToggleNewWorkerTeam}
         managerCandidates={workersList.filter((w) => w.active)}
         managerId={newWorkerManagerId}
         onManagerChange={setNewWorkerManagerId}
@@ -327,12 +312,6 @@ export default function WorkersPage() {
         unbinding={unbindWorker.isPending}
       />
 
-      <TeamPickerDialog
-        open={teamPickerOpen}
-        onOpenChange={setTeamPickerOpen}
-        workerId={selectedWorkerId}
-      />
-
       <ManagerPickerDialog
         open={managerPickerOpen}
         onOpenChange={setManagerPickerOpen}
@@ -357,7 +336,6 @@ export default function WorkersPage() {
         assigningWorkerId={assigningWorkerId}
         onAssignCourse={handleAssignCourse}
         onOpenUnbindConfirm={handleOpenUnbindConfirm}
-        onOpenTeamPicker={() => setTeamPickerOpen(true)}
         onOpenManagerPicker={() => setManagerPickerOpen(true)}
         onOpenJurisdictionPicker={() => setJurisdictionPickerOpen(true)}
       />

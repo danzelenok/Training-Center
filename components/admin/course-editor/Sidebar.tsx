@@ -21,9 +21,17 @@ import {
   Copy,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { RoleMultiSelect } from "@/components/admin/RoleMultiSelect";
 import { useCourseEditor } from "./CourseEditorContext";
 import { useCloneCourseMutation } from "@/hooks/admin/courses/mutations";
+import { useMeQuery } from "@/hooks/admin/useMeQuery";
 
 function ReadOnlySidebar() {
   const router = useRouter();
@@ -87,13 +95,20 @@ export default function Sidebar() {
     jurisdictionsList,
     jobRolesList,
     toggleCourseRole,
+    updateCourseJurisdiction,
     setAddendumDialogOpen,
     setAddendumJurisdictionIds,
   } = useCourseEditor();
+  const { data: me } = useMeQuery();
 
   if (isReadOnly) {
     return <ReadOnlySidebar />;
   }
+
+  // A jurisdiction_admin can only ever reach this non-read-only branch for a
+  // course they already own, so reassigning it elsewhere would just give it
+  // away — same rule the API enforces (app/api/courses/[id]/route.ts PATCH).
+  const canEditJurisdiction = me?.role !== "jurisdiction_admin";
 
   const injectors = [
     { type: "text", label: "Card", icon: FileText, desc: "Standard text & bullets" },
@@ -212,25 +227,40 @@ export default function Sidebar() {
             <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block px-1">
               Roles {(course?.roleIds.length ?? 0) === 0 && <span className="text-red-400">(required to publish)</span>}
             </label>
-            <div className="space-y-1.5 max-h-32 overflow-y-auto">
-              {jobRolesList.map((r) => {
-                const checked = course?.roleIds.includes(r.id) ?? false;
-                return (
-                  <label
-                    key={r.id}
-                    className={`flex items-center gap-2 rounded-xl border px-3 py-2 cursor-pointer transition-colors ${
-                      checked ? "border-[#C8D400]/50 bg-[#C8D400]/10" : "border-border hover:bg-muted/30"
-                    }`}
-                  >
-                    <Checkbox
-                      checked={checked}
-                      onCheckedChange={(v) => toggleCourseRole(r.id, v === true)}
-                    />
-                    <span className="text-xs font-medium text-foreground">{r.name}</span>
-                  </label>
-                );
-              })}
-            </div>
+            <RoleMultiSelect
+              roles={jobRolesList}
+              selectedIds={course?.roleIds ?? []}
+              onToggle={toggleCourseRole}
+            />
+          </div>
+        )}
+
+        {jurisdictionsList.length > 0 && (
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block px-1">
+              State
+            </label>
+            {canEditJurisdiction ? (
+              <Select
+                value={course?.ownerJurisdictionId}
+                onValueChange={(v) => updateCourseJurisdiction(v)}
+              >
+                <SelectTrigger className="w-full bg-background border-border rounded-xl h-10">
+                  <SelectValue placeholder="Select state" />
+                </SelectTrigger>
+                <SelectContent className="bg-card border border-border text-foreground">
+                  {jurisdictionsList.map((j) => (
+                    <SelectItem key={j.id} value={j.id}>
+                      {j.code} &middot; {j.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <div className="w-full bg-muted/40 border border-border rounded-xl h-10 px-3 flex items-center text-xs font-medium text-foreground">
+                {jurisdictionsList.find((j) => j.id === course?.ownerJurisdictionId)?.code ?? "—"}
+              </div>
+            )}
           </div>
         )}
 

@@ -9,7 +9,6 @@ import {
   LayoutDashboard,
   BookOpen,
   Users,
-  Users2,
   Briefcase,
   FileBarChart2,
   FolderOpen,
@@ -26,7 +25,6 @@ const baseNavigation = [
   { name: "Courses", href: "/admin/courses", icon: BookOpen },
   { name: "Media Library", href: "/admin/media", icon: FolderOpen },
   { name: "Workers", href: "/admin/workers", icon: Users },
-  { name: "Teams", href: "/admin/teams", icon: Users2 },
   { name: "Roles", href: "/admin/roles", icon: Briefcase },
   { name: "Reports", href: "/admin/reports", icon: FileBarChart2 },
 ];

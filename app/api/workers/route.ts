@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { workers, assignments, progress, workerTeams, teams } from "@/db/schema";
+import { workers, assignments, progress } from "@/db/schema";
 import { requireOrgId } from "@/lib/org";
 import { desc, eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
@@ -13,7 +13,7 @@ export async function GET() {
       return new NextResponse("Unauthorized", { status: 401 });
     }
 
-    // 1. Fetch workers with their course count and team memberships
+    // 1. Fetch workers with their course count
     const results = await db
       .select({
         id: workers.id,
@@ -36,23 +36,9 @@ export async function GET() {
       .groupBy(workers.id)
       .orderBy(desc(workers.createdAt));
 
-    const teamMemberships = await db
-      .select({ workerId: workerTeams.workerId, teamId: teams.id, teamName: teams.name })
-      .from(workerTeams)
-      .innerJoin(teams, eq(teams.id, workerTeams.teamId))
-      .where(eq(teams.organizationId, orgId));
-
-    const teamsByWorker = new Map<string, { id: string; name: string }[]>();
-    for (const m of teamMemberships) {
-      const list = teamsByWorker.get(m.workerId) ?? [];
-      list.push({ id: m.teamId, name: m.teamName });
-      teamsByWorker.set(m.workerId, list);
-    }
-
     const serialized = results.map((w) => ({
       ...w,
       telegramUserId: w.telegramUserId ? w.telegramUserId.toString() : null,
-      teams: teamsByWorker.get(w.id) ?? [],
     }));
 
     const activeWorkers = serialized.filter((w) => w.active);
