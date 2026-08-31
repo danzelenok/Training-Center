@@ -38,6 +38,7 @@ import {
 } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 
 // Decoupled components
 import Sidebar from "@/components/admin/course-editor/Sidebar";
@@ -145,6 +146,22 @@ function CourseEditorContent() {
   const [expandedPaletteId, setExpandedPaletteId] = useState<string | null>(null);
   const activeExpandedPaletteId = expandedPaletteId ?? course?.themePaletteId ?? null;
 
+  // Typography override (Section 3 of the Style Course dialog) — independent
+  // of background/palette, so this passes the course's *current*
+  // theme/palette through unchanged rather than resetting it, matching
+  // updateCourseStyle's documented "typography omitted = leave alone,
+  // explicit null = clear" contract.
+  const updateCourseTypography = (typography: { fontFamilyOverride?: string | null; textColorOverride?: string | null }) => {
+    updateCourseStyle(
+      course?.themeType || "preset",
+      course?.themeValue || "linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)",
+      course?.themePaletteId && course?.themeVariantId
+        ? { paletteId: course.themePaletteId, variantId: course.themeVariantId }
+        : undefined,
+      typography
+    );
+  };
+
   const handlePreview = async () => {
     // Nothing to persist for a read-only viewer, and there's nothing to save
     // anyway — skip straight to opening the preview instead of firing a save
@@ -239,7 +256,7 @@ function CourseEditorContent() {
                 <span>🎨</span> Style Course
               </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-[450px]">
+            <DialogContent className="sm:max-w-[680px]">
               <DialogHeader>
                 <DialogTitle className="text-lg font-bold text-[#1B2A6B] dark:text-[#C8D400]">
                   Course Theme & Style
@@ -411,6 +428,60 @@ function CourseEditorContent() {
                       <span>🖼️</span> Select Background Image
                     </Button>
                   )}
+                </div>
+
+                {/* Typography Override — independent of the palette; NULL/unset means "use the theme's own font/color". */}
+                <div className="space-y-3 pt-2 border-t border-border/80">
+                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">
+                    3 — Typography
+                  </label>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-semibold text-muted-foreground block">Font</label>
+                    <NativeSelect
+                      value={course?.fontFamilyOverride ?? ""}
+                      onChange={(e) => updateCourseTypography({ fontFamilyOverride: e.target.value || null })}
+                      className="w-full"
+                    >
+                      <NativeSelectOption value="">Default (from theme)</NativeSelectOption>
+                      <NativeSelectOption value="var(--font-manrope), sans-serif">Manrope</NativeSelectOption>
+                      <NativeSelectOption value="var(--font-space-grotesk), sans-serif">Space Grotesk</NativeSelectOption>
+                      <NativeSelectOption value="var(--font-ibm-plex-mono), monospace">IBM Plex Mono</NativeSelectOption>
+                      <NativeSelectOption value="var(--font-dm-sans), sans-serif">DM Sans</NativeSelectOption>
+                      <NativeSelectOption value="var(--font-newsreader), serif">Newsreader</NativeSelectOption>
+                      <NativeSelectOption value="var(--font-bricolage-grotesque), sans-serif">Bricolage Grotesque</NativeSelectOption>
+                    </NativeSelect>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-semibold text-muted-foreground block">Text Color</label>
+                      {course?.textColorOverride && (
+                        <button
+                          type="button"
+                          onClick={() => updateCourseTypography({ textColorOverride: null })}
+                          className="text-[10px] font-bold text-muted-foreground hover:text-foreground cursor-pointer"
+                        >
+                          Reset to default
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex gap-2 items-center">
+                      <input
+                        type="color"
+                        value={course?.textColorOverride || "#000000"}
+                        onChange={(e) => updateCourseTypography({ textColorOverride: e.target.value })}
+                        className="w-10 h-8 rounded-lg border border-border bg-transparent cursor-pointer p-0.5"
+                      />
+                      <Input
+                        type="text"
+                        placeholder="Default (from theme)"
+                        value={course?.textColorOverride ?? ""}
+                        onChange={(e) => updateCourseTypography({ textColorOverride: e.target.value || null })}
+                        className="font-mono text-xs bg-background border-border h-8 flex-1"
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
 

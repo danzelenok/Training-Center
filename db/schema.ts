@@ -119,6 +119,17 @@ export const courses = pgTable("courses", {
   // whenever either is null, so legacy courses are visually unaffected.
   themePaletteId: uuid("theme_palette_id").references(() => themePalettes.id),
   themeVariantId: uuid("theme_variant_id").references(() => themePatternVariants.id),
+  // Course-level typography override — independent of the palette: NULL
+  // means "use whatever the palette gives" (current behavior, unaffected).
+  // fontFamilyOverride replaces both palette.fontFamily and
+  // .displayFontFamily (heading + body use the same face) — one field, not
+  // two, deliberately, to keep the picker to a single dropdown. Must be one
+  // of the 6 CSS variable strings declared in app/layout.tsx (enforced in
+  // the UI, not at the DB level). textColorOverride replaces both
+  // deepInk/lightInk (and deepMuted/lightMuted) uniformly, regardless of
+  // cover — a manual color choice isn't meant to vary by slide position.
+  fontFamilyOverride: text("font_family_override"),
+  textColorOverride: text("text_color_override"),
   autoAssignNewWorkers: boolean("auto_assign_new_workers").notNull().default(false),
   publishedAt: timestamp("published_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),

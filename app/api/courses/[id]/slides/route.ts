@@ -24,6 +24,8 @@ export const GET = withTelegramAuth<{ params: Promise<{ id: string }> }>(
           themeValue: courses.themeValue,
           themePaletteId: courses.themePaletteId,
           themeVariantId: courses.themeVariantId,
+          fontFamilyOverride: courses.fontFamilyOverride,
+          textColorOverride: courses.textColorOverride,
         })
         .from(courses)
         .where(and(eq(courses.id, id), eq(courses.organizationId, worker.organizationId)))

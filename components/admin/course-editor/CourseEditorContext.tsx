@@ -98,7 +98,20 @@ interface CourseEditorContextType {
   // site does — clears themePaletteId/themeVariantId, so switching back to
   // a legacy custom color/image correctly stops a previously-picked palette
   // from taking rendering priority (see lib/theme.ts getCardBgStyle).
-  updateCourseStyle: (type: string, value: string, palette?: { paletteId: string; variantId: string }) => void;
+  //
+  // `typography` is unrelated to background/palette — it's the course-level
+  // font/text-color override (see lib/theme.ts getThemeTypography/
+  // getThemeInk). Unlike `palette`, omitting it does NOT clear anything:
+  // picking a new background shouldn't silently wipe out a typography
+  // override the user set separately. To actually clear an override, pass
+  // its field explicitly as null (e.g. { fontFamilyOverride: null }) —
+  // `undefined`/omitted means "leave whatever it currently is alone".
+  updateCourseStyle: (
+    type: string,
+    value: string,
+    palette?: { paletteId: string; variantId: string },
+    typography?: { fontFamilyOverride?: string | null; textColorOverride?: string | null }
+  ) => void;
   fetchCourse: () => Promise<void>;
   fetchMediaFiles: () => Promise<void>;
   openMediaPicker: () => void;
@@ -196,6 +209,8 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
         themeValue: currentCourse.themeValue || "linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)",
         themePaletteId: currentCourse.themePaletteId ?? null,
         themeVariantId: currentCourse.themeVariantId ?? null,
+        fontFamilyOverride: currentCourse.fontFamilyOverride ?? null,
+        textColorOverride: currentCourse.textColorOverride ?? null,
         autoAssignNewWorkers: currentCourse.autoAssignNewWorkers,
         roleIds: currentCourse.roleIds,
         jurisdictionId: currentCourse.ownerJurisdictionId,
@@ -263,6 +278,8 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
     course?.themeValue,
     course?.themePaletteId,
     course?.themeVariantId,
+    course?.fontFamilyOverride,
+    course?.textColorOverride,
     triggerAutoSave,
     loading
   ]);
@@ -299,7 +316,12 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
   const [styleDialogOpen, setStyleDialogOpen] = useState(false);
   const [themeImagePending, setThemeImagePending] = useState(false);
 
-  const updateCourseStyle = (type: string, value: string, palette?: { paletteId: string; variantId: string }) => {
+  const updateCourseStyle = (
+    type: string,
+    value: string,
+    palette?: { paletteId: string; variantId: string },
+    typography?: { fontFamilyOverride?: string | null; textColorOverride?: string | null }
+  ) => {
     if (!course) return;
     setCourse({
       ...course,
@@ -307,6 +329,8 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
       themeValue: value,
       themePaletteId: palette?.paletteId ?? null,
       themeVariantId: palette?.variantId ?? null,
+      fontFamilyOverride: typography?.fontFamilyOverride !== undefined ? typography.fontFamilyOverride : course.fontFamilyOverride,
+      textColorOverride: typography?.textColorOverride !== undefined ? typography.textColorOverride : course.textColorOverride,
     });
   };
 
@@ -756,6 +780,8 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
         themeValue: course.themeValue || "linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)",
         themePaletteId: course.themePaletteId ?? null,
         themeVariantId: course.themeVariantId ?? null,
+        fontFamilyOverride: course.fontFamilyOverride ?? null,
+        textColorOverride: course.textColorOverride ?? null,
         slides: slidesListRef.current,
       });
 

@@ -21,6 +21,8 @@ export default function CoursePreviewPage({ params }: PageProps) {
   const [themeVariantId, setThemeVariantId] = useState<string | null | undefined>();
   const [themePalette, setThemePalette] = useState<ResolvedThemePalette | null | undefined>();
   const [themeVariant, setThemeVariant] = useState<ResolvedThemeVariant | null | undefined>();
+  const [fontFamilyOverride, setFontFamilyOverride] = useState<string | null | undefined>();
+  const [textColorOverride, setTextColorOverride] = useState<string | null | undefined>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -40,6 +42,8 @@ export default function CoursePreviewPage({ params }: PageProps) {
         setThemeVariantId(data.themeVariantId);
         setThemePalette(data.themePalette);
         setThemeVariant(data.themeVariant);
+        setFontFamilyOverride(data.fontFamilyOverride);
+        setTextColorOverride(data.textColorOverride);
       } catch (err: any) {
         setError(err.message || "An unexpected error occurred.");
       } finally {
@@ -86,6 +90,8 @@ export default function CoursePreviewPage({ params }: PageProps) {
           themeVariantId={themeVariantId}
           themePalette={themePalette}
           themeVariant={themeVariant}
+          fontFamilyOverride={fontFamilyOverride}
+          textColorOverride={textColorOverride}
           jurisdictionBadges={jurisdictions}
         />
       </div>

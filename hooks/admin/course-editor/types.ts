@@ -31,6 +31,9 @@ export interface Course {
   // GET/PATCH /api/courses/[id], never sent back in a save payload.
   themePalette?: ResolvedThemePalette | null;
   themeVariant?: ResolvedThemeVariant | null;
+  // Course-level overrides, independent of the palette — see lib/theme.ts.
+  fontFamilyOverride?: string | null;
+  textColorOverride?: string | null;
 }
 
 export interface GenerationStatusSlide {

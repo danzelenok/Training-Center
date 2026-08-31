@@ -22,6 +22,8 @@ interface StoryPlayerProps {
   themeVariantId?: string | null;
   themePalette?: ResolvedThemePalette | null;
   themeVariant?: ResolvedThemeVariant | null;
+  fontFamilyOverride?: string | null;
+  textColorOverride?: string | null;
   // Admin-preview only: when set, renders a "Base"/state code badge on each
   // slide so admins can tell which jurisdiction variant they're looking at.
   // Left unset for the real worker-facing Mini App.
@@ -38,6 +40,8 @@ export function StoryPlayer({
   themeVariantId,
   themePalette,
   themeVariant,
+  fontFamilyOverride,
+  textColorOverride,
   jurisdictionBadges,
 }: StoryPlayerProps) {
   const [safeTop, setSafeTop] = useState(0);
@@ -335,7 +339,16 @@ export function StoryPlayer({
     );
   }
 
-  const themeCourse = { themeType, themeValue, themePaletteId, themeVariantId, themePalette, themeVariant };
+  const themeCourse = {
+    themeType,
+    themeValue,
+    themePaletteId,
+    themeVariantId,
+    themePalette,
+    themeVariant,
+    fontFamilyOverride,
+    textColorOverride,
+  };
   const cardStyle = getCardBgStyle(themeCourse, { cover: currentIndex === 0 });
   const themeTypography = getThemeTypography(themeCourse);
   const themeInk = getThemeInk(themeCourse, { cover: currentIndex === 0 });

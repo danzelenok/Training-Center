@@ -20,6 +20,8 @@ export default function MiniAppCoursePage({ params }: PageProps) {
   const [themeVariantId, setThemeVariantId] = useState<string | null | undefined>();
   const [themePalette, setThemePalette] = useState<ResolvedThemePalette | null | undefined>();
   const [themeVariant, setThemeVariant] = useState<ResolvedThemeVariant | null | undefined>();
+  const [fontFamilyOverride, setFontFamilyOverride] = useState<string | null | undefined>();
+  const [textColorOverride, setTextColorOverride] = useState<string | null | undefined>();
   const [initData, setInitData] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -52,6 +54,8 @@ export default function MiniAppCoursePage({ params }: PageProps) {
       setThemeVariantId(data.course?.themeVariantId);
       setThemePalette(data.course?.themePalette);
       setThemeVariant(data.course?.themeVariant);
+      setFontFamilyOverride(data.course?.fontFamilyOverride);
+      setTextColorOverride(data.course?.textColorOverride);
     } catch (err: any) {
       setError(err.message || "An unexpected error occurred.");
     } finally {
@@ -212,6 +216,8 @@ export default function MiniAppCoursePage({ params }: PageProps) {
         themeVariantId={themeVariantId}
         themePalette={themePalette}
         themeVariant={themeVariant}
+        fontFamilyOverride={fontFamilyOverride}
+        textColorOverride={textColorOverride}
       />
     </main>
   );

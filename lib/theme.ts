@@ -35,6 +35,11 @@ export interface ThemeableCourse {
   // the API route resolves them AND the course actually has them set.
   themePalette?: ResolvedThemePalette | null;
   themeVariant?: ResolvedThemeVariant | null;
+  // Course-level overrides, independent of the palette — null/undefined
+  // means "use whatever the palette (or legacy fallback) gives", the
+  // existing behavior. See getThemeTypography/getThemeInk.
+  fontFamilyOverride?: string | null;
+  textColorOverride?: string | null;
 }
 
 function hasResolvedTheme(course: ThemeableCourse): course is ThemeableCourse & {
@@ -114,22 +119,34 @@ export interface ThemeTypography {
 
 /**
  * Typography/accent identity for a Theme System v2 course — empty object
- * for a legacy course (themePaletteId unset, or not yet resolved), which
- * callers should treat as "use the existing hardcoded defaults" rather than
- * force any particular font.
+ * for a legacy course (themePaletteId unset, or not yet resolved) with no
+ * override either, which callers should treat as "use the existing
+ * hardcoded defaults" rather than force any particular font.
+ *
+ * course.fontFamilyOverride, when set, wins over the palette's
+ * fontFamily/displayFontFamily — deliberately one field replacing both
+ * (heading and body share the override face) rather than two separate
+ * overrides, to keep the picker UI to a single dropdown. fontWeight and
+ * letterSpacing are untouched by the override: it replaces the typeface,
+ * not the palette's weight/tracking choices.
  */
 export function getThemeTypography(course: ThemeableCourse): ThemeTypography {
-  if (!hasResolvedTheme(course)) return {};
-  const p = course.themePalette;
-  return {
-    fontFamily: p.fontFamily,
-    displayFontFamily: p.displayFontFamily,
-    fontWeight: p.fontWeight,
-    letterSpacing: p.letterSpacing,
-    accentColor: p.accentColor,
-    accentInkColor: p.accentInkColor,
-    isDark: p.isDark,
-  };
+  const base: ThemeTypography = hasResolvedTheme(course)
+    ? {
+        fontFamily: course.themePalette.fontFamily,
+        displayFontFamily: course.themePalette.displayFontFamily,
+        fontWeight: course.themePalette.fontWeight,
+        letterSpacing: course.themePalette.letterSpacing,
+        accentColor: course.themePalette.accentColor,
+        accentInkColor: course.themePalette.accentInkColor,
+        isDark: course.themePalette.isDark,
+      }
+    : {};
+
+  if (course.fontFamilyOverride) {
+    return { ...base, fontFamily: course.fontFamilyOverride, displayFontFamily: course.fontFamilyOverride };
+  }
+  return base;
 }
 
 export interface ThemeInk {
@@ -142,12 +159,24 @@ export interface ThemeInk {
  * Text color paired with getCardBgStyle's background choice — pass the
  * same `options.cover` value used for the background call so ink and
  * background always agree (deepInk on deepCss, lightInk on patternCss).
- * Empty object for a legacy course, same convention as getThemeTypography.
+ * Empty object for a legacy course with no override, same convention as
+ * getThemeTypography.
+ *
+ * course.textColorOverride, when set, wins unconditionally — applied to
+ * both `ink` and `muted` alike (it's a single manual color choice, not a
+ * palette with separate heading/body tones) and regardless of `cover`: an
+ * override is a deliberate user choice, not something that should quietly
+ * differ between the title slide and the rest.
  */
 export function getThemeInk(course: ThemeableCourse, options?: { cover?: boolean }): ThemeInk {
-  if (!hasResolvedTheme(course)) return {};
-  const p = course.themePalette;
-  return options?.cover
-    ? { ink: p.deepInk, muted: p.deepMuted, line: p.lineColor }
-    : { ink: p.lightInk, muted: p.lightMuted, line: p.lineColor };
+  const base: ThemeInk = hasResolvedTheme(course)
+    ? options?.cover
+      ? { ink: course.themePalette.deepInk, muted: course.themePalette.deepMuted, line: course.themePalette.lineColor }
+      : { ink: course.themePalette.lightInk, muted: course.themePalette.lightMuted, line: course.themePalette.lineColor }
+    : {};
+
+  if (course.textColorOverride) {
+    return { ...base, ink: course.textColorOverride, muted: course.textColorOverride };
+  }
+  return base;
 }

@@ -9,6 +9,8 @@ interface AutosavePayload {
   themeValue: string;
   themePaletteId: string | null;
   themeVariantId: string | null;
+  fontFamilyOverride: string | null;
+  textColorOverride: string | null;
   autoAssignNewWorkers: boolean;
   roleIds: string[];
   jurisdictionId: string;
@@ -46,6 +48,8 @@ interface SaveCoursePayload {
   themeValue: string;
   themePaletteId: string | null;
   themeVariantId: string | null;
+  fontFamilyOverride: string | null;
+  textColorOverride: string | null;
   slides: Slide[];
 }
 
