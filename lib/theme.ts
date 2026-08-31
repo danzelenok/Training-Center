@@ -45,6 +45,27 @@ function hasResolvedTheme(course: ThemeableCourse): course is ThemeableCourse & 
 }
 
 /**
+ * Turns a stored multi-layer CSS background value (comma-joined gradient
+ * functions, optionally ending in a plain color — see
+ * scripts/seed-theme-palettes.ts) into a style object using the
+ * `background` shorthand rather than `backgroundImage`.
+ *
+ * This matters: `background-image` only accepts <image> values (gradient
+ * functions, url()) in its comma-separated list — a bare color like
+ * `#f4ece0` is not a valid list item, and per the CSS spec an invalid item
+ * anywhere in the list invalidates the *entire* declaration (not just that
+ * layer), so the browser silently drops the whole background and falls
+ * through to whatever's underneath. The `background` shorthand has no such
+ * restriction: a plain color is valid as the *last* layer, where it's
+ * interpreted as background-color. Every caller that assigns a raw
+ * variant/preset CSS string to an element's background must go through
+ * this helper — do not reintroduce a second `backgroundImage: ...` site.
+ */
+export function themeBackgroundStyle(css: string): CSSProperties {
+  return { background: css };
+}
+
+/**
  * Shared by CardCanvas.tsx (editor), story-player.tsx (player), and
  * TextSlide.tsx — was previously duplicated 1:1 between the first two. When
  * a course has been migrated to Theme System v2 (themePaletteId +
@@ -60,15 +81,15 @@ function hasResolvedTheme(course: ThemeableCourse): course is ThemeableCourse & 
  */
 export function getCardBgStyle(course: ThemeableCourse, options?: { cover?: boolean }): CSSProperties {
   if (hasResolvedTheme(course)) {
-    const backgroundImage = options?.cover ? course.themeVariant.deepCss : course.themeVariant.patternCss;
-    return { backgroundImage, borderRadius: course.themePalette.cardRadius };
+    const css = options?.cover ? course.themeVariant.deepCss : course.themeVariant.patternCss;
+    return { ...themeBackgroundStyle(css), borderRadius: course.themePalette.cardRadius };
   }
 
   const themeType = course.themeType || "preset";
   const themeValue = course.themeValue || LEGACY_DEFAULT_GRADIENT;
 
   if (themeType === "preset") {
-    return { backgroundImage: themeValue };
+    return themeBackgroundStyle(themeValue);
   } else if (themeType === "color") {
     return { backgroundColor: themeValue };
   } else if (themeType === "image") {
@@ -78,7 +99,7 @@ export function getCardBgStyle(course: ThemeableCourse, options?: { cover?: bool
       backgroundPosition: "center",
     };
   }
-  return { backgroundImage: LEGACY_DEFAULT_GRADIENT };
+  return themeBackgroundStyle(LEGACY_DEFAULT_GRADIENT);
 }
 
 export interface ThemeTypography {

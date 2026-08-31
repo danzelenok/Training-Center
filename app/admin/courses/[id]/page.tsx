@@ -48,6 +48,7 @@ import {
   useCourseEditor,
 } from "@/components/admin/course-editor/CourseEditorContext";
 import { useThemePalettesQuery } from "@/hooks/admin/theme-palettes/queries";
+import { themeBackgroundStyle } from "@/lib/theme";
 
 export default function CourseEditorPage() {
   return (
@@ -281,7 +282,7 @@ function CourseEditorContent() {
                                 <div
                                   key={v.id}
                                   className="flex-1 h-11 rounded-md border border-black/10"
-                                  style={{ backgroundImage: i % 2 === 0 ? v.deepCss : v.patternCss }}
+                                  style={themeBackgroundStyle(i % 2 === 0 ? v.deepCss : v.patternCss)}
                                 />
                               ))}
                             </div>
@@ -338,7 +339,7 @@ function CourseEditorContent() {
                               >
                                 <span
                                   className="w-14 h-[76px] rounded-lg border border-black/10 shrink-0"
-                                  style={{ backgroundImage: variant.deepCss }}
+                                  style={themeBackgroundStyle(variant.deepCss)}
                                 />
                                 <span className="text-[11px] font-semibold text-foreground">{variant.name}</span>
                               </button>

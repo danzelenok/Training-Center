@@ -9,9 +9,11 @@
  * Each texture variant carries two coordinated multi-layer backgrounds —
  * `patternCss` (content-card, pairs with lightInk/lightMuted) and
  * `deepCss` (cover-slide, pairs with deepInk/deepMuted) — matching the
- * artifact's `tex[].light` / `tex[].deep` layer arrays (joined into a
- * single comma-separated `background-image` value, since CSS supports
- * stacking multiple gradients that way).
+ * artifact's `tex[].light` / `tex[].deep` layer arrays, joined into a
+ * single comma-separated value rendered via the CSS `background` shorthand
+ * (see lib/theme.ts's themeBackgroundStyle) rather than `background-image`,
+ * since some layers are a bare color rather than a gradient function —
+ * only `background` allows that as the last layer in the list.
  *
  * Idempotent — safe to run more than once. `theme_palettes.name` has no
  * unique constraint (per spec), so idempotency is done by explicit
@@ -419,6 +421,20 @@ const THEMES: ThemeDef[] = [
   },
 ];
 
+// A `tex[].deep`/`tex[].light` layer is sometimes a bare color (the
+// artifact's own array literals do this for flat-color textures, e.g.
+// Risograph's "Block"). That's fine for `background` (CSS shorthand),
+// which pattern_css/deep_css are rendered through everywhere (see
+// lib/theme.ts's themeBackgroundStyle) — but not for `background-image`,
+// where a bare color anywhere in the comma list invalidates the entire
+// declaration. Wrapping every bare layer in a two-stop gradient of the
+// same color keeps every stored value renderable via either property, so
+// this bug class can't come back regardless of which one a future caller
+// picks.
+function wrapBareColorLayer(layer: string): string {
+  return /^[a-zA-Z-]+\(/.test(layer) || layer === "none" ? layer : `linear-gradient(${layer}, ${layer})`;
+}
+
 // baseColors is a leftover summary field (primary/secondary/accent) kept
 // populated for anything that still reads it — derived from each theme's
 // first ("Smooth"-equivalent) deep texture's gradient stops.
@@ -486,8 +502,8 @@ async function main() {
     for (let i = 0; i < theme.tex.length; i++) {
       const variantIndex = i + 1;
       const tex = theme.tex[i];
-      const patternCss = tex.light.join(", ");
-      const deepCss = tex.deep.join(", ");
+      const patternCss = tex.light.map(wrapBareColorLayer).join(", ");
+      const deepCss = tex.deep.map(wrapBareColorLayer).join(", ");
 
       const [existingVariant] = await sql.query(
         `SELECT id FROM theme_pattern_variants WHERE palette_id = $1 AND variant_index = $2 LIMIT 1`,
