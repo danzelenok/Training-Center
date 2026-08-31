@@ -63,6 +63,19 @@ export const themePalettes = pgTable("theme_palettes", {
   accentColor: text("accent_color").notNull(),
   accentInkColor: text("accent_ink_color").notNull(), // text/icon color on top of accentColor
   isDark: boolean("is_dark").notNull().default(false), // whether this palette's ink is light-on-dark by design
+  // Text colors paired with the two background treatments a variant
+  // provides (see themePatternVariants.deepCss/patternCss below):
+  // deepInk/deepMuted sit on the cover (deepCss) background,
+  // lightInk/lightMuted sit on the content (patternCss) background —
+  // "light" here names the slide role, not that the color is literally
+  // light (e.g. Night Shift's content background is still dark, so its
+  // lightInk is a light color too). lineColor is a low-contrast
+  // divider/border tone matched to the theme.
+  deepInk: text("deep_ink").notNull(),
+  deepMuted: text("deep_muted").notNull(),
+  lightInk: text("light_ink").notNull(),
+  lightMuted: text("light_muted").notNull(),
+  lineColor: text("line_color").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

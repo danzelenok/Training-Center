@@ -20,6 +20,11 @@ export interface ThemePalette {
   accentColor: string;
   accentInkColor: string;
   isDark: boolean;
+  deepInk: string;
+  deepMuted: string;
+  lightInk: string;
+  lightMuted: string;
+  lineColor: string;
   variants: ThemePatternVariant[];
 }
 

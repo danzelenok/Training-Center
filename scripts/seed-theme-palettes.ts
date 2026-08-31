@@ -1,22 +1,29 @@
 /**
- * Seed for Theme System v2: 5 construction/safety-appropriate palettes, each
- * bundling a typographic identity (body + display font, weight, tracking,
- * corner radius, accent) alongside 5 background-pattern variants. Each
- * variant carries two coordinated backgrounds — `patternCss` (content-card,
- * pairs with light ink) and `deepCss` (cover-slide, pairs with light-on-dark
- * ink) — into `theme_palettes` / `theme_pattern_variants`.
+ * Seed for Theme System v2 — ports the 6 themes (each with 4 texture
+ * variants) from a Claude Design reference artifact the user supplied,
+ * verbatim: same fonts, weights, tracking, radii, accent/ink colors, and
+ * gradient layers. Only the theme/variant *names* are translated to
+ * English (product copy must be English-only, per AGENTS.md) — the visual
+ * design itself is not reinterpreted.
+ *
+ * Each texture variant carries two coordinated multi-layer backgrounds —
+ * `patternCss` (content-card, pairs with lightInk/lightMuted) and
+ * `deepCss` (cover-slide, pairs with deepInk/deepMuted) — matching the
+ * artifact's `tex[].light` / `tex[].deep` layer arrays (joined into a
+ * single comma-separated `background-image` value, since CSS supports
+ * stacking multiple gradients that way).
  *
  * Idempotent — safe to run more than once. `theme_palettes.name` has no
  * unique constraint (per spec), so idempotency is done by explicit
  * existence-check instead of ON CONFLICT: a palette is looked up by name
  * before insert, and each variant is looked up by (palette_id,
- * variant_index) and UPDATEd in place if found rather than re-inserted — so
- * editing a variant's CSS in this file and re-running the script pushes the
- * update without ever creating duplicate rows.
+ * variant_index) and UPDATEd in place if found rather than re-inserted —
+ * so re-running this script after editing a value here pushes the update
+ * without ever creating duplicate rows or changing any id (existing
+ * courses that already reference a palette/variant keep working).
  *
- * Does NOT touch `courses` — existing courses stay on their legacy
- * theme_type/theme_value until an admin explicitly re-picks a palette for
- * them through the editor UI.
+ * Does NOT touch `courses` — a course only gets a palette/variant when an
+ * admin explicitly picks one through the editor UI.
  *
  * Run with:
  *   npx tsx scripts/seed-theme-palettes.ts
@@ -56,16 +63,15 @@ if (!DATABASE_URL) {
 
 const sql = neon(DATABASE_URL);
 
-interface BaseColors {
-  primary: string;
-  secondary: string;
-  accent: string;
+interface TextureDef {
+  name: string;
+  deep: string[]; // background-image layers, front-to-back
+  light: string[];
 }
 
-interface PaletteDef {
+interface ThemeDef {
   name: string;
   sortOrder: number;
-  colors: BaseColors;
   fontFamily: string;
   displayFontFamily: string;
   fontWeight: number;
@@ -74,153 +80,382 @@ interface PaletteDef {
   accentColor: string;
   accentInkColor: string;
   isDark: boolean;
+  deepInk: string;
+  deepMuted: string;
+  lightInk: string;
+  lightMuted: string;
+  lineColor: string;
+  tex: TextureDef[];
 }
 
-// Muted, B2B-appropriate palettes for an OSHA/L&I compliance training
-// product — construction-adjacent without being "playful". Each bundles a
-// distinct typographic identity (font/weight/tracking/radius), not just
-// color, so picking a palette visibly changes the feel of the course cards.
-const PALETTES: PaletteDef[] = [
+const THEMES: ThemeDef[] = [
   {
-    name: "Ocean Blue",
+    name: "Midnight",
     sortOrder: 1,
-    colors: { primary: "#0B3C5D", secondary: "#1E5F8C", accent: "#4FA8D8" },
-    fontFamily: "var(--font-manrope), sans-serif",
-    displayFontFamily: "var(--font-manrope), sans-serif",
-    fontWeight: 800,
-    letterSpacing: "-0.02em",
-    cardRadius: 20,
-    accentColor: "#4FA8D8",
-    accentInkColor: "#0B3C5D",
-    isDark: false,
-  },
-  {
-    name: "Safety Orange",
-    sortOrder: 2,
-    colors: { primary: "#C1440E", secondary: "#E8703A", accent: "#F4A261" },
-    fontFamily: "var(--font-space-grotesk), sans-serif",
-    displayFontFamily: "var(--font-space-grotesk), sans-serif",
-    fontWeight: 700,
-    letterSpacing: "-0.02em",
-    cardRadius: 8,
-    accentColor: "#E8703A",
-    accentInkColor: "#FFF6EC",
-    isDark: false,
-  },
-  {
-    name: "Steel Gray",
-    sortOrder: 3,
-    colors: { primary: "#37474F", secondary: "#546E7A", accent: "#90A4AE" },
-    fontFamily: "var(--font-ibm-plex-mono), monospace",
-    displayFontFamily: "var(--font-space-grotesk), sans-serif",
-    fontWeight: 700,
-    letterSpacing: "-0.01em",
-    cardRadius: 12,
-    accentColor: "#D9A441",
-    accentInkColor: "#20262A",
-    isDark: false,
-  },
-  {
-    name: "Site Green",
-    sortOrder: 4,
-    colors: { primary: "#1B4332", secondary: "#2D6A4F", accent: "#52B788" },
-    fontFamily: "var(--font-dm-sans), sans-serif",
-    displayFontFamily: "var(--font-dm-sans), sans-serif",
-    fontWeight: 700,
-    letterSpacing: "-0.015em",
-    cardRadius: 24,
-    accentColor: "#52B788",
-    accentInkColor: "#0F2A1E",
-    isDark: false,
-  },
-  {
-    name: "Deep Navy",
-    sortOrder: 5,
-    colors: { primary: "#0D1B2A", secondary: "#1B3A4B", accent: "#2C5364" },
     fontFamily: "var(--font-manrope), sans-serif",
     displayFontFamily: "var(--font-manrope), sans-serif",
     fontWeight: 800,
     letterSpacing: "-0.025em",
-    cardRadius: 16,
-    accentColor: "#5FA8FF",
-    accentInkColor: "#0A1420",
+    cardRadius: 22,
+    accentColor: "#3d63ff",
+    accentInkColor: "#ffffff",
+    isDark: false,
+    deepInk: "#ffffff",
+    deepMuted: "rgba(255,255,255,.68)",
+    lightInk: "#0f1a4a",
+    lightMuted: "rgba(15,26,74,.62)",
+    lineColor: "rgba(15,26,74,.14)",
+    tex: [
+      {
+        name: "Smooth",
+        deep: ["linear-gradient(165deg,#16266f 0%,#050a24 100%)"],
+        light: ["linear-gradient(165deg,#f3f5ff 0%,#e2e8ff 100%)"],
+      },
+      {
+        name: "Glow",
+        deep: [
+          "radial-gradient(130% 85% at 15% 105%, #3552d8 0%, transparent 62%)",
+          "linear-gradient(165deg,#101a5c,#04061c)",
+        ],
+        light: [
+          "radial-gradient(120% 80% at 10% 105%, #c9d6ff 0%, transparent 66%)",
+          "linear-gradient(165deg,#f6f8ff,#eaeeff)",
+        ],
+      },
+      {
+        name: "Haze",
+        deep: [
+          "radial-gradient(60% 40% at 80% 15%, rgba(120,150,255,.34) 0%, transparent 70%)",
+          "radial-gradient(70% 45% at 10% 70%, rgba(40,70,220,.5) 0%, transparent 72%)",
+          "linear-gradient(180deg,#0c1348,#070b26)",
+        ],
+        light: [
+          "radial-gradient(60% 40% at 85% 12%, rgba(150,170,255,.4) 0%, transparent 70%)",
+          "radial-gradient(70% 45% at 5% 75%, rgba(190,205,255,.7) 0%, transparent 72%)",
+          "#f2f4ff",
+        ],
+      },
+      {
+        name: "Grid",
+        deep: [
+          "repeating-linear-gradient(0deg, rgba(255,255,255,.07) 0 1px, transparent 1px 30px)",
+          "repeating-linear-gradient(90deg, rgba(255,255,255,.07) 0 1px, transparent 1px 30px)",
+          "linear-gradient(165deg,#111c60,#05081f)",
+        ],
+        light: [
+          "repeating-linear-gradient(0deg, rgba(15,26,74,.07) 0 1px, transparent 1px 30px)",
+          "repeating-linear-gradient(90deg, rgba(15,26,74,.07) 0 1px, transparent 1px 30px)",
+          "#eef1ff",
+        ],
+      },
+    ],
+  },
+  {
+    name: "Amber",
+    sortOrder: 2,
+    fontFamily: "var(--font-manrope), sans-serif",
+    displayFontFamily: "var(--font-manrope), sans-serif",
+    fontWeight: 800,
+    letterSpacing: "-0.025em",
+    cardRadius: 22,
+    accentColor: "#d4531a",
+    accentInkColor: "#fff6ec",
+    isDark: false,
+    deepInk: "#fff6ec",
+    deepMuted: "rgba(255,240,225,.72)",
+    lightInk: "#4a2008",
+    lightMuted: "rgba(74,32,8,.62)",
+    lineColor: "rgba(74,32,8,.14)",
+    tex: [
+      {
+        name: "Smooth",
+        deep: ["linear-gradient(160deg,#f0913f 0%,#b8460f 100%)"],
+        light: ["linear-gradient(160deg,#fdf3e6,#f8e2c6)"],
+      },
+      {
+        name: "Sunset",
+        deep: [
+          "radial-gradient(120% 80% at 85% 0%, #ffc06a 0%, transparent 58%)",
+          "linear-gradient(170deg,#d9631d,#7a2a08)",
+        ],
+        light: ["radial-gradient(120% 75% at 90% 0%, #ffe3b8 0%, transparent 62%)", "#fdf4e9"],
+      },
+      {
+        name: "Wave",
+        deep: [
+          "radial-gradient(90% 55% at -10% 85%, rgba(255,206,140,.55) 0%, transparent 70%)",
+          "radial-gradient(80% 50% at 110% 20%, rgba(255,160,70,.6) 0%, transparent 68%)",
+          "linear-gradient(170deg,#c9531a,#8c3209)",
+        ],
+        light: [
+          "radial-gradient(85% 50% at -5% 90%, rgba(246,205,157,.85) 0%, transparent 70%)",
+          "radial-gradient(75% 48% at 108% 18%, rgba(250,222,185,.9) 0%, transparent 68%)",
+          "#fdf5ec",
+        ],
+      },
+      {
+        name: "Stripes",
+        deep: [
+          "repeating-linear-gradient(115deg, rgba(255,255,255,.09) 0 2px, transparent 2px 16px)",
+          "linear-gradient(160deg,#e2721f,#8e3409)",
+        ],
+        light: [
+          "repeating-linear-gradient(115deg, rgba(180,90,30,.09) 0 2px, transparent 2px 16px)",
+          "linear-gradient(160deg,#fdf2e2,#f7e0c2)",
+        ],
+      },
+    ],
+  },
+  {
+    name: "Risograph",
+    sortOrder: 3,
+    fontFamily: "var(--font-space-grotesk), sans-serif",
+    displayFontFamily: "var(--font-space-grotesk), sans-serif",
+    fontWeight: 700,
+    letterSpacing: "-0.03em",
+    cardRadius: 6,
+    accentColor: "#e33a12",
+    accentInkColor: "#fdf6e8",
+    isDark: false,
+    deepInk: "#fdf6e8",
+    deepMuted: "rgba(253,246,232,.72)",
+    lightInk: "#1c1712",
+    lightMuted: "rgba(28,23,18,.62)",
+    lineColor: "rgba(28,23,18,.22)",
+    tex: [
+      { name: "Block", deep: ["#e33a12"], light: ["#f4ece0"] },
+      {
+        name: "Halftone",
+        deep: ["radial-gradient(rgba(28,23,18,.28) 1.4px, transparent 1.5px) 0 0/9px 9px", "#e33a12"],
+        light: ["radial-gradient(rgba(227,58,18,.35) 1.4px, transparent 1.5px) 0 0/9px 9px", "#f4ece0"],
+      },
+      {
+        name: "Shift",
+        deep: ["linear-gradient(90deg, rgba(20,60,180,.55) 0 34%, transparent 34%)", "#e33a12"],
+        light: [
+          "linear-gradient(90deg, rgba(227,58,18,.22) 0 26%, transparent 26%)",
+          "linear-gradient(0deg, rgba(20,60,180,.14) 0 18%, transparent 18%)",
+          "#f4ece0",
+        ],
+      },
+      {
+        name: "Hatch",
+        deep: ["repeating-linear-gradient(45deg, rgba(20,20,20,.16) 0 3px, transparent 3px 11px)", "#e33a12"],
+        light: ["repeating-linear-gradient(45deg, rgba(28,23,18,.12) 0 3px, transparent 3px 11px)", "#f4ece0"],
+      },
+    ],
+  },
+  {
+    name: "Greenhouse",
+    sortOrder: 4,
+    fontFamily: "var(--font-dm-sans), sans-serif",
+    displayFontFamily: "var(--font-newsreader), serif",
+    fontWeight: 500,
+    letterSpacing: "-0.015em",
+    cardRadius: 26,
+    accentColor: "#4a7a4e",
+    accentInkColor: "#f4f8ee",
+    isDark: false,
+    deepInk: "#f2f6ec",
+    deepMuted: "rgba(242,246,236,.72)",
+    lightInk: "#1f3327",
+    lightMuted: "rgba(31,51,39,.62)",
+    lineColor: "rgba(31,51,39,.16)",
+    tex: [
+      {
+        name: "Moss",
+        deep: ["linear-gradient(170deg,#2c4a35,#16261c)"],
+        light: ["linear-gradient(170deg,#eef2e6,#dde5d4)"],
+      },
+      {
+        name: "Leaves",
+        deep: [
+          "radial-gradient(45% 30% at 15% 12%, rgba(150,190,130,.4) 0%, transparent 70%)",
+          "radial-gradient(55% 35% at 95% 78%, rgba(110,160,100,.45) 0%, transparent 72%)",
+          "linear-gradient(170deg,#28422f,#13211a)",
+        ],
+        light: [
+          "radial-gradient(45% 28% at 12% 10%, rgba(160,195,140,.5) 0%, transparent 70%)",
+          "radial-gradient(55% 34% at 96% 80%, rgba(190,214,170,.6) 0%, transparent 72%)",
+          "#f0f4e9",
+        ],
+      },
+      {
+        name: "Steam",
+        deep: [
+          "repeating-linear-gradient(0deg, rgba(255,255,255,.05) 0 14px, transparent 14px 34px)",
+          "linear-gradient(200deg,#2f5140,#152219)",
+        ],
+        light: [
+          "repeating-linear-gradient(0deg, rgba(31,51,39,.05) 0 14px, transparent 14px 34px)",
+          "linear-gradient(200deg,#f2f6ec,#e0e8d6)",
+        ],
+      },
+      {
+        name: "Arch",
+        deep: [
+          "radial-gradient(70% 46% at 50% 8%, rgba(146,186,126,.45) 0 62%, transparent 63%)",
+          "linear-gradient(170deg,#264033,#12201a)",
+        ],
+        light: ["radial-gradient(70% 46% at 50% 6%, rgba(200,220,180,.75) 0 62%, transparent 63%)", "#f1f5ea"],
+      },
+    ],
+  },
+  {
+    name: "Night Shift",
+    sortOrder: 5,
+    fontFamily: "var(--font-ibm-plex-mono), monospace",
+    displayFontFamily: "var(--font-space-grotesk), sans-serif",
+    fontWeight: 700,
+    letterSpacing: "-0.01em",
+    cardRadius: 10,
+    accentColor: "#c2f53f",
+    accentInkColor: "#0d1110",
     isDark: true,
+    deepInk: "#e9ffd0",
+    deepMuted: "rgba(233,255,208,.6)",
+    lightInk: "#d7dde0",
+    lightMuted: "rgba(215,221,224,.6)",
+    lineColor: "rgba(194,245,63,.28)",
+    tex: [
+      {
+        name: "Asphalt",
+        deep: ["linear-gradient(180deg,#141816,#080a09)"],
+        light: ["linear-gradient(180deg,#1d2320,#121614)"],
+      },
+      {
+        name: "Lane Markings",
+        deep: [
+          "repeating-linear-gradient(90deg, rgba(194,245,63,.14) 0 1px, transparent 1px 26px)",
+          "linear-gradient(180deg,#151a17,#080a09)",
+        ],
+        light: [
+          "repeating-linear-gradient(90deg, rgba(194,245,63,.1) 0 1px, transparent 1px 26px)",
+          "linear-gradient(180deg,#1e2421,#121614)",
+        ],
+      },
+      {
+        name: "Scan",
+        deep: [
+          "repeating-linear-gradient(0deg, rgba(255,255,255,.05) 0 1px, transparent 1px 4px)",
+          "radial-gradient(90% 55% at 50% 105%, rgba(194,245,63,.24) 0%, transparent 65%)",
+          "#0b0e0c",
+        ],
+        light: ["repeating-linear-gradient(0deg, rgba(255,255,255,.04) 0 1px, transparent 1px 4px)", "#171c19"],
+      },
+      {
+        name: "Headlight",
+        deep: [
+          "radial-gradient(80% 48% at 78% 6%, rgba(194,245,63,.42) 0%, transparent 62%)",
+          "linear-gradient(200deg,#121714,#070908)",
+        ],
+        light: [
+          "radial-gradient(80% 45% at 80% 4%, rgba(194,245,63,.16) 0%, transparent 62%)",
+          "#161b18",
+        ],
+      },
+    ],
+  },
+  {
+    name: "Clay",
+    sortOrder: 6,
+    fontFamily: "var(--font-bricolage-grotesque), sans-serif",
+    displayFontFamily: "var(--font-bricolage-grotesque), sans-serif",
+    fontWeight: 800,
+    letterSpacing: "-0.03em",
+    cardRadius: 30,
+    accentColor: "#b8523a",
+    accentInkColor: "#fdf0e4",
+    isDark: false,
+    deepInk: "#fdf0e4",
+    deepMuted: "rgba(253,240,228,.74)",
+    lightInk: "#43241a",
+    lightMuted: "rgba(67,36,26,.62)",
+    lineColor: "rgba(67,36,26,.16)",
+    tex: [
+      {
+        name: "Terracotta",
+        deep: ["linear-gradient(165deg,#c4634a,#8e3a2a)"],
+        light: ["linear-gradient(165deg,#f6e7d8,#ecd6c2)"],
+      },
+      {
+        name: "Circles",
+        deep: [
+          "radial-gradient(38% 22% at 78% 16%, rgba(255,214,180,.55) 0 99%, transparent 100%)",
+          "radial-gradient(52% 30% at 8% 88%, rgba(120,50,35,.6) 0 99%, transparent 100%)",
+          "linear-gradient(165deg,#c05c44,#8a3628)",
+        ],
+        light: [
+          "radial-gradient(36% 21% at 80% 14%, rgba(228,175,140,.7) 0 99%, transparent 100%)",
+          "radial-gradient(50% 29% at 6% 90%, rgba(214,190,165,.8) 0 99%, transparent 100%)",
+          "#f7e9db",
+        ],
+      },
+      {
+        name: "Dunes",
+        deep: [
+          "radial-gradient(120% 40% at 50% 118%, rgba(255,206,170,.55) 0 60%, transparent 61%)",
+          "radial-gradient(120% 40% at 50% 132%, rgba(255,226,196,.4) 0 60%, transparent 61%)",
+          "linear-gradient(165deg,#b95440,#7f3124)",
+        ],
+        light: [
+          "radial-gradient(120% 40% at 50% 118%, rgba(226,190,158,.75) 0 60%, transparent 61%)",
+          "radial-gradient(120% 40% at 50% 132%, rgba(240,214,188,.7) 0 60%, transparent 61%)",
+          "#f8ebde",
+        ],
+      },
+      {
+        name: "Grain",
+        deep: [
+          "repeating-radial-gradient(circle at 30% 30%, rgba(255,255,255,.07) 0 1px, transparent 1px 5px)",
+          "linear-gradient(165deg,#c05e46,#87352a)",
+        ],
+        light: [
+          "repeating-radial-gradient(circle at 30% 30%, rgba(67,36,26,.06) 0 1px, transparent 1px 5px)",
+          "#f5e7d9",
+        ],
+      },
+    ],
   },
 ];
 
-function hexToRgba(hex: string, alpha: number): string {
-  const clean = hex.replace("#", "");
-  const r = parseInt(clean.slice(0, 2), 16);
-  const g = parseInt(clean.slice(2, 4), 16);
-  const b = parseInt(clean.slice(4, 6), 16);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
-
-interface VariantDef {
-  name: string;
-  patternCss: string;
-  deepCss: string;
-}
-
-// Builds the 5 pattern variants for a palette: each carries a content
-// background (`patternCss`, subtler, pairs with light ink) and a cover
-// background (`deepCss`, richer/more saturated, often glowing with the
-// palette's accent, pairs with light-on-dark ink) — mirrors a course's
-// cover slide vs. its regular content slides. CSS-only (gradients,
-// repeating-gradients) — no images, no SVG.
-function buildVariants(colors: BaseColors, accentColor: string): VariantDef[] {
-  const { primary, secondary, accent } = colors;
-  const glowSoft = hexToRgba(accentColor, 0.18);
-  const glowStrong = hexToRgba(accentColor, 0.45);
-  const dotSoft = hexToRgba(accentColor, 0.35);
-
-  return [
-    {
-      name: "Smooth",
-      patternCss: `linear-gradient(135deg, ${primary} 0%, ${secondary} 100%)`,
-      deepCss: `linear-gradient(165deg, ${secondary} 0%, ${primary} 100%)`,
-    },
-    {
-      name: "Glow",
-      patternCss: `radial-gradient(120% 80% at 10% 105%, ${glowSoft} 0%, transparent 66%), linear-gradient(165deg, ${primary} 0%, ${secondary} 100%)`,
-      deepCss: `radial-gradient(130% 85% at 15% 105%, ${glowStrong} 0%, transparent 62%), linear-gradient(165deg, ${secondary} 0%, ${primary} 100%)`,
-    },
-    {
-      name: "Stripes",
-      patternCss: `repeating-linear-gradient(45deg, rgba(255,255,255,0.05) 0px, rgba(255,255,255,0.05) 2px, transparent 2px, transparent 14px), linear-gradient(135deg, ${primary} 0%, ${secondary} 100%)`,
-      deepCss: `repeating-linear-gradient(115deg, rgba(255,255,255,0.09) 0px, rgba(255,255,255,0.09) 2px, transparent 2px, transparent 16px), linear-gradient(160deg, ${secondary} 0%, ${primary} 100%)`,
-    },
-    {
-      name: "Grid",
-      patternCss: `radial-gradient(rgba(255,255,255,0.10) 1px, transparent 1.5px) 0 0/16px 16px, linear-gradient(160deg, ${primary} 0%, ${accent} 100%)`,
-      deepCss: `radial-gradient(${dotSoft} 1.4px, transparent 1.5px) 0 0/9px 9px, linear-gradient(160deg, ${secondary} 0%, ${primary} 100%)`,
-    },
-    {
-      name: "Crosshatch",
-      patternCss: `repeating-linear-gradient(45deg, rgba(0,0,0,0.05) 0px, rgba(0,0,0,0.05) 1px, transparent 1px, transparent 10px), repeating-linear-gradient(-45deg, rgba(255,255,255,0.05) 0px, rgba(255,255,255,0.05) 1px, transparent 1px, transparent 10px), linear-gradient(200deg, ${secondary} 0%, ${primary} 100%)`,
-      deepCss: `repeating-linear-gradient(45deg, rgba(255,255,255,0.06) 0px, rgba(255,255,255,0.06) 1px, transparent 1px, transparent 10px), radial-gradient(90% 55% at 50% 105%, ${glowStrong} 0%, transparent 65%), linear-gradient(200deg, ${primary} 0%, ${secondary} 100%)`,
-    },
-  ];
+// baseColors is a leftover summary field (primary/secondary/accent) kept
+// populated for anything that still reads it — derived from each theme's
+// first ("Smooth"-equivalent) deep texture's gradient stops.
+function deriveBaseColors(theme: ThemeDef): { primary: string; secondary: string; accent: string } {
+  const firstDeepLayer = theme.tex[0].deep[theme.tex[0].deep.length - 1];
+  const stops = [...firstDeepLayer.matchAll(/#[0-9a-fA-F]{3,8}/g)].map((m) => m[0]);
+  return {
+    primary: stops[0] ?? theme.accentColor,
+    secondary: stops[1] ?? stops[0] ?? theme.accentColor,
+    accent: theme.accentColor,
+  };
 }
 
 async function main() {
-  for (const palette of PALETTES) {
+  for (const theme of THEMES) {
     let paletteId: string;
+    const baseColors = deriveBaseColors(theme);
 
-    const [existing] = await sql.query(`SELECT id FROM theme_palettes WHERE name = $1 LIMIT 1`, [palette.name]);
+    const [existing] = await sql.query(`SELECT id FROM theme_palettes WHERE name = $1 LIMIT 1`, [theme.name]);
 
-    const paletteColumns = {
-      base_colors: JSON.stringify(palette.colors),
-      sort_order: palette.sortOrder,
-      font_family: palette.fontFamily,
-      display_font_family: palette.displayFontFamily,
-      font_weight: palette.fontWeight,
-      letter_spacing: palette.letterSpacing,
-      card_radius: palette.cardRadius,
-      accent_color: palette.accentColor,
-      accent_ink_color: palette.accentInkColor,
-      is_dark: palette.isDark,
-    };
+    const values = [
+      JSON.stringify(baseColors),
+      theme.sortOrder,
+      theme.fontFamily,
+      theme.displayFontFamily,
+      theme.fontWeight,
+      theme.letterSpacing,
+      theme.cardRadius,
+      theme.accentColor,
+      theme.accentInkColor,
+      theme.isDark,
+      theme.deepInk,
+      theme.deepMuted,
+      theme.lightInk,
+      theme.lightMuted,
+      theme.lineColor,
+    ];
 
     if (existing) {
       paletteId = existing.id;
@@ -228,52 +463,31 @@ async function main() {
         `UPDATE theme_palettes SET
            base_colors = $1, sort_order = $2, font_family = $3, display_font_family = $4,
            font_weight = $5, letter_spacing = $6, card_radius = $7, accent_color = $8,
-           accent_ink_color = $9, is_dark = $10
-         WHERE id = $11`,
-        [
-          paletteColumns.base_colors,
-          paletteColumns.sort_order,
-          paletteColumns.font_family,
-          paletteColumns.display_font_family,
-          paletteColumns.font_weight,
-          paletteColumns.letter_spacing,
-          paletteColumns.card_radius,
-          paletteColumns.accent_color,
-          paletteColumns.accent_ink_color,
-          paletteColumns.is_dark,
-          paletteId,
-        ]
+           accent_ink_color = $9, is_dark = $10, deep_ink = $11, deep_muted = $12,
+           light_ink = $13, light_muted = $14, line_color = $15
+         WHERE id = $16`,
+        [...values, paletteId]
       );
-      console.log(`Palette "${palette.name}": already existed (${paletteId}), refreshed.`);
+      console.log(`Palette "${theme.name}": already existed (${paletteId}), refreshed.`);
     } else {
       const [row] = await sql.query(
         `INSERT INTO theme_palettes
            (name, base_colors, sort_order, font_family, display_font_family, font_weight,
-            letter_spacing, card_radius, accent_color, accent_ink_color, is_dark)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            letter_spacing, card_radius, accent_color, accent_ink_color, is_dark,
+            deep_ink, deep_muted, light_ink, light_muted, line_color)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
          RETURNING id`,
-        [
-          palette.name,
-          paletteColumns.base_colors,
-          paletteColumns.sort_order,
-          paletteColumns.font_family,
-          paletteColumns.display_font_family,
-          paletteColumns.font_weight,
-          paletteColumns.letter_spacing,
-          paletteColumns.card_radius,
-          paletteColumns.accent_color,
-          paletteColumns.accent_ink_color,
-          paletteColumns.is_dark,
-        ]
+        [theme.name, ...values]
       );
       paletteId = row.id;
-      console.log(`Palette "${palette.name}": created (${paletteId}).`);
+      console.log(`Palette "${theme.name}": created (${paletteId}).`);
     }
 
-    const variants = buildVariants(palette.colors, palette.accentColor);
-    for (let i = 0; i < variants.length; i++) {
+    for (let i = 0; i < theme.tex.length; i++) {
       const variantIndex = i + 1;
-      const variant = variants[i];
+      const tex = theme.tex[i];
+      const patternCss = tex.light.join(", ");
+      const deepCss = tex.deep.join(", ");
 
       const [existingVariant] = await sql.query(
         `SELECT id FROM theme_pattern_variants WHERE palette_id = $1 AND variant_index = $2 LIMIT 1`,
@@ -282,19 +496,19 @@ async function main() {
 
       if (existingVariant) {
         await sql.query(`UPDATE theme_pattern_variants SET name = $1, pattern_css = $2, deep_css = $3 WHERE id = $4`, [
-          variant.name,
-          variant.patternCss,
-          variant.deepCss,
+          tex.name,
+          patternCss,
+          deepCss,
           existingVariant.id,
         ]);
       } else {
         await sql.query(
           `INSERT INTO theme_pattern_variants (palette_id, variant_index, name, pattern_css, deep_css) VALUES ($1, $2, $3, $4, $5)`,
-          [paletteId, variantIndex, variant.name, variant.patternCss, variant.deepCss]
+          [paletteId, variantIndex, tex.name, patternCss, deepCss]
         );
       }
     }
-    console.log(`  → ${variants.length} variant(s) upserted.`);
+    console.log(`  → ${theme.tex.length} variant(s) upserted.`);
   }
 
   console.log("Seed complete.");

@@ -7,7 +7,7 @@ import { SlideHeading } from "../SlideHeading";
 import { SlideBody } from "../SlideBody";
 import { ControlPanel } from "../ControlPanel";
 import { PanelButton } from "../PanelButton";
-import type { ThemeTypography } from "@/lib/theme";
+import type { ThemeTypography, ThemeInk } from "@/lib/theme";
 
 interface TextCardProps {
   slide: Slide;
@@ -17,6 +17,7 @@ interface TextCardProps {
   draggedIdx: number | null;
   cardStyle?: React.CSSProperties;
   themeTypography?: ThemeTypography;
+  themeInk?: ThemeInk;
   handleResizeStart: (
     e: React.MouseEvent | React.TouchEvent,
     idx: number,
@@ -34,6 +35,7 @@ export function TextCard({
   draggedIdx,
   cardStyle,
   themeTypography,
+  themeInk,
   handleResizeStart,
   mode,
 }: TextCardProps) {
@@ -105,6 +107,7 @@ export function TextCard({
             fontFamily={themeTypography?.displayFontFamily}
             fontWeight={themeTypography?.fontWeight}
             letterSpacing={themeTypography?.letterSpacing}
+            color={themeInk?.ink}
           />
         </div>
       )}
@@ -118,6 +121,7 @@ export function TextCard({
             hasImage={hasImage}
             readOnly={mode === "play"}
             fontFamily={themeTypography?.fontFamily}
+            color={themeInk?.muted}
           />
         </div>
       )}

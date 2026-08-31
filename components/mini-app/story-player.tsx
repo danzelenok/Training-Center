@@ -7,7 +7,7 @@ import { Slide } from "@/components/admin/course-editor/CardCanvas";
 import { slideRegistry } from "@/components/admin/course-editor/SlideFactory";
 import { fetchAvatarsList, CHAD_FALLBACK_IMAGE, FLORIN_FALLBACK_IMAGE } from "@/components/admin/course-editor/AvatarSelector";
 import type { JurisdictionRef } from "@/hooks/admin/workers/types";
-import { getCardBgStyle, getThemeTypography, type ResolvedThemePalette, type ResolvedThemeVariant } from "@/lib/theme";
+import { getCardBgStyle, getThemeTypography, getThemeInk, type ResolvedThemePalette, type ResolvedThemeVariant } from "@/lib/theme";
 
 const CARD_WIDTH = 350;
 const CARD_HEIGHT = 620;
@@ -338,6 +338,7 @@ export function StoryPlayer({
   const themeCourse = { themeType, themeValue, themePaletteId, themeVariantId, themePalette, themeVariant };
   const cardStyle = getCardBgStyle(themeCourse, { cover: currentIndex === 0 });
   const themeTypography = getThemeTypography(themeCourse);
+  const themeInk = getThemeInk(themeCourse, { cover: currentIndex === 0 });
   const SlideCard = slide ? slideRegistry[slide.type]?.Card : null;
 
   return (
@@ -400,6 +401,7 @@ export function StoryPlayer({
               draggedIdx={null}
               cardStyle={cardStyle}
               themeTypography={themeTypography}
+              themeInk={themeInk}
               mode="play"
               onAnswered={handleQuizAnswered}
               onCompleted={() => setQuizAnswered(true)}

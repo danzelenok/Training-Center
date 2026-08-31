@@ -1,5 +1,5 @@
 import React from "react";
-import type { ThemeTypography } from "@/lib/theme";
+import type { ThemeTypography, ThemeInk } from "@/lib/theme";
 import { Slide } from "./CardCanvas";
 import { TextCard, TextToolbar } from "./slides/TextSlide";
 import { AudioCard, AudioToolbar } from "./slides/AudioSlide";
@@ -21,6 +21,9 @@ export interface SlideCardProps {
   // (non-palette) course, which slide components should read as "keep the
   // existing hardcoded look." Only TextSlide.tsx currently consumes this.
   themeTypography?: ThemeTypography;
+  // Ink color paired with cardStyle's background (deep vs. content) — same
+  // legacy-course-is-empty-object convention as themeTypography.
+  themeInk?: ThemeInk;
 
   handleResizeStart?: (
     e: React.MouseEvent | React.TouchEvent,

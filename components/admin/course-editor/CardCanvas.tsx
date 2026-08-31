@@ -13,7 +13,7 @@ import {
 import { slideRegistry } from "./SlideFactory";
 import { useCourseEditor } from "./CourseEditorContext";
 import { useCardCanvas } from "./useCardCanvas";
-import { getCardBgStyle, getThemeTypography } from "@/lib/theme";
+import { getCardBgStyle, getThemeTypography, getThemeInk } from "@/lib/theme";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -358,6 +358,7 @@ export default function CardCanvas() {
                         draggedIdx={draggedIdx}
                         cardStyle={getCardBgStyle(course ?? {}, { cover: index === 0 })}
                         themeTypography={themeTypography}
+                        themeInk={getThemeInk(course ?? {}, { cover: index === 0 })}
                         handleResizeStart={handleResizeStart}
                         handleChatResizeStart={handleChatResizeStart}
                         audioTranscriptToolsOpen={audioTranscriptToolsOpen}

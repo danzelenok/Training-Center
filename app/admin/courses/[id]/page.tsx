@@ -280,7 +280,7 @@ function CourseEditorContent() {
                               {swatchVariants.map((v, i) => (
                                 <div
                                   key={v.id}
-                                  className="flex-1 h-9 rounded-md border border-black/10"
+                                  className="flex-1 h-11 rounded-md border border-black/10"
                                   style={{ backgroundImage: i % 2 === 0 ? v.deepCss : v.patternCss }}
                                 />
                               ))}
@@ -316,7 +316,7 @@ function CourseEditorContent() {
                         <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">
                           2 — Texture
                         </label>
-                        <div className="flex gap-2 overflow-x-auto pb-1">
+                        <div className="flex gap-2.5 overflow-x-auto pb-1">
                           {expandedPalette.variants.map((variant) => {
                             const isActiveVariant =
                               course?.themePaletteId === expandedPalette.id && course?.themeVariantId === variant.id;
@@ -330,17 +330,17 @@ function CourseEditorContent() {
                                     variantId: variant.id,
                                   });
                                 }}
-                                className={`shrink-0 flex items-center gap-2 pl-1.5 pr-3 py-1.5 rounded-full border cursor-pointer transition-all text-xs font-semibold ${
+                                className={`shrink-0 flex flex-col items-center gap-1.5 p-1.5 rounded-xl border-2 cursor-pointer transition-all ${
                                   isActiveVariant
-                                    ? "bg-[#1B2A6B] dark:bg-[#C8D400] border-transparent text-white dark:text-[#1B2A6B]"
-                                    : "bg-card border-border text-foreground hover:border-muted-foreground/40"
+                                    ? "border-[#C8D400] shadow-[0_8px_20px_-6px_rgba(200,212,0,0.35)]"
+                                    : "border-transparent hover:border-muted-foreground/30"
                                 }`}
                               >
                                 <span
-                                  className="w-[18px] h-[18px] rounded-full border border-black/10 shrink-0"
+                                  className="w-14 h-[76px] rounded-lg border border-black/10 shrink-0"
                                   style={{ backgroundImage: variant.deepCss }}
                                 />
-                                {variant.name}
+                                <span className="text-[11px] font-semibold text-foreground">{variant.name}</span>
                               </button>
                             );
                           })}

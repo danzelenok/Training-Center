@@ -13,12 +13,17 @@ export interface ResolvedThemePalette {
   accentColor: string;
   accentInkColor: string;
   isDark: boolean;
+  deepInk: string;
+  deepMuted: string;
+  lightInk: string;
+  lightMuted: string;
+  lineColor: string;
 }
 
 export interface ResolvedThemeVariant {
   name: string;
-  patternCss: string; // content-card background (pairs with light ink)
-  deepCss: string; // cover-slide background (pairs with light-on-dark ink)
+  patternCss: string; // content-card background (pairs with lightInk/lightMuted)
+  deepCss: string; // cover-slide background (pairs with deepInk/deepMuted)
 }
 
 export interface ThemeableCourse {
@@ -30,6 +35,13 @@ export interface ThemeableCourse {
   // the API route resolves them AND the course actually has them set.
   themePalette?: ResolvedThemePalette | null;
   themeVariant?: ResolvedThemeVariant | null;
+}
+
+function hasResolvedTheme(course: ThemeableCourse): course is ThemeableCourse & {
+  themePalette: ResolvedThemePalette;
+  themeVariant: ResolvedThemeVariant;
+} {
+  return !!(course.themePaletteId && course.themeVariantId && course.themePalette && course.themeVariant);
 }
 
 /**
@@ -47,7 +59,7 @@ export interface ThemeableCourse {
  * uses `patternCss`.
  */
 export function getCardBgStyle(course: ThemeableCourse, options?: { cover?: boolean }): CSSProperties {
-  if (course.themePaletteId && course.themeVariantId && course.themePalette && course.themeVariant) {
+  if (hasResolvedTheme(course)) {
     const backgroundImage = options?.cover ? course.themeVariant.deepCss : course.themeVariant.patternCss;
     return { backgroundImage, borderRadius: course.themePalette.cardRadius };
   }
@@ -86,9 +98,7 @@ export interface ThemeTypography {
  * force any particular font.
  */
 export function getThemeTypography(course: ThemeableCourse): ThemeTypography {
-  if (!(course.themePaletteId && course.themeVariantId && course.themePalette)) {
-    return {};
-  }
+  if (!hasResolvedTheme(course)) return {};
   const p = course.themePalette;
   return {
     fontFamily: p.fontFamily,
@@ -99,4 +109,24 @@ export function getThemeTypography(course: ThemeableCourse): ThemeTypography {
     accentInkColor: p.accentInkColor,
     isDark: p.isDark,
   };
+}
+
+export interface ThemeInk {
+  ink?: string;
+  muted?: string;
+  line?: string;
+}
+
+/**
+ * Text color paired with getCardBgStyle's background choice — pass the
+ * same `options.cover` value used for the background call so ink and
+ * background always agree (deepInk on deepCss, lightInk on patternCss).
+ * Empty object for a legacy course, same convention as getThemeTypography.
+ */
+export function getThemeInk(course: ThemeableCourse, options?: { cover?: boolean }): ThemeInk {
+  if (!hasResolvedTheme(course)) return {};
+  const p = course.themePalette;
+  return options?.cover
+    ? { ink: p.deepInk, muted: p.deepMuted, line: p.lineColor }
+    : { ink: p.lightInk, muted: p.lightMuted, line: p.lineColor };
 }

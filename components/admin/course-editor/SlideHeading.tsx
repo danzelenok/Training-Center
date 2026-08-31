@@ -15,6 +15,7 @@ interface SlideHeadingProps {
   fontFamily?: string;
   fontWeight?: number;
   letterSpacing?: string;
+  color?: string;
 }
 
 export function SlideHeading({
@@ -28,8 +29,9 @@ export function SlideHeading({
   fontFamily,
   fontWeight,
   letterSpacing,
+  color,
 }: SlideHeadingProps) {
-  const themeStyle: React.CSSProperties = { fontFamily, fontWeight, letterSpacing };
+  const themeStyle: React.CSSProperties = { fontFamily, fontWeight, letterSpacing, color };
   const len = value.length;
 
   let className =

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter, Geist_Mono, Manrope, Space_Grotesk, IBM_Plex_Mono, DM_Sans } from "next/font/google";
+import { Inter, Geist_Mono, Manrope, Space_Grotesk, IBM_Plex_Mono, DM_Sans, Newsreader, Bricolage_Grotesque } from "next/font/google";
 import "./globals.css";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ClerkProvider } from "@clerk/nextjs";
@@ -39,6 +39,16 @@ const dmSans = DM_Sans({
   subsets: ["latin"],
 });
 
+const newsreader = Newsreader({
+  variable: "--font-newsreader",
+  subsets: ["latin"],
+});
+
+const bricolageGrotesque = Bricolage_Grotesque({
+  variable: "--font-bricolage-grotesque",
+  subsets: ["latin"],
+});
+
 export const metadata: Metadata = {
   title: "Cool Cat Training",
   description: "Organizational safety training micro-learning assistant",
@@ -53,7 +63,7 @@ export default function RootLayout({
     <ClerkProvider>
       <html
         lang="en"
-        className={`${inter.variable} ${geistMono.variable} ${manrope.variable} ${spaceGrotesk.variable} ${ibmPlexMono.variable} ${dmSans.variable} h-full antialiased`}
+        className={`${inter.variable} ${geistMono.variable} ${manrope.variable} ${spaceGrotesk.variable} ${ibmPlexMono.variable} ${dmSans.variable} ${newsreader.variable} ${bricolageGrotesque.variable} h-full antialiased`}
         suppressHydrationWarning
       >
         <body className="min-h-full flex flex-col bg-background text-foreground transition-colors duration-300">

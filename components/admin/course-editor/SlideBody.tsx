@@ -13,6 +13,7 @@ interface SlideBodyProps {
   // Theme System v2 — undefined for a legacy (non-palette) course, which
   // keeps the existing font-sans class untouched.
   fontFamily?: string;
+  color?: string;
 }
 
 export function SlideBody({
@@ -24,8 +25,9 @@ export function SlideBody({
   placeholder = "Enter description text here...",
   readOnly = false,
   fontFamily,
+  color,
 }: SlideBodyProps) {
-  const themeStyle: React.CSSProperties = { fontFamily };
+  const themeStyle: React.CSSProperties = { fontFamily, color };
   const len = value.length;
 
   let className =

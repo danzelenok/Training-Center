@@ -29,6 +29,11 @@ export async function resolveCourseTheme(
       accentColor: themePalettes.accentColor,
       accentInkColor: themePalettes.accentInkColor,
       isDark: themePalettes.isDark,
+      deepInk: themePalettes.deepInk,
+      deepMuted: themePalettes.deepMuted,
+      lightInk: themePalettes.lightInk,
+      lightMuted: themePalettes.lightMuted,
+      lineColor: themePalettes.lineColor,
     })
     .from(themePalettes)
     .where(eq(themePalettes.id, themePaletteId))

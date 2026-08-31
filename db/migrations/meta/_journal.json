@@ -197,6 +197,13 @@
       "when": 1788205771260,
       "tag": "0027_theme_typography_and_dual_backgrounds",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1788210513899,
+      "tag": "0028_theme_ink_colors",
+      "breakpoints": true
     }
   ]
 }
