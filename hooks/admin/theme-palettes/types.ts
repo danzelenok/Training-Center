@@ -2,7 +2,9 @@ export interface ThemePatternVariant {
   id: string;
   paletteId: string;
   variantIndex: number;
-  patternCss: string;
+  name: string;
+  patternCss: string; // content-card background
+  deepCss: string; // cover-slide background
 }
 
 export interface ThemePalette {
@@ -10,6 +12,14 @@ export interface ThemePalette {
   name: string;
   baseColors: { primary: string; secondary: string; accent: string };
   sortOrder: number;
+  fontFamily: string;
+  displayFontFamily: string;
+  fontWeight: number;
+  letterSpacing: string;
+  cardRadius: number;
+  accentColor: string;
+  accentInkColor: string;
+  isDark: boolean;
   variants: ThemePatternVariant[];
 }
 

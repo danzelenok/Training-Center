@@ -13,7 +13,7 @@ import {
 import { slideRegistry } from "./SlideFactory";
 import { useCourseEditor } from "./CourseEditorContext";
 import { useCardCanvas } from "./useCardCanvas";
-import { getCardBgStyle } from "@/lib/theme";
+import { getCardBgStyle, getThemeTypography } from "@/lib/theme";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -148,7 +148,12 @@ export default function CardCanvas() {
     onUpdateSlideContent: updateActiveSlideContent,
   });
 
-  const cardStyle = getCardBgStyle(course ?? {});
+  const themeTypography = getThemeTypography(course ?? {});
+  // Keeps the selection ring/shadow wrapper's rounded corners in step with
+  // the palette's cardRadius, so a sharp-cornered theme (e.g. Safety
+  // Orange, radius 8) doesn't show a mismatched 24px-rounded ring around
+  // an 8px-rounded card.
+  const wrapperRadius = course?.themePalette?.cardRadius ?? 24;
 
   return (
     <div className="flex flex-col items-center gap-4 w-full select-none justify-center">
@@ -206,7 +211,8 @@ export default function CardCanvas() {
                       emblaApi.scrollTo(index);
                     }
                   }}
-                  className={`flex-shrink-0 relative transition-[width,height,transform,opacity,filter,box-shadow] duration-300 ease-out snap-center rounded-[24px] ${
+                  style={{ borderRadius: wrapperRadius }}
+                  className={`flex-shrink-0 relative transition-[width,height,transform,opacity,filter,box-shadow] duration-300 ease-out snap-center ${
                     isNew ? "animate-card-mount" : ""
                   }
                     ${
@@ -350,7 +356,8 @@ export default function CardCanvas() {
                         onUpdateSlideContent={updateActiveSlideContent}
                         onOpenMediaPicker={openMediaPicker}
                         draggedIdx={draggedIdx}
-                        cardStyle={cardStyle}
+                        cardStyle={getCardBgStyle(course ?? {}, { cover: index === 0 })}
+                        themeTypography={themeTypography}
                         handleResizeStart={handleResizeStart}
                         handleChatResizeStart={handleChatResizeStart}
                         audioTranscriptToolsOpen={audioTranscriptToolsOpen}

@@ -2,6 +2,7 @@ import { db } from "@/db";
 import { courses, slides, jobRoles, courseRoles, jurisdictions, organizationJurisdictions } from "@/db/schema";
 import { requireOrgId } from "@/lib/org";
 import { roleOrUnauthorized, canWriteCourse } from "@/lib/adminRoles";
+import { resolveCourseTheme } from "@/lib/theme-server";
 import { eq, and, asc, sql, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
@@ -38,12 +39,16 @@ export async function GET(
       .from(courseRoles)
       .where(eq(courseRoles.courseId, id));
 
+    const { themePalette, themeVariant } = await resolveCourseTheme(course.themePaletteId, course.themeVariantId);
+
     const responseData = {
       ...course,
       telegramMessageId: course.telegramMessageId ? course.telegramMessageId.toString() : null,
       telegramGroupId: course.telegramGroupId ? course.telegramGroupId.toString() : null,
       slides: courseSlides,
       roleIds: courseRoleRows.map((r) => r.roleId),
+      themePalette,
+      themeVariant,
     };
 
     return NextResponse.json(responseData);
@@ -295,10 +300,17 @@ export async function PATCH(
       .from(courseRoles)
       .where(eq(courseRoles.courseId, id));
 
+    const { themePalette, themeVariant } = await resolveCourseTheme(
+      updatedCourse.themePaletteId,
+      updatedCourse.themeVariantId
+    );
+
     const result = {
       ...updatedCourse,
       slides: finalSlides,
       roleIds: finalRoleRows.map((r) => r.roleId),
+      themePalette,
+      themeVariant,
     };
 
     return NextResponse.json({

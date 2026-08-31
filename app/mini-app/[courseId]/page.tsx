@@ -4,6 +4,7 @@ import React, { use, useEffect, useState } from "react";
 import { X } from "lucide-react";
 import { StoryPlayer } from "@/components/mini-app/story-player";
 import { Slide } from "@/components/admin/course-editor/CardCanvas";
+import type { ResolvedThemePalette, ResolvedThemeVariant } from "@/lib/theme";
 
 interface PageProps {
   params: Promise<{ courseId: string }>;
@@ -15,6 +16,10 @@ export default function MiniAppCoursePage({ params }: PageProps) {
   const [slides, setSlides] = useState<Slide[]>([]);
   const [themeType, setThemeType] = useState<string | undefined>();
   const [themeValue, setThemeValue] = useState<string | undefined>();
+  const [themePaletteId, setThemePaletteId] = useState<string | null | undefined>();
+  const [themeVariantId, setThemeVariantId] = useState<string | null | undefined>();
+  const [themePalette, setThemePalette] = useState<ResolvedThemePalette | null | undefined>();
+  const [themeVariant, setThemeVariant] = useState<ResolvedThemeVariant | null | undefined>();
   const [initData, setInitData] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -43,6 +48,10 @@ export default function MiniAppCoursePage({ params }: PageProps) {
       setSlides(data.slides as Slide[]);
       setThemeType(data.course?.themeType);
       setThemeValue(data.course?.themeValue);
+      setThemePaletteId(data.course?.themePaletteId);
+      setThemeVariantId(data.course?.themeVariantId);
+      setThemePalette(data.course?.themePalette);
+      setThemeVariant(data.course?.themeVariant);
     } catch (err: any) {
       setError(err.message || "An unexpected error occurred.");
     } finally {
@@ -193,7 +202,17 @@ export default function MiniAppCoursePage({ params }: PageProps) {
 
   return (
     <main className="w-full min-h-screen bg-black">
-      <StoryPlayer slides={slides} courseId={courseId} initData={initData} themeType={themeType} themeValue={themeValue} />
+      <StoryPlayer
+        slides={slides}
+        courseId={courseId}
+        initData={initData}
+        themeType={themeType}
+        themeValue={themeValue}
+        themePaletteId={themePaletteId}
+        themeVariantId={themeVariantId}
+        themePalette={themePalette}
+        themeVariant={themeVariant}
+      />
     </main>
   );
 }

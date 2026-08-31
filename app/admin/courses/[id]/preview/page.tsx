@@ -5,6 +5,7 @@ import { X } from "lucide-react";
 import { StoryPlayer } from "@/components/mini-app/story-player";
 import { Slide } from "@/components/admin/course-editor/CardCanvas";
 import type { JurisdictionRef } from "@/hooks/admin/workers/types";
+import type { ResolvedThemePalette, ResolvedThemeVariant } from "@/lib/theme";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -16,6 +17,10 @@ export default function CoursePreviewPage({ params }: PageProps) {
   const [jurisdictions, setJurisdictions] = useState<JurisdictionRef[]>([]);
   const [themeType, setThemeType] = useState<string | undefined>();
   const [themeValue, setThemeValue] = useState<string | undefined>();
+  const [themePaletteId, setThemePaletteId] = useState<string | null | undefined>();
+  const [themeVariantId, setThemeVariantId] = useState<string | null | undefined>();
+  const [themePalette, setThemePalette] = useState<ResolvedThemePalette | null | undefined>();
+  const [themeVariant, setThemeVariant] = useState<ResolvedThemeVariant | null | undefined>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -31,6 +36,10 @@ export default function CoursePreviewPage({ params }: PageProps) {
         setSlides(data.slides as Slide[]);
         setThemeType(data.themeType);
         setThemeValue(data.themeValue);
+        setThemePaletteId(data.themePaletteId);
+        setThemeVariantId(data.themeVariantId);
+        setThemePalette(data.themePalette);
+        setThemeVariant(data.themeVariant);
       } catch (err: any) {
         setError(err.message || "An unexpected error occurred.");
       } finally {
@@ -73,6 +82,10 @@ export default function CoursePreviewPage({ params }: PageProps) {
           slides={slides}
           themeType={themeType}
           themeValue={themeValue}
+          themePaletteId={themePaletteId}
+          themeVariantId={themeVariantId}
+          themePalette={themePalette}
+          themeVariant={themeVariant}
           jurisdictionBadges={jurisdictions}
         />
       </div>

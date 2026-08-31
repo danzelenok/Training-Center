@@ -1,6 +1,7 @@
 import { db } from "@/db";
 import { courses, slides } from "@/db/schema";
 import { withTelegramAuth } from "@/lib/telegram";
+import { resolveCourseTheme } from "@/lib/theme-server";
 import { and, asc, eq, isNull, or } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
@@ -21,6 +22,8 @@ export const GET = withTelegramAuth<{ params: Promise<{ id: string }> }>(
           title: courses.title,
           themeType: courses.themeType,
           themeValue: courses.themeValue,
+          themePaletteId: courses.themePaletteId,
+          themeVariantId: courses.themeVariantId,
         })
         .from(courses)
         .where(and(eq(courses.id, id), eq(courses.organizationId, worker.organizationId)))
@@ -29,6 +32,8 @@ export const GET = withTelegramAuth<{ params: Promise<{ id: string }> }>(
       if (!course) {
         return new NextResponse("Course not found", { status: 404 });
       }
+
+      const { themePalette, themeVariant } = await resolveCourseTheme(course.themePaletteId, course.themeVariantId);
 
       // Fetch slides for the course with language = 'en', ordered by order,
       // scoped to base slides (jurisdictionId IS NULL) plus the worker's own state.
@@ -47,7 +52,7 @@ export const GET = withTelegramAuth<{ params: Promise<{ id: string }> }>(
         .orderBy(asc(slides.order));
 
       return NextResponse.json({
-        course,
+        course: { ...course, themePalette, themeVariant },
         slides: courseSlides,
       });
     } catch (error: any) {

@@ -7,7 +7,7 @@ import { Slide } from "@/components/admin/course-editor/CardCanvas";
 import { slideRegistry } from "@/components/admin/course-editor/SlideFactory";
 import { fetchAvatarsList, CHAD_FALLBACK_IMAGE, FLORIN_FALLBACK_IMAGE } from "@/components/admin/course-editor/AvatarSelector";
 import type { JurisdictionRef } from "@/hooks/admin/workers/types";
-import { getCardBgStyle } from "@/lib/theme";
+import { getCardBgStyle, getThemeTypography, type ResolvedThemePalette, type ResolvedThemeVariant } from "@/lib/theme";
 
 const CARD_WIDTH = 350;
 const CARD_HEIGHT = 620;
@@ -18,13 +18,28 @@ interface StoryPlayerProps {
   initData?: string;
   themeType?: string;
   themeValue?: string;
+  themePaletteId?: string | null;
+  themeVariantId?: string | null;
+  themePalette?: ResolvedThemePalette | null;
+  themeVariant?: ResolvedThemeVariant | null;
   // Admin-preview only: when set, renders a "Base"/state code badge on each
   // slide so admins can tell which jurisdiction variant they're looking at.
   // Left unset for the real worker-facing Mini App.
   jurisdictionBadges?: JurisdictionRef[];
 }
 
-export function StoryPlayer({ slides, courseId, initData, themeType, themeValue, jurisdictionBadges }: StoryPlayerProps) {
+export function StoryPlayer({
+  slides,
+  courseId,
+  initData,
+  themeType,
+  themeValue,
+  themePaletteId,
+  themeVariantId,
+  themePalette,
+  themeVariant,
+  jurisdictionBadges,
+}: StoryPlayerProps) {
   const [safeTop, setSafeTop] = useState(0);
   const [safeBottom, setSafeBottom] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -320,7 +335,9 @@ export function StoryPlayer({ slides, courseId, initData, themeType, themeValue,
     );
   }
 
-  const cardStyle = getCardBgStyle({ themeType, themeValue });
+  const themeCourse = { themeType, themeValue, themePaletteId, themeVariantId, themePalette, themeVariant };
+  const cardStyle = getCardBgStyle(themeCourse, { cover: currentIndex === 0 });
+  const themeTypography = getThemeTypography(themeCourse);
   const SlideCard = slide ? slideRegistry[slide.type]?.Card : null;
 
   return (
@@ -382,6 +399,7 @@ export function StoryPlayer({ slides, courseId, initData, themeType, themeValue,
               onOpenMediaPicker={() => {}}
               draggedIdx={null}
               cardStyle={cardStyle}
+              themeTypography={themeTypography}
               mode="play"
               onAnswered={handleQuizAnswered}
               onCompleted={() => setQuizAnswered(true)}

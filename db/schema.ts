@@ -49,6 +49,20 @@ export const themePalettes = pgTable("theme_palettes", {
   name: text("name").notNull(), // "Ocean Blue", "Safety Orange"
   baseColors: jsonb("base_colors").$type<{ primary: string; secondary: string; accent: string }>().notNull(),
   sortOrder: integer("sort_order").notNull().default(0),
+  // Typographic/shape identity for this palette — a "theme" bundles more
+  // than color: body/heading font, weight, tracking, corner radius, and the
+  // accent used for CTAs, alongside the ink colors that pair with the deep
+  // (cover) vs light (content) backgrounds a variant provides. Values are
+  // literal CSS (font stacks reference the CSS variables set in
+  // app/layout.tsx, e.g. "var(--font-manrope), sans-serif").
+  fontFamily: text("font_family").notNull(), // body text
+  displayFontFamily: text("display_font_family").notNull(), // headings
+  fontWeight: integer("font_weight").notNull().default(700), // heading weight
+  letterSpacing: text("letter_spacing").notNull().default("-0.02em"), // heading tracking
+  cardRadius: integer("card_radius").notNull().default(22), // px
+  accentColor: text("accent_color").notNull(),
+  accentInkColor: text("accent_ink_color").notNull(), // text/icon color on top of accentColor
+  isDark: boolean("is_dark").notNull().default(false), // whether this palette's ink is light-on-dark by design
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -59,7 +73,14 @@ export const themePatternVariants = pgTable("theme_pattern_variants", {
   id: uuid("id").defaultRandom().primaryKey(),
   paletteId: uuid("palette_id").notNull().references(() => themePalettes.id, { onDelete: "cascade" }),
   variantIndex: integer("variant_index").notNull(), // 1..N, order in the carousel
-  patternCss: text("pattern_css").notNull(), // ready-to-use CSS backgroundImage value
+  name: text("name").notNull(), // "Smooth", "Glow", "Grid" — shown under the swatch in the picker
+  // Two coordinated background treatments per variant: `patternCss` is the
+  // content-card background (paired with light ink) and is what's synced
+  // into courses.theme_value for legacy-path compatibility; `deepCss` is a
+  // richer, more saturated cover/hero treatment (paired with light-on-dark
+  // ink) used only for a course's first/cover slide.
+  patternCss: text("pattern_css").notNull(), // content background
+  deepCss: text("deep_css").notNull(), // cover background
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

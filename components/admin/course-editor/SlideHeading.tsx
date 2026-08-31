@@ -10,6 +10,11 @@ interface SlideHeadingProps {
   hasImage?: boolean;
   placeholder?: string;
   readOnly?: boolean;
+  // Theme System v2 — undefined for a legacy (non-palette) course, which
+  // keeps the existing hardcoded font-black look untouched.
+  fontFamily?: string;
+  fontWeight?: number;
+  letterSpacing?: string;
 }
 
 export function SlideHeading({
@@ -20,7 +25,11 @@ export function SlideHeading({
   hasImage = false,
   placeholder = "Enter Slide Title",
   readOnly = false,
+  fontFamily,
+  fontWeight,
+  letterSpacing,
 }: SlideHeadingProps) {
+  const themeStyle: React.CSSProperties = { fontFamily, fontWeight, letterSpacing };
   const len = value.length;
 
   let className =
@@ -36,7 +45,7 @@ export function SlideHeading({
   }
 
   if (readOnly) {
-    return <p className={className}>{value}</p>;
+    return <p className={className} style={themeStyle}>{value}</p>;
   }
 
   return (
@@ -53,6 +62,7 @@ export function SlideHeading({
       placeholder={placeholder}
       rows={1}
       className={className}
+      style={themeStyle}
     />
   );
 }

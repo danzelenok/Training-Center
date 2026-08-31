@@ -250,9 +250,9 @@ function CourseEditorContent() {
 
               <div className="space-y-5 py-3">
                 {/* Theme Palettes (Level 1) + Pattern Variants (Level 2) */}
-                <div className="space-y-2">
+                <div className="space-y-2.5">
                   <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">
-                    Theme Palette
+                    1 — Theme
                   </label>
 
                   {themePalettesQuery.isLoading ? (
@@ -262,26 +262,45 @@ function CourseEditorContent() {
                       {themePalettes.map((palette) => {
                         const isActivePalette = course?.themePaletteId === palette.id;
                         const isExpanded = activeExpandedPaletteId === palette.id;
+                        const swatchVariants = palette.variants.slice(0, 3);
                         return (
                           <button
                             key={palette.id}
                             type="button"
                             onClick={() => setExpandedPaletteId(isExpanded ? null : palette.id)}
-                            className={`shrink-0 p-2 rounded-xl border text-center font-bold text-[9px] w-20 h-20 flex flex-col items-center justify-center gap-1 cursor-pointer transition-all ${
+                            className={`shrink-0 w-[92px] p-2.5 rounded-2xl border-2 flex flex-col gap-2.5 cursor-pointer transition-all bg-card ${
                               isActivePalette
-                                ? "border-[#C8D400] ring-1 ring-[#C8D400]/40 bg-[#C8D400]/5 text-[#C8D400]"
+                                ? "border-[#C8D400] shadow-[0_8px_20px_-6px_rgba(200,212,0,0.35)]"
                                 : isExpanded
-                                  ? "border-muted-foreground/40 bg-background text-foreground"
-                                  : "border-border bg-background hover:border-muted-foreground/30 text-foreground"
+                                  ? "border-muted-foreground/40"
+                                  : "border-border hover:border-muted-foreground/30"
                             }`}
                           >
-                            <div
-                              className="w-5 h-5 rounded-full border border-border"
-                              style={{
-                                backgroundImage: `linear-gradient(135deg, ${palette.baseColors.primary} 0%, ${palette.baseColors.secondary} 100%)`,
-                              }}
-                            />
-                            <span className="line-clamp-2">{palette.name}</span>
+                            <div className="flex gap-1">
+                              {swatchVariants.map((v, i) => (
+                                <div
+                                  key={v.id}
+                                  className="flex-1 h-9 rounded-md border border-black/10"
+                                  style={{ backgroundImage: i % 2 === 0 ? v.deepCss : v.patternCss }}
+                                />
+                              ))}
+                            </div>
+                            <div className="flex items-center justify-between gap-1.5">
+                              <span
+                                className="text-[11px] leading-[13px] text-left text-foreground line-clamp-2"
+                                style={{
+                                  fontFamily: palette.displayFontFamily,
+                                  fontWeight: palette.fontWeight,
+                                  letterSpacing: palette.letterSpacing,
+                                }}
+                              >
+                                {palette.name}
+                              </span>
+                              <span
+                                className="w-2.5 h-2.5 rounded-full shrink-0 border border-border"
+                                style={{ background: isActivePalette ? palette.accentColor : "transparent" }}
+                              />
+                            </div>
                           </button>
                         );
                       })}
@@ -293,30 +312,39 @@ function CourseEditorContent() {
                     const expandedPalette = themePalettes.find((p) => p.id === activeExpandedPaletteId);
                     if (!expandedPalette) return null;
                     return (
-                      <div className="flex gap-2.5 overflow-x-auto pt-1 pb-1 border-t border-border/80 mt-2">
-                        {expandedPalette.variants.map((variant) => {
-                          const isActiveVariant =
-                            course?.themePaletteId === expandedPalette.id && course?.themeVariantId === variant.id;
-                          return (
-                            <button
-                              key={variant.id}
-                              type="button"
-                              onClick={() => {
-                                updateCourseStyle("preset", variant.patternCss, {
-                                  paletteId: expandedPalette.id,
-                                  variantId: variant.id,
-                                });
-                              }}
-                              className={`shrink-0 w-16 h-16 rounded-xl border-2 cursor-pointer transition-all ${
-                                isActiveVariant
-                                  ? "border-[#C8D400] ring-1 ring-[#C8D400]/40"
-                                  : "border-border hover:border-muted-foreground/40"
-                              }`}
-                              style={{ backgroundImage: variant.patternCss }}
-                              title={`Variant ${variant.variantIndex}`}
-                            />
-                          );
-                        })}
+                      <div className="space-y-2 pt-2.5 border-t border-border/80">
+                        <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">
+                          2 — Texture
+                        </label>
+                        <div className="flex gap-2 overflow-x-auto pb-1">
+                          {expandedPalette.variants.map((variant) => {
+                            const isActiveVariant =
+                              course?.themePaletteId === expandedPalette.id && course?.themeVariantId === variant.id;
+                            return (
+                              <button
+                                key={variant.id}
+                                type="button"
+                                onClick={() => {
+                                  updateCourseStyle("preset", variant.patternCss, {
+                                    paletteId: expandedPalette.id,
+                                    variantId: variant.id,
+                                  });
+                                }}
+                                className={`shrink-0 flex items-center gap-2 pl-1.5 pr-3 py-1.5 rounded-full border cursor-pointer transition-all text-xs font-semibold ${
+                                  isActiveVariant
+                                    ? "bg-[#1B2A6B] dark:bg-[#C8D400] border-transparent text-white dark:text-[#1B2A6B]"
+                                    : "bg-card border-border text-foreground hover:border-muted-foreground/40"
+                                }`}
+                              >
+                                <span
+                                  className="w-[18px] h-[18px] rounded-full border border-black/10 shrink-0"
+                                  style={{ backgroundImage: variant.deepCss }}
+                                />
+                                {variant.name}
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
                     );
                   })()}

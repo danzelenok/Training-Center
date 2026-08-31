@@ -1,4 +1,5 @@
 import type { Slide } from "@/components/admin/course-editor/CardCanvas";
+import type { ResolvedThemePalette, ResolvedThemeVariant } from "@/lib/theme";
 
 export interface MediaLibraryFile {
   fileId: string;
@@ -26,6 +27,10 @@ export interface Course {
   themeValue?: string;
   themePaletteId?: string | null;
   themeVariantId?: string | null;
+  // Server-resolved join of the two ids above — read-only, populated by
+  // GET/PATCH /api/courses/[id], never sent back in a save payload.
+  themePalette?: ResolvedThemePalette | null;
+  themeVariant?: ResolvedThemeVariant | null;
 }
 
 export interface GenerationStatusSlide {

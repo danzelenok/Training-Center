@@ -10,6 +10,9 @@ interface SlideBodyProps {
   hasImage?: boolean;
   placeholder?: string;
   readOnly?: boolean;
+  // Theme System v2 — undefined for a legacy (non-palette) course, which
+  // keeps the existing font-sans class untouched.
+  fontFamily?: string;
 }
 
 export function SlideBody({
@@ -20,7 +23,9 @@ export function SlideBody({
   hasImage = false,
   placeholder = "Enter description text here...",
   readOnly = false,
+  fontFamily,
 }: SlideBodyProps) {
+  const themeStyle: React.CSSProperties = { fontFamily };
   const len = value.length;
 
   let className =
@@ -36,7 +41,7 @@ export function SlideBody({
   }
 
   if (readOnly) {
-    return <p className={className}>{value}</p>;
+    return <p className={className} style={themeStyle}>{value}</p>;
   }
 
   return (
@@ -53,6 +58,7 @@ export function SlideBody({
       placeholder={placeholder}
       rows={1}
       className={className}
+      style={themeStyle}
     />
   );
 }

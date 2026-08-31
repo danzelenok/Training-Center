@@ -17,22 +17,12 @@ export async function GET() {
     }
 
     const palettes = await db
-      .select({
-        id: themePalettes.id,
-        name: themePalettes.name,
-        baseColors: themePalettes.baseColors,
-        sortOrder: themePalettes.sortOrder,
-      })
+      .select()
       .from(themePalettes)
       .orderBy(asc(themePalettes.sortOrder));
 
     const variants = await db
-      .select({
-        id: themePatternVariants.id,
-        paletteId: themePatternVariants.paletteId,
-        variantIndex: themePatternVariants.variantIndex,
-        patternCss: themePatternVariants.patternCss,
-      })
+      .select()
       .from(themePatternVariants)
       .orderBy(asc(themePatternVariants.variantIndex));
 

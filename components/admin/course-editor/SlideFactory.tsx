@@ -1,4 +1,5 @@
 import React from "react";
+import type { ThemeTypography } from "@/lib/theme";
 import { Slide } from "./CardCanvas";
 import { TextCard, TextToolbar } from "./slides/TextSlide";
 import { AudioCard, AudioToolbar } from "./slides/AudioSlide";
@@ -16,7 +17,11 @@ export interface SlideCardProps {
   onOpenMediaPicker: () => void;
   draggedIdx: number | null;
   cardStyle: React.CSSProperties;
-  
+  // Theme System v2 font/accent identity — empty object for a legacy
+  // (non-palette) course, which slide components should read as "keep the
+  // existing hardcoded look." Only TextSlide.tsx currently consumes this.
+  themeTypography?: ThemeTypography;
+
   handleResizeStart?: (
     e: React.MouseEvent | React.TouchEvent,
     slideIdx: number,
