@@ -24,6 +24,8 @@ export interface Course {
   generationStatus?: "none" | "pending" | "generating" | "ready" | "failed";
   themeType?: string;
   themeValue?: string;
+  themePaletteId?: string | null;
+  themeVariantId?: string | null;
 }
 
 export interface GenerationStatusSlide {

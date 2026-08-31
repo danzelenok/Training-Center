@@ -13,6 +13,7 @@ import {
 import { slideRegistry } from "./SlideFactory";
 import { useCourseEditor } from "./CourseEditorContext";
 import { useCardCanvas } from "./useCardCanvas";
+import { getCardBgStyle } from "@/lib/theme";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -104,9 +105,6 @@ export default function CardCanvas() {
     isReadOnly,
   } = useCourseEditor();
 
-  const themeType = course?.themeType || "preset";
-  const themeValue = course?.themeValue || "linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)";
-
   const {
     emblaRef,
     emblaApi,
@@ -150,22 +148,7 @@ export default function CardCanvas() {
     onUpdateSlideContent: updateActiveSlideContent,
   });
 
-  const getCardBgStyle = () => {
-    if (themeType === "preset") {
-      return { backgroundImage: themeValue };
-    } else if (themeType === "color") {
-      return { backgroundColor: themeValue };
-    } else if (themeType === "image") {
-      return {
-        backgroundImage: `url(${themeValue})`,
-        backgroundSize: "cover",
-        backgroundPosition: "center",
-      };
-    }
-    return { backgroundImage: "linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)" };
-  };
-
-  const cardStyle = getCardBgStyle();
+  const cardStyle = getCardBgStyle(course ?? {});
 
   return (
     <div className="flex flex-col items-center gap-4 w-full select-none justify-center">

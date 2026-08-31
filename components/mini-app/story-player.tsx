@@ -7,6 +7,7 @@ import { Slide } from "@/components/admin/course-editor/CardCanvas";
 import { slideRegistry } from "@/components/admin/course-editor/SlideFactory";
 import { fetchAvatarsList, CHAD_FALLBACK_IMAGE, FLORIN_FALLBACK_IMAGE } from "@/components/admin/course-editor/AvatarSelector";
 import type { JurisdictionRef } from "@/hooks/admin/workers/types";
+import { getCardBgStyle } from "@/lib/theme";
 
 const CARD_WIDTH = 350;
 const CARD_HEIGHT = 620;
@@ -185,21 +186,6 @@ export function StoryPlayer({ slides, courseId, initData, themeType, themeValue,
     [courseId, initData]
   );
 
-  const getCardBgStyle = (): React.CSSProperties => {
-    if (themeType === "preset") {
-      return { backgroundImage: themeValue };
-    } else if (themeType === "color") {
-      return { backgroundColor: themeValue };
-    } else if (themeType === "image") {
-      return {
-        backgroundImage: `url(${themeValue})`,
-        backgroundSize: "cover",
-        backgroundPosition: "center",
-      };
-    }
-    return { backgroundImage: "linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)" };
-  };
-
   const slide = slides[currentIndex];
 
   const goNext = () => {
@@ -334,7 +320,7 @@ export function StoryPlayer({ slides, courseId, initData, themeType, themeValue,
     );
   }
 
-  const cardStyle = getCardBgStyle();
+  const cardStyle = getCardBgStyle({ themeType, themeValue });
   const SlideCard = slide ? slideRegistry[slide.type]?.Card : null;
 
   return (

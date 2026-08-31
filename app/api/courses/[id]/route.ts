@@ -81,7 +81,7 @@ export async function PATCH(
     }
 
     const body = await req.json();
-    const { title, description, themeType, themeValue, autoAssignNewWorkers, slides: updatedSlides, generationStatus, roleIds: requestedRoleIds, jurisdictionId: requestedJurisdictionId } = body;
+    const { title, description, themeType, themeValue, themePaletteId, themeVariantId, autoAssignNewWorkers, slides: updatedSlides, generationStatus, roleIds: requestedRoleIds, jurisdictionId: requestedJurisdictionId } = body;
 
     // Write-time invariant: only ever link roles that belong to this organization.
     const roleIds: string[] | null = Array.isArray(requestedRoleIds)
@@ -127,6 +127,8 @@ export async function PATCH(
         ...(description !== undefined ? { description } : {}),
         themeType: themeType !== undefined ? themeType : undefined,
         themeValue: themeValue !== undefined ? themeValue : undefined,
+        themePaletteId: themePaletteId !== undefined ? themePaletteId : undefined,
+        themeVariantId: themeVariantId !== undefined ? themeVariantId : undefined,
         autoAssignNewWorkers: autoAssignNewWorkers !== undefined ? autoAssignNewWorkers : undefined,
         generationStatus: generationStatus !== undefined ? generationStatus : undefined,
         ownerJurisdictionId: newOwnerJurisdictionId,

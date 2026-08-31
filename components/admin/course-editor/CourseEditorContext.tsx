@@ -92,7 +92,13 @@ interface CourseEditorContextType {
   setPublishNotifyTelegram: (value: boolean) => void;
   confirmPublish: () => Promise<void>;
 
-  updateCourseStyle: (type: string, value: string) => void;
+  // `palette` is only passed by the Theme System v2 picker (a chosen
+  // theme_pattern_variants row); omitting it — as every existing
+  // updateCourseStyle("color", ...) / updateCourseStyle("image", ...) call
+  // site does — clears themePaletteId/themeVariantId, so switching back to
+  // a legacy custom color/image correctly stops a previously-picked palette
+  // from taking rendering priority (see lib/theme.ts getCardBgStyle).
+  updateCourseStyle: (type: string, value: string, palette?: { paletteId: string; variantId: string }) => void;
   fetchCourse: () => Promise<void>;
   fetchMediaFiles: () => Promise<void>;
   openMediaPicker: () => void;
@@ -188,6 +194,8 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
         description: currentCourse.description,
         themeType: currentCourse.themeType || "preset",
         themeValue: currentCourse.themeValue || "linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)",
+        themePaletteId: currentCourse.themePaletteId ?? null,
+        themeVariantId: currentCourse.themeVariantId ?? null,
         autoAssignNewWorkers: currentCourse.autoAssignNewWorkers,
         roleIds: currentCourse.roleIds,
         jurisdictionId: currentCourse.ownerJurisdictionId,
@@ -253,6 +261,8 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
     course?.description,
     course?.themeType,
     course?.themeValue,
+    course?.themePaletteId,
+    course?.themeVariantId,
     triggerAutoSave,
     loading
   ]);
@@ -289,12 +299,14 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
   const [styleDialogOpen, setStyleDialogOpen] = useState(false);
   const [themeImagePending, setThemeImagePending] = useState(false);
 
-  const updateCourseStyle = (type: string, value: string) => {
+  const updateCourseStyle = (type: string, value: string, palette?: { paletteId: string; variantId: string }) => {
     if (!course) return;
     setCourse({
       ...course,
       themeType: type,
       themeValue: value,
+      themePaletteId: palette?.paletteId ?? null,
+      themeVariantId: palette?.variantId ?? null,
     });
   };
 
@@ -742,6 +754,8 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
         description: course.description,
         themeType: course.themeType || "preset",
         themeValue: course.themeValue || "linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)",
+        themePaletteId: course.themePaletteId ?? null,
+        themeVariantId: course.themeVariantId ?? null,
         slides: slidesListRef.current,
       });
 

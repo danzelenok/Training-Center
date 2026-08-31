@@ -40,6 +40,29 @@ export const adminRoles = pgTable("admin_roles", {
   uniqueOrgUser: unique().on(table.organizationId, table.clerkUserId),
 }));
 
+// 0.8. THEME_PALETTES TABLE (platform-wide reference data — a named color
+// palette a course can theme itself with; the older per-course free-form
+// theme_type/theme_value fields on `courses` below remain the fallback for
+// any course that hasn't been migrated to a palette yet)
+export const themePalettes = pgTable("theme_palettes", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: text("name").notNull(), // "Ocean Blue", "Safety Orange"
+  baseColors: jsonb("base_colors").$type<{ primary: string; secondary: string; accent: string }>().notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// 0.9. THEME_PATTERN_VARIANTS TABLE (the 5+ background-pattern options a
+// course can pick between within a given palette; variantIndex orders the
+// picker carousel)
+export const themePatternVariants = pgTable("theme_pattern_variants", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  paletteId: uuid("palette_id").notNull().references(() => themePalettes.id, { onDelete: "cascade" }),
+  variantIndex: integer("variant_index").notNull(), // 1..N, order in the carousel
+  patternCss: text("pattern_css").notNull(), // ready-to-use CSS backgroundImage value
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // 1. COURSES TABLE
 export const courses = pgTable("courses", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -54,8 +77,14 @@ export const courses = pgTable("courses", {
   telegramMessageId: bigint("telegram_message_id", { mode: "bigint" }),
   telegramGroupId: bigint("telegram_group_id", { mode: "bigint" }),
   generationStatus: text("generation_status").$type<"none" | "pending" | "generating" | "ready" | "failed">().default("none").notNull(),
-  themeType: text("theme_type").default("preset").notNull(),
+  themeType: text("theme_type", { enum: ["preset", "color", "image"] }).default("preset").notNull(),
   themeValue: text("theme_value").default("linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)").notNull(),
+  // Theme System v2 — nullable pointer into theme_palettes/theme_pattern_variants.
+  // Null on every course until an admin explicitly re-picks its theme through
+  // the new palette UI; render code falls back to themeType/themeValue above
+  // whenever either is null, so legacy courses are visually unaffected.
+  themePaletteId: uuid("theme_palette_id").references(() => themePalettes.id),
+  themeVariantId: uuid("theme_variant_id").references(() => themePatternVariants.id),
   autoAssignNewWorkers: boolean("auto_assign_new_workers").notNull().default(false),
   publishedAt: timestamp("published_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),

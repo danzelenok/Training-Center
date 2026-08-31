@@ -7,6 +7,8 @@ interface AutosavePayload {
   description: string;
   themeType: string;
   themeValue: string;
+  themePaletteId: string | null;
+  themeVariantId: string | null;
   autoAssignNewWorkers: boolean;
   roleIds: string[];
   jurisdictionId: string;
@@ -42,6 +44,8 @@ interface SaveCoursePayload {
   description: string;
   themeType: string;
   themeValue: string;
+  themePaletteId: string | null;
+  themeVariantId: string | null;
   slides: Slide[];
 }
 

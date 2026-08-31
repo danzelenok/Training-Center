@@ -47,6 +47,7 @@ import {
   CourseEditorProvider,
   useCourseEditor,
 } from "@/components/admin/course-editor/CourseEditorContext";
+import { useThemePalettesQuery } from "@/hooks/admin/theme-palettes/queries";
 
 export default function CourseEditorPage() {
   return (
@@ -133,6 +134,15 @@ function CourseEditorContent() {
     handlePPTXUpload,
     setSlidesList,
   } = useCourseEditor();
+
+  // Theme System v2 picker — Level 1 (palette) / Level 2 (pattern variant).
+  // `expandedPaletteId` only controls which palette's variant row is open in
+  // this dialog; it does not persist anything by itself — only clicking an
+  // actual variant (below) calls updateCourseStyle and touches course state.
+  const themePalettesQuery = useThemePalettesQuery();
+  const themePalettes = themePalettesQuery.data ?? [];
+  const [expandedPaletteId, setExpandedPaletteId] = useState<string | null>(null);
+  const activeExpandedPaletteId = expandedPaletteId ?? course?.themePaletteId ?? null;
 
   const handlePreview = async () => {
     // Nothing to persist for a read-only viewer, and there's nothing to save
@@ -239,60 +249,77 @@ function CourseEditorContent() {
               </DialogHeader>
 
               <div className="space-y-5 py-3">
-                {/* Presets Selection */}
+                {/* Theme Palettes (Level 1) + Pattern Variants (Level 2) */}
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">
-                    Theme Presets
+                    Theme Palette
                   </label>
-                  <div className="grid grid-cols-3 gap-2.5">
-                    {/* Preset 1: Premium Light */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        updateCourseStyle("preset", "linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)");
-                      }}
-                      className={`p-2 rounded-xl border text-center font-bold text-[9px] h-20 flex flex-col items-center justify-center cursor-pointer transition-all ${
-                        course?.themeType === "preset" && course?.themeValue === "linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)"
-                          ? "border-[#C8D400] ring-1 ring-[#C8D400]/40 bg-[#C8D400]/5 text-[#C8D400]"
-                          : "border-border bg-background hover:border-muted-foreground/30 text-foreground"
-                      }`}
-                    >
-                      <div className="w-5 h-5 rounded-full bg-gradient-to-br from-[#f5f7fa] to-[#c3cfe2] border border-border mb-1" />
-                      Light Premium
-                    </button>
 
-                    {/* Preset 2: Deep Navy */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        updateCourseStyle("preset", "linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%)");
-                      }}
-                      className={`p-2 rounded-xl border text-center font-bold text-[9px] h-20 flex flex-col items-center justify-center cursor-pointer transition-all ${
-                        course?.themeType === "preset" && course?.themeValue === "linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%)"
-                          ? "border-[#C8D400] ring-1 ring-[#C8D400]/40 bg-[#C8D400]/5 text-[#C8D400]"
-                          : "border-border bg-background hover:border-muted-foreground/30 text-foreground"
-                      }`}
-                    >
-                      <div className="w-5 h-5 rounded-full bg-gradient-to-br from-[#0f2027] via-[#203a43] to-[#2c5364] border border-border mb-1" />
-                      Deep Navy
-                    </button>
+                  {themePalettesQuery.isLoading ? (
+                    <div className="text-xs text-muted-foreground py-2">Loading palettes…</div>
+                  ) : (
+                    <div className="flex gap-2.5 overflow-x-auto pb-1">
+                      {themePalettes.map((palette) => {
+                        const isActivePalette = course?.themePaletteId === palette.id;
+                        const isExpanded = activeExpandedPaletteId === palette.id;
+                        return (
+                          <button
+                            key={palette.id}
+                            type="button"
+                            onClick={() => setExpandedPaletteId(isExpanded ? null : palette.id)}
+                            className={`shrink-0 p-2 rounded-xl border text-center font-bold text-[9px] w-20 h-20 flex flex-col items-center justify-center gap-1 cursor-pointer transition-all ${
+                              isActivePalette
+                                ? "border-[#C8D400] ring-1 ring-[#C8D400]/40 bg-[#C8D400]/5 text-[#C8D400]"
+                                : isExpanded
+                                  ? "border-muted-foreground/40 bg-background text-foreground"
+                                  : "border-border bg-background hover:border-muted-foreground/30 text-foreground"
+                            }`}
+                          >
+                            <div
+                              className="w-5 h-5 rounded-full border border-border"
+                              style={{
+                                backgroundImage: `linear-gradient(135deg, ${palette.baseColors.primary} 0%, ${palette.baseColors.secondary} 100%)`,
+                              }}
+                            />
+                            <span className="line-clamp-2">{palette.name}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
 
-                    {/* Preset 3: Safety Lime */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        updateCourseStyle("preset", "linear-gradient(135deg, #11998e 0%, #38ef7d 100%)");
-                      }}
-                      className={`p-2 rounded-xl border text-center font-bold text-[9px] h-20 flex flex-col items-center justify-center cursor-pointer transition-all ${
-                        course?.themeType === "preset" && course?.themeValue === "linear-gradient(135deg, #11998e 0%, #38ef7d 100%)"
-                          ? "border-[#C8D400] ring-1 ring-[#C8D400]/40 bg-[#C8D400]/5 text-[#C8D400]"
-                          : "border-border bg-background hover:border-muted-foreground/30 text-foreground"
-                      }`}
-                    >
-                      <div className="w-5 h-5 rounded-full bg-gradient-to-br from-[#11998e] to-[#38ef7d] border border-border mb-1" />
-                      Safety Lime
-                    </button>
-                  </div>
+                  {/* Level 2: pattern variants within the expanded palette */}
+                  {activeExpandedPaletteId && (() => {
+                    const expandedPalette = themePalettes.find((p) => p.id === activeExpandedPaletteId);
+                    if (!expandedPalette) return null;
+                    return (
+                      <div className="flex gap-2.5 overflow-x-auto pt-1 pb-1 border-t border-border/80 mt-2">
+                        {expandedPalette.variants.map((variant) => {
+                          const isActiveVariant =
+                            course?.themePaletteId === expandedPalette.id && course?.themeVariantId === variant.id;
+                          return (
+                            <button
+                              key={variant.id}
+                              type="button"
+                              onClick={() => {
+                                updateCourseStyle("preset", variant.patternCss, {
+                                  paletteId: expandedPalette.id,
+                                  variantId: variant.id,
+                                });
+                              }}
+                              className={`shrink-0 w-16 h-16 rounded-xl border-2 cursor-pointer transition-all ${
+                                isActiveVariant
+                                  ? "border-[#C8D400] ring-1 ring-[#C8D400]/40"
+                                  : "border-border hover:border-muted-foreground/40"
+                              }`}
+                              style={{ backgroundImage: variant.patternCss }}
+                              title={`Variant ${variant.variantIndex}`}
+                            />
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* Custom Solid Color */}
