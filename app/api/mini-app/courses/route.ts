@@ -14,7 +14,7 @@ export const GET = withTelegramAuth(async (_req, { worker }) => {
   // published close to this worker's hire date. For existing workers, or
   // courses published long before/after they were hired, this is a no-op.
   const autoAssignCourses = await db
-    .select({ id: courses.id, publishedAt: courses.publishedAt, createdAt: courses.createdAt })
+    .select({ id: courses.id, publishedAt: courses.publishedAt, createdAt: courses.createdAt, ownerJurisdictionId: courses.ownerJurisdictionId })
     .from(courses)
     .where(
       and(
@@ -25,6 +25,7 @@ export const GET = withTelegramAuth(async (_req, { worker }) => {
     );
 
   const eligibleCourses = autoAssignCourses.filter((c) => {
+    if (c.ownerJurisdictionId !== worker.jurisdictionId) return false;
     const publishDate = c.publishedAt ?? c.createdAt;
     return Math.abs(worker.createdAt.getTime() - new Date(publishDate).getTime()) <= AUTO_ASSIGN_WINDOW_MS;
   });
@@ -50,7 +51,8 @@ export const GET = withTelegramAuth(async (_req, { worker }) => {
       and(
         eq(courses.id, assignments.courseId),
         eq(courses.status, "published"),
-        eq(courses.organizationId, worker.organizationId)
+        eq(courses.organizationId, worker.organizationId),
+        eq(courses.ownerJurisdictionId, worker.jurisdictionId)
       )
     )
     .leftJoin(

@@ -1,8 +1,8 @@
 import { db } from "@/db";
-import { courses, slides, jurisdictions, organizationJurisdictions, courseRoles } from "@/db/schema";
+import { courses, slides, jurisdictions, organizationJurisdictions, courseRoles, themePalettes, themePatternVariants } from "@/db/schema";
 import { requireOrgId } from "@/lib/org";
 import { roleOrUnauthorized } from "@/lib/adminRoles";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 // 1. GET /api/courses - List all courses with slide count
@@ -110,6 +110,31 @@ export async function POST(req: Request) {
       ownerJurisdictionId = jurisdiction.id;
     }
 
+    // Theme System v2 — assign the lowest-sortOrder palette and its first
+    // variant so a brand-new course doesn't sit on the legacy blue-gradient
+    // fallback (LEGACY_DEFAULT_GRADIENT in lib/theme.ts) until an admin
+    // manually opens "Style Course". Missing palette data (empty table)
+    // falls back to NULL rather than blocking course creation — the legacy
+    // fallback in lib/theme.ts still renders correctly in that case.
+    let defaultThemePaletteId: string | null = null;
+    let defaultThemeVariantId: string | null = null;
+    const [defaultPalette] = await db
+      .select({ id: themePalettes.id })
+      .from(themePalettes)
+      .orderBy(asc(themePalettes.sortOrder))
+      .limit(1);
+    if (defaultPalette) {
+      const [defaultVariant] = await db
+        .select({ id: themePatternVariants.id })
+        .from(themePatternVariants)
+        .where(and(eq(themePatternVariants.paletteId, defaultPalette.id), eq(themePatternVariants.variantIndex, 1)))
+        .limit(1);
+      if (defaultVariant) {
+        defaultThemePaletteId = defaultPalette.id;
+        defaultThemeVariantId = defaultVariant.id;
+      }
+    }
+
     const [newCourse] = await db
       .insert(courses)
       .values({
@@ -118,6 +143,8 @@ export async function POST(req: Request) {
         title,
         description: description || "",
         status: "draft",
+        themePaletteId: defaultThemePaletteId,
+        themeVariantId: defaultThemeVariantId,
       })
       .returning();
 

@@ -84,7 +84,14 @@ export async function POST(
     // 3. On first publish, create assignments according to the chosen scope
     if (isFirstPublish) {
       if (assignTo === "all") {
-        const allWorkers = await db.select({ id: workers.id }).from(workers).where(eq(workers.organizationId, orgId));
+        const allWorkers = await db
+          .select({ id: workers.id })
+          .from(workers)
+          .where(and(
+            eq(workers.organizationId, orgId),
+            eq(workers.jurisdictionId, course.ownerJurisdictionId),
+            eq(workers.active, true)
+          ));
         if (allWorkers.length > 0) {
           await db
             .insert(assignments)

@@ -167,11 +167,12 @@ export async function POST(req: Request) {
     // 2. Auto-assign published courses that have autoAssignNewWorkers = true,
     // but only ones published within a week of this worker's hire date.
     const autoAssignCourses = await db
-      .select({ id: courses.id, publishedAt: courses.publishedAt, createdAt: courses.createdAt })
+      .select({ id: courses.id, publishedAt: courses.publishedAt, createdAt: courses.createdAt, ownerJurisdictionId: courses.ownerJurisdictionId })
       .from(courses)
       .where(and(eq(courses.organizationId, orgId), eq(courses.autoAssignNewWorkers, true), eq(courses.status, "published")));
 
     const eligibleCourses = autoAssignCourses.filter((c) => {
+      if (c.ownerJurisdictionId !== worker.jurisdictionId) return false;
       const publishDate = c.publishedAt ?? c.createdAt;
       return Math.abs(worker.createdAt.getTime() - new Date(publishDate).getTime()) <= AUTO_ASSIGN_WINDOW_MS;
     });

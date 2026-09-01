@@ -91,7 +91,6 @@ export default function Sidebar() {
     saveStatus,
     handlePPTXUpload,
     importing,
-    toggleAutoAssignNewWorkers,
     jurisdictionsList,
     jobRolesList,
     toggleCourseRole,
@@ -263,24 +262,6 @@ export default function Sidebar() {
             )}
           </div>
         )}
-
-        <button
-          onClick={toggleAutoAssignNewWorkers}
-          className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl border border-border bg-background/50 hover:bg-muted/50 transition-colors text-xs text-foreground"
-        >
-          <span className="font-semibold">Auto-assign to new workers</span>
-          <span
-            className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors ${
-              course?.autoAssignNewWorkers ? "bg-[#C8D400]" : "bg-muted"
-            }`}
-          >
-            <span
-              className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-                course?.autoAssignNewWorkers ? "translate-x-4" : "translate-x-0"
-              }`}
-            />
-          </span>
-        </button>
 
         {status === "draft" && (
           <Button

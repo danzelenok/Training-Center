@@ -2,7 +2,7 @@ import { db } from "@/db";
 import { courses, slides } from "@/db/schema";
 import { withTelegramAuth } from "@/lib/telegram";
 import { resolveCourseTheme } from "@/lib/theme-server";
-import { and, asc, eq, isNull, or } from "drizzle-orm";
+import { and, asc, eq, isNull, or, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 export const GET = withTelegramAuth<{ params: Promise<{ id: string }> }>(
@@ -16,7 +16,7 @@ export const GET = withTelegramAuth<{ params: Promise<{ id: string }> }>(
         return new NextResponse("Unauthorized", { status: 401 });
       }
 
-      // Fetch course details, scoped to the worker's organization
+      // Fetch course details, scoped to the worker's organization and jurisdiction
       const [course] = await db
         .select({
           title: courses.title,
@@ -28,7 +28,11 @@ export const GET = withTelegramAuth<{ params: Promise<{ id: string }> }>(
           textColorOverride: courses.textColorOverride,
         })
         .from(courses)
-        .where(and(eq(courses.id, id), eq(courses.organizationId, worker.organizationId)))
+        .where(and(
+          eq(courses.id, id),
+          eq(courses.organizationId, worker.organizationId),
+          worker.jurisdictionId ? eq(courses.ownerJurisdictionId, worker.jurisdictionId) : sql`false`
+        ))
         .limit(1);
 
       if (!course) {

@@ -120,7 +120,6 @@ interface CourseEditorContextType {
   handleSelectPexelsPhoto: (photo: { id: number; url: string; thumbnail: string; photographer: string }) => void;
   handleSelectFromLibrary: (file: MediaLibraryFile) => void;
   updateCourseMeta: (field: "title" | "description", value: string) => void;
-  toggleAutoAssignNewWorkers: () => void;
   toggleCourseRole: (roleId: string, checked: boolean) => void;
   updateCourseJurisdiction: (jurisdictionId: string) => void;
   addSlide: (type: Slide["type"]) => void;
@@ -575,11 +574,6 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
     setCourse({ ...course, [field]: value });
   };
 
-  const toggleAutoAssignNewWorkers = () => {
-    if (!course) return;
-    setCourse({ ...course, autoAssignNewWorkers: !course.autoAssignNewWorkers });
-  };
-
   // roleIds isn't in the debounced-effect's dependency list (title/description/
   // theme only), so trigger the save explicitly rather than relying on that
   // effect to notice the change.
@@ -1026,7 +1020,6 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
         handleSelectPexelsPhoto,
         handleSelectFromLibrary,
         updateCourseMeta,
-        toggleAutoAssignNewWorkers,
         toggleCourseRole,
         updateCourseJurisdiction,
         addSlide,

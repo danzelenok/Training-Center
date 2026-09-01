@@ -70,6 +70,8 @@ export async function POST(
         status: "draft",
         themeType: sourceCourse.themeType,
         themeValue: sourceCourse.themeValue,
+        themePaletteId: sourceCourse.themePaletteId,
+        themeVariantId: sourceCourse.themeVariantId,
         generationStatus: "ready",
       })
       .returning();
