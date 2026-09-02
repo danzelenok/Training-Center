@@ -22,6 +22,30 @@ export interface CourseSnapshotResult {
 
 export class CourseNotPublishedError extends Error {}
 
+export type CourseSnapshotStatusFilter = "all" | "not_completed" | "not_started" | "in_progress" | "completed";
+
+const VALID_STATUS_FILTERS = new Set<CourseSnapshotStatusFilter>([
+  "all",
+  "not_completed",
+  "not_started",
+  "in_progress",
+  "completed",
+]);
+
+export function parseCourseSnapshotStatusFilter(raw: string | null): CourseSnapshotStatusFilter {
+  return raw && VALID_STATUS_FILTERS.has(raw as CourseSnapshotStatusFilter) ? (raw as CourseSnapshotStatusFilter) : "all";
+}
+
+/** "not_completed" covers not_started + in_progress — the common "who hasn't finished yet" view. */
+export function filterSnapshotWorkersByStatus(
+  workersList: CourseSnapshotWorkerResult[],
+  status: CourseSnapshotStatusFilter
+): CourseSnapshotWorkerResult[] {
+  if (status === "all") return workersList;
+  if (status === "not_completed") return workersList.filter((w) => w.status !== "completed");
+  return workersList.filter((w) => w.status === status);
+}
+
 /**
  * Reconstructs the active workforce as of a course's publishedAt date, using
  * employment_events as the source of truth for who was hired/active and what

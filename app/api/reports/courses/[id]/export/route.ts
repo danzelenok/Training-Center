@@ -1,7 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
-import ExcelJS from "exceljs";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { createElement } from "react";
+import { renderToBuffer, type DocumentProps } from "@react-pdf/renderer";
+import type { ReactElement } from "react";
 import { requireOrgId } from "@/lib/org";
-import { getCourseSnapshot, CourseNotPublishedError, type CourseSnapshotWorkerResult } from "@/lib/courseSnapshot";
+import {
+  getCourseSnapshot,
+  CourseNotPublishedError,
+  filterSnapshotWorkersByStatus,
+  parseCourseSnapshotStatusFilter,
+  type CourseSnapshotWorkerResult,
+  type CourseSnapshotStatusFilter,
+} from "@/lib/courseSnapshot";
+import { CourseSnapshotDocument } from "@/lib/pdf/CourseSnapshotDocument";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +37,14 @@ function escapeCSVValue(val: unknown): string {
 }
 
 const STATUS_LABELS: Record<CourseSnapshotWorkerResult["status"], string> = {
+  not_started: "Not Started",
+  in_progress: "In Progress",
+  completed: "Completed",
+};
+
+const STATUS_FILTER_LABELS: Record<CourseSnapshotStatusFilter, string | null> = {
+  all: null,
+  not_completed: "Not Completed (Not Started + In Progress)",
   not_started: "Not Started",
   in_progress: "In Progress",
   completed: "Completed",
@@ -54,7 +74,8 @@ export async function GET(
     }
 
     const { id } = await params;
-    const format = req.nextUrl.searchParams.get("format") === "xlsx" ? "xlsx" : "csv";
+    const format = req.nextUrl.searchParams.get("format") === "pdf" ? "pdf" : "csv";
+    const statusFilter = parseCourseSnapshotStatusFilter(req.nextUrl.searchParams.get("status"));
 
     let snapshot;
     try {
@@ -70,11 +91,12 @@ export async function GET(
       return new NextResponse("Course not found", { status: 404 });
     }
 
+    const filteredWorkers = filterSnapshotWorkersByStatus(snapshot.workers, statusFilter);
     const safeTitle = snapshot.course.title.replace(/[^a-z0-9]+/gi, "_").slice(0, 60) || "course";
 
     if (format === "csv") {
       const csvRows = [HEADERS.join(",")];
-      for (const w of snapshot.workers) {
+      for (const w of filteredWorkers) {
         csvRows.push(toRow(w).map(escapeCSVValue).join(","));
       }
       return new NextResponse(csvRows.join("\n"), {
@@ -85,23 +107,26 @@ export async function GET(
       });
     }
 
-    const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet("Snapshot");
-    sheet.addRow(HEADERS);
-    sheet.getRow(1).font = { bold: true };
-    for (const w of snapshot.workers) {
-      sheet.addRow(toRow(w));
-    }
-    sheet.columns.forEach((col) => {
-      col.width = 22;
-    });
+    const groupByRole = req.nextUrl.searchParams.get("groupByRole") === "1";
+    const groupByJurisdiction = req.nextUrl.searchParams.get("groupByJurisdiction") === "1";
+    const logoBuffer = await readFile(path.join(process.cwd(), "public", "cool-cat_logo-color.png"));
 
-    const buffer = await workbook.xlsx.writeBuffer();
+    const pdfBuffer = await renderToBuffer(
+      createElement(CourseSnapshotDocument, {
+        course: snapshot.course,
+        workers: filteredWorkers,
+        statusFilterLabel: STATUS_FILTER_LABELS[statusFilter],
+        groupByRole,
+        groupByJurisdiction,
+        logoBuffer,
+        generatedAt: new Date(),
+      }) as ReactElement<DocumentProps>
+    );
 
-    return new NextResponse(buffer, {
+    return new NextResponse(new Uint8Array(pdfBuffer), {
       headers: {
-        "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "Content-Disposition": `attachment; filename="${safeTitle}_snapshot.xlsx"`,
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `attachment; filename="${safeTitle}_snapshot.pdf"`,
       },
     });
   } catch (error: any) {

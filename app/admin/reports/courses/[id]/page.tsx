@@ -2,37 +2,28 @@
 
 import { Fragment, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Loader2, FileSpreadsheet, FileText } from "lucide-react";
+import { ArrowLeft, Loader2, FileText, FileType, Download, ChevronDown } from "lucide-react";
 import { format } from "date-fns";
 import { toast, Toaster } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useCourseSnapshotQuery } from "@/hooks/admin/reports/queries";
 import type { CourseSnapshotWorker } from "@/hooks/admin/reports/types";
 import { STATUS_CONFIG } from "@/components/admin/workers/status-config";
-
-const ROLE_UNKNOWN = "Role unknown";
-const NO_JURISDICTION = "No jurisdiction";
-
-function statCounts(list: CourseSnapshotWorker[]) {
-  const total = list.length;
-  const completed = list.filter((w) => w.status === "completed").length;
-  const inProgress = list.filter((w) => w.status === "in_progress").length;
-  const notStarted = total - completed - inProgress;
-  const rate = total > 0 ? Math.round((completed / total) * 100) : 0;
-  return { total, completed, inProgress, notStarted, rate };
-}
-
-// Sorts group keys alphabetically but always pushes the "unknown" bucket last,
-// so a handful of gap-cases don't visually dominate the top of the report.
-function sortGroupKeys(keys: string[]) {
-  return [...keys].sort((a, b) => {
-    const aUnknown = a === ROLE_UNKNOWN || a === NO_JURISDICTION;
-    const bUnknown = b === ROLE_UNKNOWN || b === NO_JURISDICTION;
-    if (aUnknown !== bUnknown) return aUnknown ? 1 : -1;
-    return a.localeCompare(b);
-  });
-}
+import { ROLE_UNKNOWN, NO_JURISDICTION, sortGroupKeys, groupSnapshotWorkers, statCounts } from "@/lib/courseSnapshotGrouping";
 
 function GroupHeader({ label, list }: { label: string; list: CourseSnapshotWorker[] }) {
   const stats = statCounts(list);
@@ -98,45 +89,38 @@ export default function CourseSnapshotPage() {
 
   const [groupByRole, setGroupByRole] = useState(true);
   const [groupByJurisdiction, setGroupByJurisdiction] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<string>("all");
 
   const { data, isLoading, error } = useCourseSnapshotQuery(courseId);
 
   const workers = useMemo(() => data?.workers ?? [], [data]);
   const overall = useMemo(() => statCounts(workers), [workers]);
 
-  const grouped = useMemo(() => {
-    if (!groupByRole && !groupByJurisdiction) return null;
+  const filteredWorkers = useMemo(() => {
+    if (statusFilter === "all") return workers;
+    if (statusFilter === "not_completed") return workers.filter((w) => w.status !== "completed");
+    return workers.filter((w) => w.status === statusFilter);
+  }, [workers, statusFilter]);
 
-    if (groupByRole && groupByJurisdiction) {
-      const byRole = new Map<string, Map<string, CourseSnapshotWorker[]>>();
-      for (const w of workers) {
-        const roleKey = w.roleName ?? ROLE_UNKNOWN;
-        const jKey = w.jurisdictionName ?? NO_JURISDICTION;
-        if (!byRole.has(roleKey)) byRole.set(roleKey, new Map());
-        const inner = byRole.get(roleKey)!;
-        if (!inner.has(jKey)) inner.set(jKey, []);
-        inner.get(jKey)!.push(w);
-      }
-      return { kind: "nested" as const, byRole };
+  const grouped = useMemo(
+    () => groupSnapshotWorkers(filteredWorkers, groupByRole, groupByJurisdiction),
+    [filteredWorkers, groupByRole, groupByJurisdiction]
+  );
+
+  const handleExport = (fmt: "csv" | "pdf") => {
+    const params = new URLSearchParams({ format: fmt });
+    if (statusFilter !== "all") params.append("status", statusFilter);
+    if (fmt === "pdf") {
+      if (groupByRole) params.append("groupByRole", "1");
+      if (groupByJurisdiction) params.append("groupByJurisdiction", "1");
     }
-
-    const single = new Map<string, CourseSnapshotWorker[]>();
-    for (const w of workers) {
-      const key = groupByRole ? w.roleName ?? ROLE_UNKNOWN : w.jurisdictionName ?? NO_JURISDICTION;
-      if (!single.has(key)) single.set(key, []);
-      single.get(key)!.push(w);
-    }
-    return { kind: "single" as const, single };
-  }, [workers, groupByRole, groupByJurisdiction]);
-
-  const handleExport = (fmt: "csv" | "xlsx") => {
-    const url = `/api/reports/courses/${courseId}/export?format=${fmt}`;
+    const url = `/api/reports/courses/${courseId}/export?${params.toString()}`;
     const a = document.createElement("a");
     a.href = url;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    toast.success(`${fmt === "csv" ? "CSV" : "Excel"} download triggered`);
+    toast.success(`${fmt === "csv" ? "CSV" : "PDF"} download triggered`);
   };
 
   return (
@@ -170,25 +154,34 @@ export default function CourseSnapshotPage() {
                 Workforce snapshot as of publish date — {format(new Date(data.course.publishedAt), "MMM d, yyyy")}
               </p>
             </div>
-            <div className="flex gap-2">
-              <Button
-                onClick={() => handleExport("csv")}
-                disabled={workers.length === 0}
-                variant="outline"
-                className="h-10 gap-2 text-xs font-bold"
-              >
-                <FileText className="h-4 w-4" />
-                CSV
-              </Button>
-              <Button
-                onClick={() => handleExport("xlsx")}
-                disabled={workers.length === 0}
-                className="h-10 bg-[#C8D400] hover:bg-[#B6C200] text-[#1B2A6B] font-bold gap-2 border-0"
-              >
-                <FileSpreadsheet className="h-4 w-4" />
-                Excel
-              </Button>
-            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  disabled={filteredWorkers.length === 0}
+                  className="h-10 bg-[#C8D400] hover:bg-[#B6C200] text-[#1B2A6B] font-bold gap-2 border-0"
+                >
+                  <Download className="h-4 w-4" />
+                  Export
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44 bg-card border border-border text-foreground rounded-xl shadow-lg p-1 z-50">
+                <DropdownMenuItem
+                  onClick={() => handleExport("csv")}
+                  className="cursor-pointer hover:bg-muted text-xs rounded-lg px-3 py-2 gap-2 font-medium"
+                >
+                  <FileText className="h-3.5 w-3.5" />
+                  Export as CSV
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => handleExport("pdf")}
+                  className="cursor-pointer hover:bg-muted text-xs rounded-lg px-3 py-2 gap-2 font-medium"
+                >
+                  <FileType className="h-3.5 w-3.5" />
+                  Export as PDF
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
 
           {/* Summary */}
@@ -209,6 +202,23 @@ export default function CourseSnapshotPage() {
               <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Completion Rate</p>
               <p className="text-2xl font-extrabold text-[#1B2A6B] dark:text-white mt-1">{overall.rate}%</p>
             </div>
+          </div>
+
+          {/* Status filter */}
+          <div className="flex flex-wrap items-center gap-4 bg-card border border-border rounded-2xl px-5 py-3">
+            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Filter by Status</span>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-full sm:w-56 bg-background border-border rounded-xl h-10">
+                <SelectValue placeholder="All Statuses" />
+              </SelectTrigger>
+              <SelectContent className="bg-card border border-border text-foreground">
+                <SelectItem value="all">All Statuses</SelectItem>
+                <SelectItem value="not_completed">Not Completed (Not Started + In Progress)</SelectItem>
+                <SelectItem value="not_started">Not Started</SelectItem>
+                <SelectItem value="in_progress">In Progress</SelectItem>
+                <SelectItem value="completed">Completed</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           {/* Group-by controls */}
@@ -233,11 +243,17 @@ export default function CourseSnapshotPage() {
                     No workers were active as of the publish date.
                   </p>
                 </div>
+              ) : filteredWorkers.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-20 text-center px-4">
+                  <p className="text-muted-foreground text-sm max-w-md">
+                    No workers match this status filter.
+                  </p>
+                </div>
               ) : !grouped ? (
                 <table className="w-full text-left border-collapse">
                   {TABLE_HEAD}
                   <tbody className="divide-y divide-border">
-                    <WorkerRows list={workers} />
+                    <WorkerRows list={filteredWorkers} />
                   </tbody>
                 </table>
               ) : grouped.kind === "single" ? (
