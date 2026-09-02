@@ -13,9 +13,9 @@ import {
   Users,
   BarChart3,
   Loader2,
-  Upload,
   Sparkles,
   Send,
+  RotateCcw,
   MapPin,
   Lock,
   Copy,
@@ -83,20 +83,16 @@ export default function Sidebar() {
   const {
     addSlide,
     handlePublish,
-    publishing,
     course,
     isReadOnly,
     setAiDialogOpen,
     slidesList,
     saveStatus,
-    handlePPTXUpload,
-    importing,
     jurisdictionsList,
     jobRolesList,
     toggleCourseRole,
     updateCourseJurisdiction,
-    setAddendumDialogOpen,
-    setAddendumJurisdictionIds,
+    setAdaptJurisdictionDialogOpen,
   } = useCourseEditor();
   const { data: me } = useMeQuery();
 
@@ -164,38 +160,21 @@ export default function Sidebar() {
             Generate with AI
           </Button>
 
-          {hasSlides && jurisdictionsList.length > 0 && (
+          {/* Only meaningful for a course with clone lineage — see
+              hooks/admin/course-editor/types.ts's sourceOfCloneId comment.
+              Doesn't check whether ownerJurisdictionId actually diverged
+              from the source's (that requires a join this type doesn't
+              carry) — the route itself 400s with a clear message if the
+              jurisdiction never actually changed since cloning. */}
+          {hasSlides && course?.sourceOfCloneId && (
             <Button
-              onClick={() => {
-                setAddendumJurisdictionIds(jurisdictionsList.map((j) => j.id));
-                setAddendumDialogOpen(true);
-              }}
+              onClick={() => setAdaptJurisdictionDialogOpen(true)}
               variant="outline"
               className="w-full bg-card hover:bg-muted text-foreground border border-border font-bold cursor-pointer h-10 px-4 transition-all duration-250 gap-1.5 flex items-center justify-center text-xs rounded-xl"
             >
               <MapPin className="h-4 w-4 shrink-0" />
-              Generate state variants
+              Adapt to Jurisdiction
             </Button>
-          )}
-
-          {status === "draft" && (
-            <label className="w-full cursor-pointer shrink-0">
-              <input
-                type="file"
-                accept=".pptx"
-                onChange={handlePPTXUpload}
-                disabled={importing}
-                className="hidden"
-              />
-              <span className="inline-flex items-center justify-center bg-card hover:bg-muted text-foreground border border-border w-full font-bold h-10 px-4 transition-all duration-250 rounded-xl gap-1.5 text-xs select-none">
-                {importing ? (
-                  <Loader2 className="h-4 w-4 animate-spin shrink-0" />
-                ) : (
-                  <Upload className="h-4 w-4 shrink-0" />
-                )}
-                Import Presentation
-              </span>
-            </label>
           )}
         </div>
 
@@ -263,20 +242,23 @@ export default function Sidebar() {
           </div>
         )}
 
-        {status === "draft" && (
-          <Button
-            onClick={handlePublish}
-            disabled={publishing || !hasSlides || (course?.roleIds.length ?? 0) === 0 || saveStatus === "saving"}
-            className="w-full bg-[#C8D400] hover:bg-[#B6C200] text-[#1B2A6B] font-extrabold border-0 shadow-lg shadow-[#C8D400]/10 cursor-pointer h-10 transition-transform duration-200 hover:scale-[1.02] gap-1.5 flex items-center justify-center text-xs rounded-xl"
-          >
-            {publishing ? (
-              <Loader2 className="h-4 w-4 animate-spin shrink-0" />
-            ) : (
+        <Button
+          onClick={handlePublish}
+          disabled={!hasSlides || saveStatus === "saving"}
+          className="w-full bg-[#C8D400] hover:bg-[#B6C200] text-[#1B2A6B] font-extrabold border-0 shadow-lg shadow-[#C8D400]/10 cursor-pointer h-10 transition-transform duration-200 hover:scale-[1.02] gap-1.5 flex items-center justify-center text-xs rounded-xl"
+        >
+          {status === "published" ? (
+            <>
+              <RotateCcw className="h-4 w-4 shrink-0" />
+              Resend Announcement
+            </>
+          ) : (
+            <>
               <Send className="h-4 w-4 shrink-0" />
-            )}
-            Go Live on TG
-          </Button>
-        )}
+              Go Live on TG
+            </>
+          )}
+        </Button>
       </div>
     </div>
   );

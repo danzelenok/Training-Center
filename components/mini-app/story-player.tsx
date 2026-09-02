@@ -28,6 +28,11 @@ interface StoryPlayerProps {
   // slide so admins can tell which jurisdiction variant they're looking at.
   // Left unset for the real worker-facing Mini App.
   jurisdictionBadges?: JurisdictionRef[];
+  // Admin-preview only: opens the player on this slide instead of slide 0 —
+  // lets "Preview" from the course editor land on whatever slide was being
+  // edited. Defaults to 0 so every other caller (the real Mini App, which
+  // never passes this) is unaffected.
+  initialIndex?: number;
 }
 
 export function StoryPlayer({
@@ -43,6 +48,7 @@ export function StoryPlayer({
   fontFamilyOverride,
   textColorOverride,
   jurisdictionBadges,
+  initialIndex = 0,
 }: StoryPlayerProps) {
   const [safeTop, setSafeTop] = useState(0);
   const [safeBottom, setSafeBottom] = useState(0);
@@ -51,7 +57,11 @@ export function StoryPlayer({
 
   const router = useRouter();
 
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [currentIndex, setCurrentIndex] = useState(() =>
+    Number.isFinite(initialIndex) && initialIndex > 0
+      ? Math.min(initialIndex, Math.max(slides.length - 1, 0))
+      : 0
+  );
   const [completed, setCompleted] = useState(false);
   const [quizAnswered, setQuizAnswered] = useState(false);
   const [quizScore, setQuizScore] = useState<number | null>(null);

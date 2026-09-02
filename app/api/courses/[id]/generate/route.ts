@@ -53,16 +53,15 @@ export async function POST(
     // Determine target model (fast -> gemini-3.5-flash, advanced -> gemini-2.5-pro)
     const modelIdentifier = model === "fast" ? "gemini-3.5-flash" : "gemini-2.5-pro";
 
-    // Resolve which regulator's site to ground the base generation on. Defaults
-    // to the federal OSHA record — the two-step flow (Ticket 5) generates the
-    // base course from federal materials, then layers state-specific addenda
-    // on top via /generate-addendum. Passing jurisdictionId here still lets a
-    // caller ground the base directly on one state when there's no need for
-    // an intermediate federal base.
-    const [jurisdiction] =
-      typeof jurisdictionId === "string" && jurisdictionId
-        ? await db.select().from(jurisdictions).where(eq(jurisdictions.id, jurisdictionId)).limit(1)
-        : await db.select().from(jurisdictions).where(eq(jurisdictions.code, "FEDERAL")).limit(1);
+    // Ground generation directly on the course's own jurisdiction — replaces
+    // the old "federal base + state addenda" two-step flow (see DAN-19
+    // Group C). courses.ownerJurisdictionId is NOT NULL at the schema level,
+    // so every caller (the client always sends course.ownerJurisdictionId)
+    // has a real jurisdiction to resolve; no federal/default fallback.
+    if (typeof jurisdictionId !== "string" || !jurisdictionId) {
+      return new NextResponse("jurisdictionId is required", { status: 400 });
+    }
+    const [jurisdiction] = await db.select().from(jurisdictions).where(eq(jurisdictions.id, jurisdictionId)).limit(1);
 
     if (!jurisdiction) {
       return new NextResponse("Jurisdiction not found", { status: 400 });

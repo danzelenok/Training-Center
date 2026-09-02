@@ -15,8 +15,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
-import { useWorkersQuery } from "@/hooks/admin/workers/queries";
-import { usePublishCourseMutation } from "@/hooks/admin/course-editor/mutations";
+import { useWorkersQuery, useJobRolesQuery } from "@/hooks/admin/workers/queries";
+import { RoleMultiSelect } from "@/components/admin/RoleMultiSelect";
+import { usePublishCourseMutation, type PublishCourseResult } from "@/hooks/admin/course-editor/mutations";
 
 interface PublishCourseDialogProps {
   open: boolean;
@@ -28,15 +29,25 @@ interface PublishCourseDialogProps {
   // whoever is already assigned; the endpoint silently ignores assignTo/workerIds
   // once isFirstPublish is false, so the picker would just be inert UI.
   alreadyPublished: boolean;
+  // When the caller needs the published course's fields reflected somewhere
+  // other than the courses list — e.g. the course editor's own local state,
+  // which must NOT go through a ["course", id] invalidate (that would reset
+  // the editor's active slide back to 0) — pass this instead of relying on
+  // the default `invalidateQueries(["courses"])`. When provided, it fully
+  // replaces the default invalidate; the caller owns refreshing whatever it
+  // needs refreshed.
+  onPublishSuccess?: (result: PublishCourseResult) => void;
 }
 
-export function PublishCourseDialog({ open, onOpenChange, courseId, alreadyPublished }: PublishCourseDialogProps) {
+export function PublishCourseDialog({ open, onOpenChange, courseId, alreadyPublished, onPublishSuccess }: PublishCourseDialogProps) {
   const queryClient = useQueryClient();
   const workersQuery = useWorkersQuery();
+  const jobRolesQuery = useJobRolesQuery();
   const publishMutation = usePublishCourseMutation(courseId ?? "");
 
-  const [assignTo, setAssignTo] = useState<"all" | "specific">("all");
+  const [assignTo, setAssignTo] = useState<"all" | "roles" | "specific">("all");
   const [workerIds, setWorkerIds] = useState<string[]>([]);
+  const [roleIds, setRoleIds] = useState<string[]>([]);
   const [notifyTelegram, setNotifyTelegram] = useState(true);
   const [wasOpen, setWasOpen] = useState(open);
 
@@ -48,6 +59,7 @@ export function PublishCourseDialog({ open, onOpenChange, courseId, alreadyPubli
     if (open) {
       setAssignTo("all");
       setWorkerIds([]);
+      setRoleIds([]);
       setNotifyTelegram(true);
     }
   }
@@ -59,6 +71,7 @@ export function PublishCourseDialog({ open, onOpenChange, courseId, alreadyPubli
       label: w.displayName || [w.firstName, w.lastName].filter(Boolean).join(" ") || w.telegramUsername || w.telegramUserId || "",
     }));
   const pickersLoading = workersQuery.isLoading;
+  const jobRolesList = jobRolesQuery.data ?? [];
 
   const handleConfirm = async () => {
     if (!courseId) return;
@@ -67,12 +80,17 @@ export function PublishCourseDialog({ open, onOpenChange, courseId, alreadyPubli
       : (notifyTelegram ? "Publishing & sending direct messages to workers…" : "Publishing course…");
     const toastId = toast.loading(toastMsg);
     try {
-      await publishMutation.mutateAsync({
+      const data = await publishMutation.mutateAsync({
         assignTo,
         workerIds: assignTo === "specific" ? workerIds : [],
+        roleIds: assignTo === "roles" ? roleIds : [],
         notifyWorkers: notifyTelegram,
       });
-      queryClient.invalidateQueries({ queryKey: ["courses"] });
+      if (onPublishSuccess) {
+        onPublishSuccess(data);
+      } else {
+        queryClient.invalidateQueries({ queryKey: ["courses"] });
+      }
       const successMsg = alreadyPublished
         ? "Announcement resent to assigned workers."
         : notifyTelegram
@@ -107,16 +125,39 @@ export function PublishCourseDialog({ open, onOpenChange, courseId, alreadyPubli
               </p>
               <RadioGroup
                 value={assignTo}
-                onValueChange={(v) => setAssignTo(v as "all" | "specific")}
+                onValueChange={(v) => setAssignTo(v as "all" | "roles" | "specific")}
                 className="space-y-2"
               >
                 <label className="flex items-start gap-3 rounded-xl border border-border p-3 cursor-pointer hover:bg-muted/30 transition-colors">
                   <RadioGroupItem value="all" className="mt-0.5" />
                   <div>
-                    <p className="text-xs font-bold text-foreground">All current workers</p>
+                    <p className="text-xs font-bold text-foreground">All current workers in this jurisdiction</p>
                     <p className="text-[10px] text-muted-foreground mt-0.5">
-                      Every registered worker gets access immediately. Future workers will also be auto-assigned.
+                      Every worker in this course&apos;s jurisdiction gets access immediately. Future workers here will also be auto-assigned.
                     </p>
+                  </div>
+                </label>
+                <label className="flex items-start gap-3 rounded-xl border border-border p-3 cursor-pointer hover:bg-muted/30 transition-colors">
+                  <RadioGroupItem value="roles" className="mt-0.5" />
+                  <div className="w-full">
+                    <p className="text-xs font-bold text-foreground">Specific roles</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">
+                      Workers with the selected role(s) in this course&apos;s jurisdiction get access immediately. Workers hired into these roles later are not added automatically — re-publish to catch them.
+                    </p>
+                    {assignTo === "roles" && (
+                      <div className="mt-3">
+                        <RoleMultiSelect
+                          roles={jobRolesList}
+                          selectedIds={roleIds}
+                          onToggle={(roleId, checked) =>
+                            setRoleIds((prev) =>
+                              checked ? [...prev, roleId] : prev.filter((x) => x !== roleId)
+                            )
+                          }
+                          placeholder="Select roles"
+                        />
+                      </div>
+                    )}
                   </div>
                 </label>
                 <label className="flex items-start gap-3 rounded-xl border border-border p-3 cursor-pointer hover:bg-muted/30 transition-colors">
@@ -192,7 +233,8 @@ export function PublishCourseDialog({ open, onOpenChange, courseId, alreadyPubli
             onClick={handleConfirm}
             disabled={
               publishMutation.isPending ||
-              (!alreadyPublished && assignTo === "specific" && workerIds.length === 0)
+              (!alreadyPublished && assignTo === "specific" && workerIds.length === 0) ||
+              (!alreadyPublished && assignTo === "roles" && roleIds.length === 0)
             }
             className="bg-[#C8D400] hover:bg-[#B6C200] text-[#1B2A6B] font-extrabold border-0 text-xs px-4"
           >

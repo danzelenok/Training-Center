@@ -21,8 +21,10 @@ export async function POST(
     if (roleResult instanceof Response) return roleResult;
 
     const body = await req.json().catch(() => ({}));
-    const assignTo: "all" | "specific" = body.assignTo === "specific" ? "specific" : "all";
+    const assignTo: "all" | "specific" | "roles" =
+      body.assignTo === "specific" ? "specific" : body.assignTo === "roles" ? "roles" : "all";
     const requestedWorkerIds: string[] = Array.isArray(body.workerIds) ? body.workerIds : [];
+    const requestedRoleIds: string[] = Array.isArray(body.roleIds) ? body.roleIds : [];
     const notifyWorkers: boolean = body.notifyWorkers ?? body.notifyTelegram ?? true;
 
     // 1. Fetch the course, scoped to this organization
@@ -96,6 +98,22 @@ export async function POST(
           await db
             .insert(assignments)
             .values(allWorkers.map((w) => ({ workerId: w.id, courseId: id })))
+            .onConflictDoNothing({ target: [assignments.workerId, assignments.courseId] });
+        }
+      } else if (assignTo === "roles" && requestedRoleIds.length > 0) {
+        const roleWorkers = await db
+          .select({ id: workers.id })
+          .from(workers)
+          .where(and(
+            eq(workers.organizationId, orgId),
+            eq(workers.jurisdictionId, course.ownerJurisdictionId),
+            eq(workers.active, true),
+            inArray(workers.roleId, requestedRoleIds)
+          ));
+        if (roleWorkers.length > 0) {
+          await db
+            .insert(assignments)
+            .values(roleWorkers.map((w) => ({ workerId: w.id, courseId: id })))
             .onConflictDoNothing({ target: [assignments.workerId, assignments.courseId] });
         }
       } else if (workerIds.length > 0) {

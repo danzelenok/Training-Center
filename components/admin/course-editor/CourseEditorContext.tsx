@@ -1,10 +1,11 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from "react";
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Slide } from "./CardCanvas";
 import type { Course, MediaLibraryFile } from "@/hooks/admin/course-editor/types";
+import type { ResolvedThemePalette, ResolvedThemeVariant } from "@/lib/theme";
 import {
   useCourseQuery,
   useMediaFilesQuery,
@@ -15,11 +16,10 @@ import {
   useSaveCourseMutation,
   useUploadFileMutation,
   useGenerateAIMutation,
-  useGenerateAddendumMutation,
-  usePPTXUploadMutation,
-  usePublishCourseMutation,
+  useAdaptJurisdictionMutation,
+  type PublishCourseResult,
 } from "@/hooks/admin/course-editor/mutations";
-import { useWorkersQuery, useJurisdictionsQuery, useJobRolesQuery } from "@/hooks/admin/workers/queries";
+import { useJurisdictionsQuery, useJobRolesQuery } from "@/hooks/admin/workers/queries";
 import type { JurisdictionRef, JobRoleRef } from "@/hooks/admin/workers/types";
 import { useMeQuery } from "@/hooks/admin/useMeQuery";
 
@@ -39,8 +39,6 @@ interface CourseEditorContextType {
   loading: boolean;
   saveStatus: "saved" | "saving" | "error" | null;
   activeSlideIndex: number | null;
-  importing: boolean;
-  publishing: boolean;
   mediaPickerOpen: boolean;
   mediaFiles: MediaLibraryFile[];
   mediaLoading: boolean;
@@ -57,16 +55,10 @@ interface CourseEditorContextType {
   aiUseLNI: boolean;
   aiGenerating: boolean;
 
-  addendumDialogOpen: boolean;
-  addendumJurisdictionIds: string[];
-  addendumGenerating: boolean;
+  adaptJurisdictionDialogOpen: boolean;
+  adaptingJurisdiction: boolean;
 
   publishDialogOpen: boolean;
-  publishAssignTo: "all" | "specific";
-  publishWorkerIds: string[];
-  publishNotifyTelegram: boolean;
-  publishWorkersList: { id: string; label: string }[];
-  publishWorkersLoading: boolean;
 
   setSlidesList: React.Dispatch<React.SetStateAction<Slide[]>>;
   setActiveSlideIndex: (idx: number | null) => void;
@@ -81,16 +73,16 @@ interface CourseEditorContextType {
   setAiModel: (model: "fast" | "advanced") => void;
   setAiUseLNI: (value: boolean) => void;
 
-  setAddendumDialogOpen: (open: boolean) => void;
-  setAddendumJurisdictionIds: React.Dispatch<React.SetStateAction<string[]>>;
-  toggleAddendumJurisdiction: (jurisdictionId: string, checked: boolean) => void;
-  handleGenerateAddendum: () => Promise<void>;
+  setAdaptJurisdictionDialogOpen: (open: boolean) => void;
+  handleAdaptJurisdiction: () => Promise<void>;
 
   setPublishDialogOpen: (open: boolean) => void;
-  setPublishAssignTo: (value: "all" | "specific") => void;
-  setPublishWorkerIds: React.Dispatch<React.SetStateAction<string[]>>;
-  setPublishNotifyTelegram: (value: boolean) => void;
-  confirmPublish: () => Promise<void>;
+  // Passed as PublishCourseDialog's onPublishSuccess — point-merges the
+  // published fields into local `course` state instead of the dialog's
+  // default invalidateQueries(["courses"]), which the editor doesn't read
+  // and which would otherwise leave the header's Draft/Live badge and the
+  // publish button stale until a manual refresh.
+  handlePublishSuccess: (result: PublishCourseResult) => void;
 
   // `palette` is only passed by the Theme System v2 picker (a chosen
   // theme_pattern_variants row); omitting it — as every existing
@@ -98,6 +90,14 @@ interface CourseEditorContextType {
   // site does — clears themePaletteId/themeVariantId, so switching back to
   // a legacy custom color/image correctly stops a previously-picked palette
   // from taking rendering priority (see lib/theme.ts getCardBgStyle).
+  //
+  // `palette.palette`/`palette.variant` are the full resolved objects — the
+  // same ones already sitting in memory in the theme-palettes picker list
+  // (useThemePalettesQuery) — passed alongside the ids so updateCourseStyle
+  // can set course.themePalette/themeVariant optimistically, synchronously,
+  // instead of leaving them stale until the next autosave round-trip
+  // resolves them server-side. See updateCourseStyle's body for why this is
+  // safe (structural superset, no separate fetch).
   //
   // `typography` is unrelated to background/palette — it's the course-level
   // font/text-color override (see lib/theme.ts getThemeTypography/
@@ -109,7 +109,7 @@ interface CourseEditorContextType {
   updateCourseStyle: (
     type: string,
     value: string,
-    palette?: { paletteId: string; variantId: string },
+    palette?: { paletteId: string; variantId: string; palette: ResolvedThemePalette; variant: ResolvedThemeVariant },
     typography?: { fontFamilyOverride?: string | null; textColorOverride?: string | null }
   ) => void;
   fetchCourse: () => Promise<void>;
@@ -129,7 +129,6 @@ interface CourseEditorContextType {
   handleSaveCourse: () => Promise<void>;
   handlePublish: () => Promise<void>;
   handleGenerateAI: () => Promise<void>;
-  handlePPTXUpload: (event: React.ChangeEvent<HTMLInputElement>) => Promise<void>;
 }
 
 const CourseEditorContext = createContext<CourseEditorContextType | undefined>(undefined);
@@ -228,6 +227,20 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
               })));
             }
           }
+          // Refresh the server-resolved theme join only — themePalette/
+          // themeVariant are never written by any local edit (only the
+          // *Id fields are, via updateCourseStyle), so merging them here
+          // can never race with or discard concurrent typing in
+          // title/description/etc. the way a blind setCourse(data) would.
+          // Without this, a theme pick that's only ever persisted through
+          // autosave (never through the explicit "Apply Theme" save) left
+          // course.themePalette/themeVariant permanently stale — the new
+          // palette was safely in the DB, but hasResolvedTheme() kept
+          // rendering the old one until a full page reload. Functional
+          // update form, not `course`/courseRef — picks up whatever the
+          // freshest state is by the time this response lands, not a
+          // stale snapshot from when the request was sent.
+          setCourse(prev => prev ? { ...prev, themePalette: data.themePalette, themeVariant: data.themeVariant } : prev);
           setSaveStatus("saved");
         },
         onError: (err: Error) => {
@@ -300,9 +313,6 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
   // Active slide index being edited
   const [activeSlideIndex, setActiveSlideIndex] = useState<number | null>(null);
 
-  // States for interactive processes
-  const [importing, setImporting] = useState(false);
-
   // Media library & upload states
   const [mediaPickerOpen, setMediaPickerOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"library" | "upload" | "pexels">("library");
@@ -318,7 +328,7 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
   const updateCourseStyle = (
     type: string,
     value: string,
-    palette?: { paletteId: string; variantId: string },
+    palette?: { paletteId: string; variantId: string; palette: ResolvedThemePalette; variant: ResolvedThemeVariant },
     typography?: { fontFamilyOverride?: string | null; textColorOverride?: string | null }
   ) => {
     if (!course) return;
@@ -328,6 +338,19 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
       themeValue: value,
       themePaletteId: palette?.paletteId ?? null,
       themeVariantId: palette?.variantId ?? null,
+      // Optimistic: the resolved objects are set synchronously, right here,
+      // from data the picker already has in memory (useThemePalettesQuery) —
+      // not from a server response. This is what actually removes the old-
+      // theme flash: without it, hasResolvedTheme() keeps using the stale
+      // themePalette/themeVariant from before the click until the next
+      // autosave round-trip lands (~debounce + network), even though
+      // themePaletteId/themeVariantId already point at the new one. The
+      // eventual autosave response (see performAutosave's onSuccess) still
+      // re-applies the server-resolved copy — a no-op confirming the same
+      // data, or a correction if something raced — this just stops the
+      // client from rendering the OLD theme in between.
+      themePalette: palette?.palette ?? null,
+      themeVariant: palette?.variant ?? null,
       fontFamilyOverride: typography?.fontFamilyOverride !== undefined ? typography.fontFamilyOverride : course.fontFamilyOverride,
       textColorOverride: typography?.textColorOverride !== undefined ? typography.textColorOverride : course.textColorOverride,
     });
@@ -340,39 +363,19 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
   const [aiUseLNI, setAiUseLNI] = useState(true);
   const [aiGenerating, setAiGenerating] = useState(false);
 
-  // "Generate state variants" (addendum) dialog state — pre-fills every
-  // org jurisdiction as selected, per the checkbox UX.
-  const [addendumDialogOpen, setAddendumDialogOpen] = useState(false);
-  const [addendumJurisdictionIds, setAddendumJurisdictionIds] = useState<string[]>([]);
+  // "Adapt to Jurisdiction" confirmation dialog — no picker; target is
+  // always course.ownerJurisdictionId (see Sidebar.tsx button and
+  // app/api/courses/[id]/adapt-jurisdiction/route.ts).
+  const [adaptJurisdictionDialogOpen, setAdaptJurisdictionDialogOpen] = useState(false);
 
-  // Publish dialog UI state — picker selections + toggle, all still local.
+  // Publish dialog open/close — the audience/toggle picker itself now lives
+  // entirely inside PublishCourseDialog (shared with the courses list page).
   const [publishDialogOpen, setPublishDialogOpen] = useState(false);
-  const [publishAssignTo, setPublishAssignTo] = useState<"all" | "specific">("all");
-  const [publishWorkerIds, setPublishWorkerIds] = useState<string[]>([]);
-  const [publishNotifyTelegram, setPublishNotifyTelegram] = useState(true);
 
-  // Publish dialog pickers — reuse the same workers query the Workers admin
-  // page already uses (hooks/admin/workers/queries.ts). Shared query cache:
-  // if the admin already visited /admin/workers this session, this can
-  // resolve from cache with no extra network request.
-  const workersQuery = useWorkersQuery();
   const jurisdictionsQuery = useJurisdictionsQuery();
   const jurisdictionsList = jurisdictionsQuery.data ?? [];
   const jobRolesQuery = useJobRolesQuery();
   const jobRolesList = jobRolesQuery.data ?? [];
-
-  const publishWorkersList = useMemo(
-    () =>
-      (workersQuery.data?.workers ?? [])
-        .filter((w) => w.active)
-        .map((w) => ({
-          id: w.id,
-          label: w.displayName || [w.firstName, w.lastName].filter(Boolean).join(" ") || w.telegramUsername || w.telegramUserId || "",
-        })),
-    [workersQuery.data]
-  );
-
-  const publishWorkersLoading = workersQuery.isLoading;
 
   // Sync course + slidesList from the server whenever a fresh payload for
   // this courseId arrives — mirrors the old fetchCourse() success path.
@@ -803,64 +806,34 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
     }
   };
 
-  const publishCourseMutation = usePublishCourseMutation(id);
-
-  // Open publish dialog (validate first, save, then open). Pickers no
-  // longer fetched here — publishWorkersList above is derived from the
-  // shared useWorkersQuery, which is always mounted (not conditional on
-  // dialog open), so its data is either already in cache or already in
-  // flight by the time the dialog renders.
+  // Open publish dialog (validate first, save, then open). Covers both
+  // first publish and resend now — PublishCourseDialog itself branches on
+  // alreadyPublished (see [id]/page.tsx, which passes course?.status ===
+  // "published").
   const handlePublish = async () => {
     if (slidesList.length === 0) {
       toast.error("Cannot publish a course without slides. Add cards or import a PPTX first.");
       return;
     }
     await handleSaveCourse();
-
-    // Reset dialog state
-    setPublishAssignTo("all");
-    setPublishWorkerIds([]);
-    setPublishNotifyTelegram(true);
-
     setPublishDialogOpen(true);
   };
 
-  // Actually submit the publish with chosen options. This sends real
-  // Telegram DMs to workers when publishNotifyTelegram is true — see
-  // usePublishCourseMutation's retry:0 for why this must never auto-retry.
-  const confirmPublish = async () => {
-    setPublishDialogOpen(false);
-    const toastMsg = publishNotifyTelegram
-      ? "Publishing & sending direct messages to workers…"
-      : "Publishing course…";
-    const toastId = toast.loading(toastMsg);
-    try {
-      const data = await publishCourseMutation.mutateAsync({
-        assignTo: publishAssignTo,
-        workerIds: publishAssignTo === "specific" ? publishWorkerIds : [],
-        notifyWorkers: publishNotifyTelegram,
+  // Passed to PublishCourseDialog as onPublishSuccess. The dialog owns the
+  // actual submission, toasts, and closing itself — this only needs to sync
+  // the editor's own `course` state afterward. Point merge, not a
+  // ['course', id] invalidate — an invalidate would re-run the sync effect
+  // above and force activeSlideIndex back to 0, yanking the editor to slide
+  // 1 right after a publish click. Sidebar already sees the new status
+  // immediately since it reads `course` from this same Context.
+  const handlePublishSuccess = (result: PublishCourseResult) => {
+    if (course) {
+      setCourse({
+        ...course,
+        status: "published",
+        telegramMessageId: result.telegramMessageId,
+        telegramGroupId: result.telegramGroupId,
       });
-
-      const successMsg = publishNotifyTelegram
-        ? "Course is LIVE! Direct messages sent to assigned workers."
-        : "Course published without announcements.";
-      toast.success(successMsg, { id: toastId });
-
-      // Point merge, not a ['course', id] invalidate — an invalidate would
-      // re-run the sync effect above and force activeSlideIndex back to 0,
-      // yanking the editor to slide 1 right after a publish click. Sidebar
-      // already sees the new status immediately since it reads `course`
-      // from this same Context.
-      if (course) {
-        setCourse({
-          ...course,
-          status: "published",
-          telegramMessageId: data.telegramMessageId,
-          telegramGroupId: data.telegramGroupId,
-        });
-      }
-    } catch (err: any) {
-      toast.error(err.message || "Error during publication", { id: toastId });
     }
   };
 
@@ -872,10 +845,19 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
       toast.error("Please enter a description for the course.");
       return;
     }
+    if (!course?.ownerJurisdictionId) {
+      toast.error("This course has no owning jurisdiction to ground generation on.");
+      return;
+    }
     setAiGenerating(true);
     const toastId = toast.loading("AI is generating course structure…");
     try {
-      await generateAIMutation.mutateAsync({ prompt: aiPrompt, model: aiModel, useLNI: aiUseLNI });
+      await generateAIMutation.mutateAsync({
+        prompt: aiPrompt,
+        model: aiModel,
+        useLNI: aiUseLNI,
+        jurisdictionId: course.ownerJurisdictionId,
+      });
 
       toast.success("AI Course generated successfully!", { id: toastId });
       setAiDialogOpen(false);
@@ -887,76 +869,25 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
     }
   };
 
-  const toggleAddendumJurisdiction = (jurisdictionId: string, checked: boolean) => {
-    setAddendumJurisdictionIds((prev) =>
-      checked ? [...prev, jurisdictionId] : prev.filter((jid) => jid !== jurisdictionId)
-    );
-  };
+  const adaptJurisdictionMutation = useAdaptJurisdictionMutation(id);
 
-  const generateAddendumMutation = useGenerateAddendumMutation(id);
-
-  // State-variant (addendum) generation — runs sequentially server-side
-  // (see generate-addendum/route.ts), so this can take a while for 2-3 states.
-  const handleGenerateAddendum = async () => {
-    if (addendumJurisdictionIds.length === 0) {
-      toast.error("Select at least one state.");
-      return;
-    }
-    const toastId = toast.loading(`Generating state variants for ${addendumJurisdictionIds.length} state(s)…`);
+  // Rewrites the course's jurisdiction-specific content (norms, temperatures,
+  // regulator references, terminology) from the jurisdiction it was cloned
+  // from to its current ownerJurisdictionId — see
+  // app/api/courses/[id]/adapt-jurisdiction/route.ts, which resolves both
+  // ends server-side (course.ownerJurisdictionId as target,
+  // course.sourceOfCloneId's jurisdiction as source). No picker, no args.
+  const handleAdaptJurisdiction = async () => {
+    setAdaptJurisdictionDialogOpen(false);
+    const toastId = toast.loading("Adapting course to its jurisdiction…");
     try {
-      const data = await generateAddendumMutation.mutateAsync({ jurisdictionIds: addendumJurisdictionIds });
-      const okResults = data.results.filter((r) => r.status === "ok");
-      const errorResults = data.results.filter((r) => r.status === "error");
-      if (errorResults.length === 0) {
-        toast.success(`Generated variants for ${okResults.map((r) => r.code).join(", ")}.`, { id: toastId });
-      } else if (okResults.length > 0) {
-        toast.warning(
-          `Generated ${okResults.map((r) => r.code).join(", ")}. Failed: ${errorResults.map((r) => r.code).join(", ")}.`,
-          { id: toastId }
-        );
-      } else {
-        toast.error("Failed to generate any state variants.", { id: toastId });
-      }
-      setAddendumDialogOpen(false);
+      const data = await adaptJurisdictionMutation.mutateAsync();
+      toast.success(
+        `Adapted ${data.changedCount} of ${data.totalSlides} slides from ${data.sourceJurisdiction} to ${data.targetJurisdiction}.`,
+        { id: toastId }
+      );
     } catch (err: any) {
-      toast.error(err.message || "Failed to generate state variants", { id: toastId });
-    }
-  };
-
-  const pptxUploadMutation = usePPTXUploadMutation(id);
-
-  // PPTX Parser
-  const handlePPTXUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    if (!file.name.toLowerCase().endsWith(".pptx")) {
-      toast.error("Only PowerPoint (.pptx) files are supported");
-      return;
-    }
-    if (!confirm("Importing slides will overwrite ALL existing slides. Proceed?")) {
-      event.target.value = "";
-      return;
-    }
-    setImporting(true);
-    const toastId = toast.loading("Uploading and parsing PowerPoint slides...");
-    try {
-      const data = await pptxUploadMutation.mutateAsync(file);
-
-      toast.success(`Successfully imported ${data.slides?.length || 0} slides!`, { id: toastId });
-      const importedSlides = (data.slides || []).map((s: Slide) => ({
-        ...s,
-        id: s.id || crypto.randomUUID()
-      }));
-      setSlidesList(importedSlides);
-      if (data.slides && data.slides.length > 0) {
-        setActiveSlideIndex(0);
-      }
-    } catch (err: any) {
-      toast.error(err.message || "PPTX Import error", { id: toastId });
-    } finally {
-      setImporting(false);
-      event.target.value = "";
+      toast.error(err.message || "Failed to adapt course to jurisdiction", { id: toastId });
     }
   };
 
@@ -971,8 +902,6 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
         loading,
         saveStatus,
         activeSlideIndex,
-        importing,
-        publishing: publishCourseMutation.isPending,
         mediaPickerOpen,
         mediaFiles,
         mediaLoading,
@@ -989,9 +918,8 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
         aiUseLNI,
         aiGenerating,
 
-        addendumDialogOpen,
-        addendumJurisdictionIds,
-        addendumGenerating: generateAddendumMutation.isPending,
+        adaptJurisdictionDialogOpen,
+        adaptingJurisdiction: adaptJurisdictionMutation.isPending,
 
         setSlidesList,
         setActiveSlideIndex,
@@ -1006,10 +934,8 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
         setAiModel,
         setAiUseLNI,
 
-        setAddendumDialogOpen,
-        setAddendumJurisdictionIds,
-        toggleAddendumJurisdiction,
-        handleGenerateAddendum,
+        setAdaptJurisdictionDialogOpen,
+        handleAdaptJurisdiction,
 
         updateCourseStyle,
         fetchCourse,
@@ -1029,18 +955,9 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
         handleSaveCourse,
         handlePublish,
         handleGenerateAI,
-        handlePPTXUpload,
         publishDialogOpen,
-        publishAssignTo,
-        publishWorkerIds,
-        publishNotifyTelegram,
-        publishWorkersList,
-        publishWorkersLoading,
         setPublishDialogOpen,
-        setPublishAssignTo,
-        setPublishWorkerIds,
-        setPublishNotifyTelegram,
-        confirmPublish,
+        handlePublishSuccess,
       }}
     >
       {children}

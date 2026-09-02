@@ -17,6 +17,12 @@ export interface Course {
   description: string;
   status: "draft" | "published";
   ownerJurisdictionId: string;
+  // Set only on a course created via "Clone to my jurisdiction" — see
+  // db/schema.ts. Already returned by GET/PATCH /api/courses/[id] (a plain
+  // `select()` includes every column) but wasn't previously in this type;
+  // added to gate Sidebar.tsx's "Adapt to Jurisdiction" button (only
+  // meaningful for a course that has clone lineage to adapt from).
+  sourceOfCloneId?: string | null;
   roleIds: string[];
   autoAssignNewWorkers: boolean;
   telegramMessageId: string | null;

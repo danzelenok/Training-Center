@@ -147,7 +147,7 @@ export function slideNeedsGeneratedAsset(slide: { type: string; content: any }):
 }
 
 // Parses and validates a Gemini JSON response against SlideInputSchema. Shared
-// by generateCourseStructure and generateJurisdictionAddendum so both go
+// by generateCourseStructure and adaptCourseToJurisdiction so both go
 // through the exact same validation + quiz-option-shuffling path.
 function parseAndValidateSlides(text: string): SlideInput[] {
   if (!text) {
@@ -183,30 +183,6 @@ function parseAndValidateSlides(text: string): SlideInput[] {
   }
 
   return validatedSlides.map(shuffleQuizOptions);
-}
-
-// One-line summary of a slide for feeding into the addendum prompt as
-// "here's what the course already covers" context, without shipping the
-// full slide JSON (which would eat into the context budget for no benefit).
-function summarizeSlideForContext(slide: SlideInput): string {
-  switch (slide.type) {
-    case "text":
-    case "audio":
-    case "video":
-      return `${slide.content.heading} — ${slide.content.body}`;
-    case "quiz":
-      return `${slide.content.heading} (quiz)`;
-    case "poll":
-      return `${slide.content.heading} (poll)`;
-    case "dialogue":
-      return slide.content.dialogueBelowType === "quiz"
-        ? `${slide.content.heading} (roleplay + quiz: ${slide.content.belowQuizQuestion})`
-        : `${slide.content.heading} (roleplay: ${slide.content.belowText})`;
-    case "chat":
-      return `${slide.content.heading} (chat)`;
-    default:
-      return "";
-  }
 }
 
 const slideLengthConstraints = `CRITICAL DESIGN REQUIREMENT: Slides are displayed on a 9:16 vertical mobile screen. You MUST strictly adhere to these length constraints:
@@ -405,15 +381,23 @@ ${slideLengthConstraints}
 ${slideTypeCatalog}
 Use all slide types creatively. Vary the format to keep learners engaged. All text must be in English.`;
 
-const addendumSystemInstruction = `You are an expert safety training content creator, writing a short addendum to an existing safety training course.
-You will be given a summary of the course's existing slides and official regulatory reference materials for a specific jurisdiction.
+// Rewrites (in place, not additively) an existing course's jurisdiction-
+// specific content when adapting a cloned course to a new owning
+// jurisdiction — e.g. a course written for Washington L&I, cloned and
+// reassigned to Oregon OSHA. Receives the COURSE'S FULL EXISTING SLIDE DECK
+// (not a summary) and must hand back the same number of slides, in the same
+// order, with only the jurisdiction-specific facts changed — everything
+// else preserved.
+const adaptJurisdictionSystemInstruction = `You are an expert safety training content editor. You are adapting an existing safety training course, written for one jurisdiction, so it is accurate for a different jurisdiction.
 
-Generate 2 to 4 NEW slides that add requirements, procedures, or details that are SPECIFIC to that jurisdiction and are not already covered by the existing slides. Ground every factual claim strictly in the reference materials provided — do not introduce safety requirements, numbers, or practices that are not present in them. Do not repeat content the existing slides already cover; if the reference materials don't reveal anything meaningfully different from the base course, it's fine to focus the addendum on jurisdiction-specific context instead (e.g. which agency enforces it, the applicable state plan name) as long as it stays grounded in the reference materials.
+You will be given the course's full existing slide deck (as a JSON array, in the exact slide format described below) and official regulatory reference materials for the new target jurisdiction.
+
+Rewrite ONLY the jurisdiction-specific content: numeric limits and thresholds (e.g. temperature, exposure limits, distances, durations), regulator names and references, applicable law/standard citations, agency contact or reporting details, and terminology specific to the source jurisdiction. Preserve everything else: the same number of slides, in the same order, with the same slide types, the same general topic, teaching approach, and non-jurisdiction-specific wording. Ground every changed factual claim strictly in the reference materials provided — do not invent new facts or introduce requirements not present in them. If the reference materials don't specify a target-jurisdiction equivalent for something, leave that content as it was rather than guessing.
 
 ${slideLengthConstraints}
 
 ${slideTypeCatalog}
-Generate 2 to 4 slides total. All text must be in English.`;
+You MUST return exactly the same number of slides you were given, in the same order, with the same "type" for each position. All text must be in English.`;
 
 export async function generateCourseStructure(
   prompt: string,
@@ -449,16 +433,21 @@ export async function generateCourseStructure(
   return parseAndValidateSlides(response.response.text().trim());
 }
 
-// Generates 2-4 additional slides that supplement an already-generated base
-// course with content specific to one jurisdiction, grounded in that
-// jurisdiction's regulatory reference materials. Uses a separate system
-// prompt from generateCourseStructure — this is explicitly an addendum, not
-// a full course, and must be told what's already covered so it doesn't repeat it.
-export async function generateJurisdictionAddendum(
-  baseSlides: SlideInput[],
-  jurisdictionName: string,
+// Rewrites an existing course's full slide deck for a new target
+// jurisdiction — used to adapt a cloned course after its ownerJurisdictionId
+// is reassigned to a different state than the one it was originally written
+// for. `existingSlides` must already have SERVER_OWNED asset fields (video/
+// audio/image URLs, HeyGen job ids) stripped by the caller — see
+// app/api/courses/[id]/adapt-jurisdiction/route.ts — this function only
+// ever sees and returns clean SlideInput-shaped content. Returns the same
+// number of slides as it was given, same order, same types (enforced by the
+// system prompt; the caller should still verify this before writing to the
+// DB — see parseAndValidateSlides, which only validates shape, not count).
+export async function adaptCourseToJurisdiction(
+  existingSlides: SlideInput[],
+  sourceJurisdictionName: string,
+  targetJurisdictionName: string,
   regulatoryContext: string,
-  topic: string,
   modelName: string = "gemini-2.5-pro"
 ): Promise<SlideInput[]> {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -470,20 +459,18 @@ export async function generateJurisdictionAddendum(
 
   const model = genAI.getGenerativeModel({
     model: modelName,
-    systemInstruction: addendumSystemInstruction,
+    systemInstruction: adaptJurisdictionSystemInstruction,
   });
 
-  const baseSlidesSummary = baseSlides
-    .map((slide, i) => `${i + 1}. [${slide.type}] ${summarizeSlideForContext(slide)}`)
-    .join("\n");
+  const existingSlidesJson = JSON.stringify(existingSlides);
 
-  const userMessage = `COURSE TOPIC: ${topic}\n\nEXISTING COURSE SLIDES (do not repeat this content):\n${baseSlidesSummary}\n\nOFFICIAL REFERENCE MATERIALS FROM ${jurisdictionName.toUpperCase()}:\n${regulatoryContext}\n\nGenerate 2-4 additional slides that supplement the course above with requirements specific to ${jurisdictionName}, grounded strictly in the reference materials.`;
+  const userMessage = `EXISTING COURSE SLIDES, currently written for ${sourceJurisdictionName.toUpperCase()} (JSON array, ${existingSlides.length} slides):\n${existingSlidesJson}\n\nOFFICIAL REFERENCE MATERIALS FROM ${targetJurisdictionName.toUpperCase()}:\n${regulatoryContext}\n\nRewrite the slides above for ${targetJurisdictionName}, grounded strictly in the reference materials. Return exactly ${existingSlides.length} slides, in the same order, same types.`;
 
   const response = await model.generateContent({
     contents: [{ role: "user", parts: [{ text: userMessage }] }],
     generationConfig: {
       responseMimeType: "application/json",
-      temperature: 0.7,
+      temperature: 0.5,
     },
   });
 

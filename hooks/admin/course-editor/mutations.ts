@@ -88,16 +88,17 @@ interface GenerateAIVars {
   prompt: string;
   model: "fast" | "advanced";
   useLNI: boolean;
+  jurisdictionId: string;
 }
 
 export function useGenerateAIMutation(courseId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ prompt, model, useLNI }: GenerateAIVars) => {
+    mutationFn: async ({ prompt, model, useLNI, jurisdictionId }: GenerateAIVars) => {
       const res = await fetch(`/api/courses/${courseId}/generate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, model, useLNI }),
+        body: JSON.stringify({ prompt, model, useLNI, jurisdictionId }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to generate course");
@@ -113,28 +114,33 @@ export function useGenerateAIMutation(courseId: string) {
   });
 }
 
-interface GenerateAddendumVars {
-  jurisdictionIds: string[];
+interface AdaptJurisdictionResult {
+  totalSlides: number;
+  changedCount: number;
+  sourceJurisdiction: string;
+  targetJurisdiction: string;
 }
 
-interface GenerateAddendumResult {
-  results: { jurisdictionId: string; code: string; status: "ok" | "error"; slideCount?: number; error?: string }[];
-}
-
-export function useGenerateAddendumMutation(courseId: string) {
+// No request body — target is always the course's current
+// ownerJurisdictionId and source is resolved server-side from
+// sourceOfCloneId (see app/api/courses/[id]/adapt-jurisdiction/route.ts).
+export function useAdaptJurisdictionMutation(courseId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ jurisdictionIds }: GenerateAddendumVars): Promise<GenerateAddendumResult> => {
-      const res = await fetch(`/api/courses/${courseId}/generate-addendum`, {
+    mutationFn: async (): Promise<AdaptJurisdictionResult> => {
+      const res = await fetch(`/api/courses/${courseId}/adapt-jurisdiction`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jurisdictionIds }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to generate state variants");
+      if (!res.ok) throw new Error(data.error || "Failed to adapt course to jurisdiction");
       return data;
     },
     onSuccess: () => {
+      // Slide content was rewritten server-side — unlike publish, there's no
+      // "preserve activeSlideIndex" concern here: the whole point is that
+      // text changed, so a full course refetch (and the sync effect resetting
+      // slidesList/activeSlideIndex to match) is the correct, wanted outcome.
       queryClient.invalidateQueries({ queryKey: courseEditorKeys.course(courseId) });
     },
   });
@@ -164,13 +170,14 @@ export function usePPTXUploadMutation(courseId: string) {
   });
 }
 
-interface PublishCourseVars {
-  assignTo: "all" | "specific";
+export interface PublishCourseVars {
+  assignTo: "all" | "specific" | "roles";
   workerIds: string[];
+  roleIds: string[];
   notifyWorkers: boolean;
 }
 
-interface PublishCourseResult {
+export interface PublishCourseResult {
   telegramMessageId: string | null;
   telegramGroupId: string | null;
 }

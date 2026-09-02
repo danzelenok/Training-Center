@@ -1,6 +1,7 @@
 "use client";
 
-import React, { use, useEffect, useState } from "react";
+import React, { Suspense, use, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { X } from "lucide-react";
 import { StoryPlayer } from "@/components/mini-app/story-player";
 import { Slide } from "@/components/admin/course-editor/CardCanvas";
@@ -11,8 +12,11 @@ interface PageProps {
   params: Promise<{ id: string }>;
 }
 
-export default function CoursePreviewPage({ params }: PageProps) {
+function CoursePreviewContent({ params }: PageProps) {
   const { id } = use(params);
+  const searchParams = useSearchParams();
+  const slideParam = searchParams?.get("slide") ?? null;
+  const initialIndex = slideParam ? parseInt(slideParam, 10) : 0;
   const [slides, setSlides] = useState<Slide[]>([]);
   const [jurisdictions, setJurisdictions] = useState<JurisdictionRef[]>([]);
   const [themeType, setThemeType] = useState<string | undefined>();
@@ -93,8 +97,17 @@ export default function CoursePreviewPage({ params }: PageProps) {
           fontFamilyOverride={fontFamilyOverride}
           textColorOverride={textColorOverride}
           jurisdictionBadges={jurisdictions}
+          initialIndex={initialIndex}
         />
       </div>
     </div>
+  );
+}
+
+export default function CoursePreviewPage({ params }: PageProps) {
+  return (
+    <Suspense fallback={null}>
+      <CoursePreviewContent params={params} />
+    </Suspense>
   );
 }

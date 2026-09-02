@@ -38,6 +38,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -71,6 +81,33 @@ interface Course {
   createdAt: string;
   updatedAt: string;
   slideCount: number;
+}
+
+// AI-generated descriptions embed bare "https://..." source URLs in plain
+// text (see lib/regulatory-scraper.ts's sourcesDescription) — turn those
+// into clickable links without touching the rest of the text. The capture
+// group in the split regex guarantees the result alternates
+// [text, url, text, url, ...], so odd indices are always the matched URLs —
+// checked by position, not by re-testing a global regex (whose `lastIndex`
+// would otherwise corrupt alternating .test() calls on the same instance).
+const URL_REGEX = /(https?:\/\/[^\s]+)/g;
+function linkifyText(text: string): React.ReactNode[] {
+  return text.split(URL_REGEX).map((part, i) =>
+    i % 2 === 1 ? (
+      <a
+        key={i}
+        href={part}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => e.stopPropagation()}
+        className="text-[#1B2A6B] dark:text-[#C8D400] underline underline-offset-2 hover:opacity-80"
+      >
+        {part}
+      </a>
+    ) : (
+      part
+    )
+  );
 }
 
 export default function CoursesPage() {
@@ -183,10 +220,7 @@ export default function CoursesPage() {
   };
 
   // Revoke Course (delete Telegram message, reset to draft)
-  const handleRevokeCourse = async (id: string) => {
-    if (!confirm("Revoke this course? The Telegram message will be deleted and the course will return to draft.")) {
-      return;
-    }
+  const runRevokeCourse = async (id: string) => {
     const toastId = toast.loading("Revoking course...");
     try {
       await revokeCourseMutation.mutateAsync(id);
@@ -197,16 +231,28 @@ export default function CoursesPage() {
   };
 
   // Delete Course
-  const handleDeleteCourse = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this course and all its slides? This action is permanent!")) {
-      return;
-    }
-
+  const runDeleteCourse = async (id: string) => {
     try {
       await deleteCourseMutation.mutateAsync(id);
       toast.success("Course deleted successfully");
     } catch (err: any) {
       toast.error(err.message || "Error deleting course");
+    }
+  };
+
+  // Shared confirm dialog for the two destructive course actions below —
+  // replaces window.confirm(), which (a) isn't themed and (b) has a known
+  // browser quirk where the click right after it closes can get consumed
+  // just refocusing the window instead of reaching its target.
+  const [confirmDialog, setConfirmDialog] = useState<{ type: "delete" | "revoke"; id: string } | null>(null);
+  const handleConfirmDialogAction = async () => {
+    if (!confirmDialog) return;
+    const { type, id } = confirmDialog;
+    setConfirmDialog(null);
+    if (type === "revoke") {
+      await runRevokeCourse(id);
+    } else {
+      await runDeleteCourse(id);
     }
   };
 
@@ -453,7 +499,7 @@ export default function CoursesPage() {
                         {course.title}
                       </div>
                       <div
-                        className={`text-xs text-muted-foreground mt-0.5 ${expandedDescId === course.id ? "" : "truncate"}`}
+                        className={`text-xs text-muted-foreground mt-0.5 ${expandedDescId === course.id ? "whitespace-pre-line" : "truncate"}`}
                         onClick={(e) => {
                           if (!course.description) return;
                           e.stopPropagation();
@@ -462,7 +508,7 @@ export default function CoursesPage() {
                         title={course.description && expandedDescId !== course.id ? "Click to expand" : undefined}
                         style={course.description ? { cursor: "pointer" } : undefined}
                       >
-                        {course.description || "No description provided"}
+                        {course.description ? linkifyText(course.description) : "No description provided"}
                       </div>
                     </td>
                     <td className="px-6 py-4">
@@ -571,7 +617,7 @@ export default function CoursesPage() {
                             variant="ghost"
                             size="sm"
                             disabled={revokingId === course.id}
-                            onClick={() => handleRevokeCourse(course.id)}
+                            onClick={() => setConfirmDialog({ type: "revoke", id: course.id })}
                             title="Revoke course from Telegram"
                             className="h-9 w-9 p-0 text-muted-foreground hover:bg-orange-500/10 hover:text-orange-400 rounded-lg cursor-pointer"
                           >
@@ -588,7 +634,7 @@ export default function CoursesPage() {
                           variant="ghost"
                           size="sm"
                           disabled={deletingId === course.id}
-                          onClick={() => handleDeleteCourse(course.id)}
+                          onClick={() => setConfirmDialog({ type: "delete", id: course.id })}
                           className="h-9 w-9 p-0 text-muted-foreground hover:bg-red-500/10 hover:text-red-400 rounded-lg cursor-pointer"
                         >
                           {deletingId === course.id ? (
@@ -624,6 +670,27 @@ export default function CoursesPage() {
         jurisdictions={jurisdictions}
         me={me}
       />
+
+      <AlertDialog open={confirmDialog !== null} onOpenChange={(open) => !open && setConfirmDialog(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {confirmDialog?.type === "delete" ? "Delete this course?" : "Revoke this course?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmDialog?.type === "delete"
+                ? "This deletes the course and all its slides. This action is permanent!"
+                : "The Telegram message will be deleted and the course will return to draft."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={handleConfirmDialogAction}>
+              {confirmDialog?.type === "delete" ? "Delete" : "Revoke"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
