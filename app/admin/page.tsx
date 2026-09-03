@@ -1,16 +1,20 @@
-import React from "react";
+"use client";
+
+import { RemindersExhaustedWidget } from "@/components/admin/dashboard/RemindersExhaustedWidget";
 
 export default function AdminPage() {
   return (
-    <main className="p-8 max-w-7xl mx-auto">
-      <div className="flex flex-col gap-2">
-        <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">
-          Safety Training Admin Panel
-        </h1>
-        <p className="text-slate-500 dark:text-slate-400">
-          Create, edit, and publish courses, view worker progress, and manage reminders.
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-xl font-bold text-[#1B2A6B] dark:text-[#C8D400]">Dashboard</h1>
+        <p className="text-xs text-muted-foreground mt-1">
+          Overview of training compliance across your organization.
         </p>
       </div>
-    </main>
+
+      <div className="grid grid-cols-1 gap-6">
+        <RemindersExhaustedWidget />
+      </div>
+    </div>
   );
 }

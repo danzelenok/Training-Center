@@ -150,44 +150,27 @@ export async function sendCourseAnnouncementDMs(courseId: string, courseTitle: s
 
 
 /**
- * Sends a direct message completion notification to the configured administrator.
- * @param workerName Name of the worker who completed the training.
- * @param courseTitle Title of the completed course.
- */
-export async function notifyAdminCompletion(workerName: string, courseTitle: string): Promise<void> {
-  const adminUserId = process.env.TELEGRAM_ADMIN_USER_ID || env.TELEGRAM_ADMIN_USER_ID;
-  if (!adminUserId) {
-    console.warn("TELEGRAM_ADMIN_USER_ID is not configured. Admin completion notification skipped.");
-    return;
-  }
-
-  const messageText =
-    `✅ *Course Completed Successfully!*\n\n` +
-    `👷‍♂️ *Worker:* ${workerName}\n` +
-    `📚 *Course:* ${courseTitle}\n\n` +
-    `The worker has fully completed the training module and passed any associated quiz.`;
-
-  await bot.api.sendMessage(adminUserId, messageText, {
-    parse_mode: "Markdown",
-  });
-}
-
-/**
  * Sends a reminder direct message to a worker regarding an active course.
  * @param telegramUserId The worker's unique Telegram user ID.
  * @param courseTitle Title of the course.
+ * @param kind "before" (deadline still ahead) or "after" (deadline has passed) — varies the copy.
  */
 export async function sendReminderToWorker(
   telegramUserId: string | number | bigint,
-  courseTitle: string
+  courseTitle: string,
+  kind: "before" | "after" = "before"
 ): Promise<void> {
   const chatId = typeof telegramUserId === "bigint" ? telegramUserId.toString() : telegramUserId;
 
-  const messageText =
-    `⏰ *Training Reminder*\n\n` +
-    `You have an active safety learning module waiting for you:\n` +
-    `📚 *${courseTitle}*\n\n` +
-    `It only takes a few minutes! Please open the Safety Training Mini App to complete your training. 💪`;
+  const messageText = kind === "after"
+    ? `⚠️ *Training Overdue*\n\n` +
+      `Your safety training is now past its due date:\n` +
+      `📚 *${courseTitle}*\n\n` +
+      `Please complete it as soon as possible via the Safety Training Mini App.`
+    : `⏰ *Training Reminder*\n\n` +
+      `You have an active safety learning module waiting for you:\n` +
+      `📚 *${courseTitle}*\n\n` +
+      `It only takes a few minutes! Please open the Safety Training Mini App to complete your training. 💪`;
 
   await bot.api.sendMessage(chatId, messageText, {
     parse_mode: "Markdown",

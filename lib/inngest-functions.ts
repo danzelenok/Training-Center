@@ -1,12 +1,14 @@
 import { inngest } from "./inngest";
 import { ROLE_STUDENT, ROLE_INSTRUCTOR } from "./avatar-roles";
 import { db } from "@/db";
-import { courses, slides, mediaFiles } from "@/db/schema";
-import { eq, and, sql } from "drizzle-orm";
+import { courses, slides, mediaFiles, assignments, workers, progress, reminderSettings, reminderLogs } from "@/db/schema";
+import { eq, and, or, isNull, ne, inArray, sql } from "drizzle-orm";
 import { generateTTS } from "./openai";
 import { searchPhoto } from "./pexels";
 import { uploadToR2 } from "./r2";
 import { submitDialogueVideo, submitSingleVideo, checkDialogueVideoStatus } from "./heygen";
+import { computeReminderSchedule } from "./dates";
+import { sendReminderToWorker } from "./bot";
 
 // Returns the voice ID for a slot based on the avatar assigned to it, not the slot position.
 function getVoiceIdForSlot(slots: { slotIndex: number; avatarId: string }[], slotIdx: number): string | undefined {
@@ -746,5 +748,115 @@ export const pollHeygenJobStatus = inngest.createFunction(
     });
 
     return { success: true, status: check.status, nextAttempt: attempts + 1 };
+  }
+);
+
+const DEFAULT_REMINDER_SETTINGS = { remindersBeforeCount: 2, remindersAfterCount: 1 };
+
+// Daily cron: for every active (non-completed) assignment, works out whether
+// any "before"/"after" reminder occurrence is due and unsent, and sends it.
+// TZ=America/Los_Angeles keeps the send time anchored to the org's local
+// (Pacific) morning across the PDT/PST transition — verify this prefix
+// syntax still matches Inngest's supported cron format if the SDK is
+// upgraded past the version this was written against (inngest@^4.5.0).
+export const sendAssignmentReminders = inngest.createFunction(
+  {
+    id: "send-assignment-reminders",
+    name: "Send Assignment Reminders",
+    triggers: [{ cron: "TZ=America/Los_Angeles 0 9 * * *" }],
+    retries: 2,
+  },
+  async ({ step }) => {
+    // 1. Active (non-completed) assignments, reusing the join shape from
+    // app/api/reports/route.ts: assignments INNER JOIN workers (active)
+    // INNER JOIN courses, LEFT JOIN progress on (workerId, courseId) so
+    // assigned-but-not-started workers are included too.
+    const activeAssignments = await step.run("fetch-active-assignments", async () => {
+      const rows = await db
+        .select({
+          assignmentId: assignments.id,
+          organizationId: workers.organizationId,
+          assignedAt: assignments.assignedAt,
+          dueDate: assignments.dueDate,
+          telegramUserId: workers.telegramUserId,
+          courseTitle: courses.title,
+        })
+        .from(assignments)
+        .innerJoin(workers, and(eq(assignments.workerId, workers.id), eq(workers.active, true)))
+        .innerJoin(courses, eq(assignments.courseId, courses.id))
+        .leftJoin(progress, and(eq(progress.workerId, assignments.workerId), eq(progress.courseId, assignments.courseId)))
+        .where(or(isNull(progress.status), ne(progress.status, "completed"))!);
+
+      // Inngest step results are serialized to JSON, and raw BigInt values
+      // (workers.telegramUserId's Drizzle "bigint" mode) throw on
+      // JSON.stringify — convert to string here, at the step boundary.
+      return rows.map((r) => ({ ...r, telegramUserId: r.telegramUserId === null ? null : r.telegramUserId.toString() }));
+    });
+
+    // 2. Org reminder settings, loaded once; default when an org has no row.
+    const settingsRows = await step.run("fetch-reminder-settings", async () => {
+      return await db.select().from(reminderSettings);
+    });
+    const settingsByOrg = new Map(settingsRows.map((r) => [r.organizationId, r]));
+
+    // 3. All reminder_logs for these assignments, loaded once, to check
+    // "already sent" in memory instead of one query per assignment.
+    const assignmentIds = activeAssignments.map((a) => a.assignmentId);
+    const existingLogs = assignmentIds.length === 0 ? [] : await step.run("fetch-existing-reminder-logs", async () => {
+      return await db.select().from(reminderLogs).where(inArray(reminderLogs.assignmentId, assignmentIds));
+    });
+    const sentKey = (assignmentId: string, kind: string, occurrenceIndex: number) => `${assignmentId}:${kind}:${occurrenceIndex}`;
+    const sentSet = new Set(existingLogs.map((l) => sentKey(l.assignmentId, l.kind, l.occurrenceIndex)));
+
+    const now = new Date();
+    let sent = 0;
+    let skippedNoTelegram = 0;
+    let skippedAlreadySent = 0;
+
+    // 4. For each assignment, compute its full schedule and send any
+    // occurrence that's due and not yet logged. Not capped at one per run —
+    // a missed cron day can catch up more than one occurrence at once.
+    for (const a of activeAssignments) {
+      if (!a.dueDate) continue; // defensive; should not happen post-backfill
+      const settings = settingsByOrg.get(a.organizationId) ?? DEFAULT_REMINDER_SETTINGS;
+      // step.run's return value round-trips through JSON, so Date fields
+      // come back as ISO strings here even though the DB/Drizzle types are Date.
+      const schedule = computeReminderSchedule(
+        new Date(a.assignedAt),
+        new Date(a.dueDate),
+        settings.remindersBeforeCount,
+        settings.remindersAfterCount
+      );
+
+      for (const occ of schedule) {
+        if (occ.scheduledAt > now) continue;
+        if (sentSet.has(sentKey(a.assignmentId, occ.kind, occ.occurrenceIndex))) {
+          skippedAlreadySent++;
+          continue;
+        }
+        if (!a.telegramUserId) {
+          skippedNoTelegram++;
+          continue;
+        }
+
+        await step.run(`send-${a.assignmentId}-${occ.kind}-${occ.occurrenceIndex}`, async () => {
+          try {
+            await sendReminderToWorker(a.telegramUserId!, a.courseTitle, occ.kind);
+            // onConflictDoNothing guards against a step retry double-sending
+            // or crashing on the unique constraint.
+            await db.insert(reminderLogs)
+              .values({ assignmentId: a.assignmentId, kind: occ.kind, occurrenceIndex: occ.occurrenceIndex })
+              .onConflictDoNothing({ target: [reminderLogs.assignmentId, reminderLogs.kind, reminderLogs.occurrenceIndex] });
+          } catch (err: any) {
+            console.warn(`Failed to send ${occ.kind} reminder #${occ.occurrenceIndex} for assignment ${a.assignmentId}:`, err?.message);
+            // Deliberately no log row on failure — picked up and retried on
+            // tomorrow's run instead.
+          }
+        });
+        sent++;
+      }
+    }
+
+    return { success: true, sent, skippedNoTelegram, skippedAlreadySent, scanned: activeAssignments.length };
   }
 );

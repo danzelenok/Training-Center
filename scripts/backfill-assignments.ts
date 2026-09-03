@@ -14,6 +14,7 @@
 import fs from "fs";
 import path from "path";
 import { neon } from "@neondatabase/serverless";
+import { addBusinessDays } from "date-fns";
 
 // ─── Load .env.local ─────────────────────────────────────────────────────────
 function loadEnvFile(filePath: string) {
@@ -69,12 +70,14 @@ async function main() {
 
     let created = 0;
     for (const worker of workers) {
+      const assignedAt = new Date();
+      const dueDate = addBusinessDays(assignedAt, 5);
       const result = await sql.query(
-        `INSERT INTO assignments (worker_id, course_id)
-         VALUES ($1, $2)
+        `INSERT INTO assignments (worker_id, course_id, assigned_at, due_date)
+         VALUES ($1, $2, $3, $4)
          ON CONFLICT (worker_id, course_id) DO NOTHING
          RETURNING id`,
-        [worker.id, course.id]
+        [worker.id, course.id, assignedAt, dueDate]
       );
       if (result.length > 0) created++;
     }

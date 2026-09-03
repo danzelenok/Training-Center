@@ -2,6 +2,7 @@ import { db } from "@/db";
 import { courses, slides, workers, assignments, courseRoles } from "@/db/schema";
 import { requireOrgId } from "@/lib/org";
 import { roleOrUnauthorized, canWriteCourse } from "@/lib/adminRoles";
+import { computeAssignmentDueDate } from "@/lib/dates";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { sendCourseAnnouncementDMs } from "@/lib/bot";
@@ -85,6 +86,8 @@ export async function POST(
 
     // 3. On first publish, create assignments according to the chosen scope
     if (isFirstPublish) {
+      const assignedAt = new Date();
+      const dueDate = computeAssignmentDueDate(assignedAt);
       if (assignTo === "all") {
         const allWorkers = await db
           .select({ id: workers.id })
@@ -97,7 +100,7 @@ export async function POST(
         if (allWorkers.length > 0) {
           await db
             .insert(assignments)
-            .values(allWorkers.map((w) => ({ workerId: w.id, courseId: id })))
+            .values(allWorkers.map((w) => ({ workerId: w.id, courseId: id, assignedAt, dueDate })))
             .onConflictDoNothing({ target: [assignments.workerId, assignments.courseId] });
         }
       } else if (assignTo === "roles" && requestedRoleIds.length > 0) {
@@ -113,13 +116,13 @@ export async function POST(
         if (roleWorkers.length > 0) {
           await db
             .insert(assignments)
-            .values(roleWorkers.map((w) => ({ workerId: w.id, courseId: id })))
+            .values(roleWorkers.map((w) => ({ workerId: w.id, courseId: id, assignedAt, dueDate })))
             .onConflictDoNothing({ target: [assignments.workerId, assignments.courseId] });
         }
       } else if (workerIds.length > 0) {
         await db
           .insert(assignments)
-          .values(workerIds.map((workerId) => ({ workerId, courseId: id })))
+          .values(workerIds.map((workerId) => ({ workerId, courseId: id, assignedAt, dueDate })))
           .onConflictDoNothing({ target: [assignments.workerId, assignments.courseId] });
       }
     }

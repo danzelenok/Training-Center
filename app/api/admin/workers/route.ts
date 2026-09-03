@@ -2,6 +2,7 @@ import { db } from "@/db";
 import { workers, invites, courses, assignments, jurisdictions, organizationJurisdictions, jobRoles, employmentEvents } from "@/db/schema";
 import { requireOrgId } from "@/lib/org";
 import { roleOrUnauthorized } from "@/lib/adminRoles";
+import { computeAssignmentDueDate } from "@/lib/dates";
 import { auth } from "@clerk/nextjs/server";
 import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
@@ -178,12 +179,16 @@ export async function POST(req: Request) {
     });
 
     if (eligibleCourses.length > 0) {
+      const assignedAt = new Date();
+      const dueDate = computeAssignmentDueDate(assignedAt);
       await db
         .insert(assignments)
         .values(
           eligibleCourses.map((c) => ({
             workerId: worker.id,
             courseId: c.id,
+            assignedAt,
+            dueDate,
           }))
         )
         .onConflictDoNothing({ target: [assignments.workerId, assignments.courseId] });

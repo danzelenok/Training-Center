@@ -1,7 +1,6 @@
 import { db } from "@/db";
 import { progress, courses, slides } from "@/db/schema";
 import { withTelegramAuth } from "@/lib/telegram";
-import { notifyAdminCompletion } from "@/lib/bot";
 import { and, eq, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
@@ -214,21 +213,6 @@ export const POST = withTelegramAuth(async (req, { worker }) => {
           continue;
         }
         throw err;
-      }
-    }
-
-    // Notify admin if this request transitioned the course to completed
-    if (isCompleted && !wasCompleted) {
-      try {
-        const courseTitle = course.title || "Unknown Course";
-        const workerName = [worker.firstName, worker.lastName]
-          .filter(Boolean)
-          .join(" ")
-          .trim() || worker.telegramUsername || `Worker ID ${worker.telegramUserId}`;
-
-        await notifyAdminCompletion(workerName, courseTitle);
-      } catch (botErr) {
-        console.error("Failed to send telegram completion notification:", botErr);
       }
     }
 

@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, integer, bigint, timestamp, boolean, jsonb, unique, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, integer, bigint, timestamp, boolean, jsonb, unique, index, type AnyPgColumn } from "drizzle-orm/pg-core";
 
 // 0. ORGANIZATIONS TABLE
 export const organizations = pgTable("organizations", {
@@ -272,10 +272,40 @@ export const assignments = pgTable("assignments", {
   workerId: uuid("worker_id").notNull().references(() => workers.id, { onDelete: "cascade" }),
   courseId: uuid("course_id").notNull().references(() => courses.id, { onDelete: "cascade" }),
   assignedAt: timestamp("assigned_at").notNull().defaultNow(),
+  // assignedAt + 5 business days, computed once at insert time by every
+  // write path (see lib/dates.ts). Nullable at the DB level only until the
+  // one-time backfill (scripts/backfill-assignment-due-dates.ts) fills in
+  // rows created before this column existed.
+  dueDate: timestamp("due_date"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
   uniqueAssignment: unique().on(table.workerId, table.courseId),
+  dueDateIdx: index("assignments_due_date_idx").on(table.dueDate),
+}));
+
+// 5.5. REMINDER_SETTINGS TABLE (org-wide reminder cadence config; one row per
+// organization — created lazily on first PATCH, missing row means defaults)
+export const reminderSettings = pgTable("reminder_settings", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizationId: uuid("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }).unique(),
+  remindersBeforeCount: integer("reminders_before_count").notNull().default(2),
+  remindersAfterCount: integer("reminders_after_count").notNull().default(1),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// 5.6. REMINDER_LOGS TABLE (one row per reminder actually sent for an
+// assignment; doubles as an idempotency guard via the unique constraint
+// below and as a history/audit trail of what was sent and when)
+export const reminderLogs = pgTable("reminder_logs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  assignmentId: uuid("assignment_id").notNull().references(() => assignments.id, { onDelete: "cascade" }),
+  kind: text("kind").$type<"before" | "after">().notNull(),
+  occurrenceIndex: integer("occurrence_index").notNull(), // 1-based within (assignmentId, kind)
+  sentAt: timestamp("sent_at").defaultNow().notNull(),
+}, (table) => ({
+  uniqueOccurrence: unique().on(table.assignmentId, table.kind, table.occurrenceIndex),
 }));
 
 // 6. POLL RESPONSES TABLE
@@ -290,19 +320,6 @@ export const pollResponses = pgTable("poll_responses", {
   slideIndex: integer("slide_index").notNull(),
   rating: text("rating"),
   comment: text("comment"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
-
-// 7. REMINDERS TABLE
-export const reminders = pgTable("reminders", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  courseId: uuid("course_id")
-    .references(() => courses.id, { onDelete: "cascade" })
-    .notNull(),
-  scheduleExpression: text("schedule_expression").notNull(),
-  inngestJobId: text("inngest_job_id"),
-  isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

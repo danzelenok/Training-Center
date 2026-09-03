@@ -3,6 +3,7 @@ import { courses, progress, assignments } from "@/db/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { withTelegramAuth } from "@/lib/telegram";
+import { computeAssignmentDueDate } from "@/lib/dates";
 
 // A course only counts as "this week's training" for a brand-new worker if it
 // was published within a week of the worker's hire date in either direction.
@@ -31,9 +32,11 @@ export const GET = withTelegramAuth(async (_req, { worker }) => {
   });
 
   if (eligibleCourses.length > 0) {
+    const assignedAt = new Date();
+    const dueDate = computeAssignmentDueDate(assignedAt);
     await db
       .insert(assignments)
-      .values(eligibleCourses.map((c) => ({ workerId: worker.id, courseId: c.id })))
+      .values(eligibleCourses.map((c) => ({ workerId: worker.id, courseId: c.id, assignedAt, dueDate })))
       .onConflictDoNothing();
   }
 

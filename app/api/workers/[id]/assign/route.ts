@@ -2,6 +2,7 @@ import { db } from "@/db";
 import { assignments, workers, courses } from "@/db/schema";
 import { requireOrgId } from "@/lib/org";
 import { roleOrUnauthorized } from "@/lib/adminRoles";
+import { computeAssignmentDueDate } from "@/lib/dates";
 import { eq, and } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
@@ -52,9 +53,10 @@ export async function POST(
     }
 
     // 2. Insert the assignment; no-op if this worker/course pair already exists
+    const assignedAt = new Date();
     const [inserted] = await db
       .insert(assignments)
-      .values({ workerId, courseId })
+      .values({ workerId, courseId, assignedAt, dueDate: computeAssignmentDueDate(assignedAt) })
       .onConflictDoNothing({ target: [assignments.workerId, assignments.courseId] })
       .returning();
 

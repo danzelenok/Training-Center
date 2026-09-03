@@ -1,6 +1,6 @@
 import { serve } from "inngest/next";
 import { inngest } from "@/lib/inngest";
-import { generateSlideAssets, regenerateSingleSlideAsset, pollHeygenJobStatus } from "@/lib/inngest-functions";
+import { generateSlideAssets, regenerateSingleSlideAsset, pollHeygenJobStatus, sendAssignmentReminders } from "@/lib/inngest-functions";
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -8,5 +8,6 @@ export const { GET, POST, PUT } = serve({
     generateSlideAssets,
     regenerateSingleSlideAsset,
     pollHeygenJobStatus,
+    sendAssignmentReminders,
   ],
 });
