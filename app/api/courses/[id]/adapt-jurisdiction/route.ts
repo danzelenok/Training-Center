@@ -6,6 +6,7 @@ import { and, asc, eq, isNull } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { adaptCourseToJurisdiction, slideNeedsGeneratedAsset, type SlideInput } from "@/lib/gemini";
 import { fetchRegulatoryContext } from "@/lib/regulatory-scraper";
+import { inngest } from "@/lib/inngest";
 
 // Fields written exclusively by the async asset pipeline (HeyGen/media) —
 // mirrors the SERVER_OWNED set in app/api/courses/[id]/route.ts's slide-
@@ -179,10 +180,12 @@ export async function POST(
     // Update each slide in place — id, order, type untouched, only content
     // replaces the non-server-owned fields. assetStatus flips to "pending"
     // only for slides whose text actually changed AND whose type needs a
-    // generated asset — the existing video/audio is now stale, but this
-    // does not enqueue regeneration itself (see regenerateSingleSlideAsset,
-    // a deliberate separate/manual step).
+    // generated asset — the existing video/audio is now stale. Each such
+    // slide is also enqueued for regeneration below (same "slide/regenerate"
+    // event as retry-assets/route.ts), so a changed slide's asset actually
+    // gets rebuilt instead of sitting at "pending" indefinitely.
     let changedCount = 0;
+    const slidesToRegenerate: { slideId: string; assetType: "audio" | "video" | "photo" }[] = [];
     for (let i = 0; i < existingSlideRows.length; i++) {
       const existing = existingSlideRows[i];
       const rewritten = rewrittenSlides[i];
@@ -192,17 +195,36 @@ export async function POST(
 
       changedCount++;
       const mergedContent = { ...(existing.content as Record<string, unknown>), ...rewritten.content };
+      const needsAsset = slideNeedsGeneratedAsset({ type: existing.type, content: mergedContent });
 
       await db
         .update(slides)
         .set({
           content: mergedContent,
-          assetStatus: slideNeedsGeneratedAsset({ type: existing.type, content: mergedContent })
-            ? "pending"
-            : existing.assetStatus,
+          assetStatus: needsAsset ? "pending" : existing.assetStatus,
           updatedAt: new Date(),
         })
         .where(eq(slides.id, existing.id));
+
+      if (needsAsset) {
+        const assetType: "audio" | "video" | "photo" =
+          existing.type === "audio" ? "audio" : existing.type === "video" || existing.type === "dialogue" ? "video" : "photo";
+        slidesToRegenerate.push({ slideId: existing.id, assetType });
+      }
+    }
+
+    if (slidesToRegenerate.length > 0) {
+      await db
+        .update(courses)
+        .set({ generationStatus: "generating", updatedAt: new Date() })
+        .where(eq(courses.id, id));
+
+      await inngest.send(
+        slidesToRegenerate.map(({ slideId, assetType }) => ({
+          name: "slide/regenerate" as const,
+          data: { slideId, assetType, courseId: id, organizationId: orgId },
+        }))
+      );
     }
 
     return NextResponse.json({
