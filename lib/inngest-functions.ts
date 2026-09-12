@@ -713,8 +713,11 @@ export const pollHeygenJobStatus = inngest.createFunction(
     }
 
     // If still pending/processing
-    if (attempts >= 20) { // Max 10 minutes (20 * 30 seconds)
-      console.error(`[HeyGen Poll] Job ${jobId} timed out after 10 minutes.`);
+    // HeyGen's avatar_iii engine (forced for our current avatars, see HEYGEN_ENGINE in lib/heygen.ts)
+    // has been observed taking 12+ minutes to render an 8-second clip under load, so 10 minutes was
+    // too tight and was marking still-rendering (and later successfully completing) jobs as failed.
+    if (attempts >= 50) { // Max 25 minutes (50 * 30 seconds)
+      console.error(`[HeyGen Poll] Job ${jobId} timed out after 25 minutes.`);
       await step.run("mark-failed-timeout", async () => {
         await db
           .update(slides)
@@ -727,7 +730,7 @@ export const pollHeygenJobStatus = inngest.createFunction(
         await checkAndFinalizeCourse(courseId);
       });
 
-      throw new Error("HeyGen video generation timed out after 10 minutes.");
+      throw new Error("HeyGen video generation timed out after 25 minutes.");
     }
 
     console.log(`[HeyGen Poll] Job ${jobId} is still processing. Sleeping for 30s before attempt ${attempts + 1}...`);

@@ -19,6 +19,13 @@ export const env = createEnv({
     HEYGEN_STUDENT_AVATAR_ID: z.string().optional(),
     BRAVE_SEARCH_API_KEY: z.string().optional(),
     MINI_APP_URL: z.string().url().optional(),
+    // Base URL of the separate ToolTrace inventory app (own repo, own DB —
+    // shared Mini App frontend, independent backends). Only used to ask "is
+    // this telegram_id an Inventory-eligible field worker?" before showing
+    // the Training/Inventory chooser — left unset in any environment where
+    // Inventory isn't deployed yet, and the check fails closed to "not
+    // eligible" so it can never block the existing Training flow.
+    INVENTORY_APP_URL: z.string().url().optional(),
     MOCK_ORG_ID: z.string().optional(),
     // Dev-only companions to MOCK_ORG_ID: without these, MOCK_ORG_ID alone would leave every
     // admin API request without a role header, and the new fail-closed role check would 403
@@ -34,6 +41,9 @@ export const env = createEnv({
     NEXT_PUBLIC_CLERK_SIGN_UP_URL: z.string().min(1).default("/sign-up"),
     NEXT_PUBLIC_APP_URL: z.string().url().optional(),
     NEXT_PUBLIC_MINI_APP_URL: z.string().url().optional(),
+    // Where the browser navigates when a user picks "Inventory" from the
+    // chooser — the ToolTrace app's own Field App entry point.
+    NEXT_PUBLIC_INVENTORY_APP_URL: z.string().url().optional(),
   },
   runtimeEnv: {
     DATABASE_URL: process.env.DATABASE_URL,
@@ -60,6 +70,8 @@ export const env = createEnv({
     NEXT_PUBLIC_CLERK_SIGN_UP_URL: process.env.NEXT_PUBLIC_CLERK_SIGN_UP_URL,
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
     NEXT_PUBLIC_MINI_APP_URL: process.env.NEXT_PUBLIC_MINI_APP_URL,
+    NEXT_PUBLIC_INVENTORY_APP_URL: process.env.NEXT_PUBLIC_INVENTORY_APP_URL,
     MINI_APP_URL: process.env.MINI_APP_URL,
+    INVENTORY_APP_URL: process.env.INVENTORY_APP_URL,
   },
 });

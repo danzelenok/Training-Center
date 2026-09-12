@@ -2,8 +2,8 @@
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { BookOpen, CheckCircle2, Clock, ChevronDown, ChevronUp, X } from "lucide-react";
-
+import { BookOpen, CheckCircle2, Clock, ChevronDown, ChevronUp, Wrench, X } from "lucide-react";
+import { env } from "@/env";
 
 type ProgressStatus = "not_started" | "in_progress" | "completed";
 
@@ -13,6 +13,11 @@ interface Course {
   description: string | null;
   progressStatus: ProgressStatus;
   currentSlideIndex: number;
+}
+
+function getInitData(): string {
+  const tg = (window as unknown as { Telegram?: { WebApp?: { initData?: string } } }).Telegram?.WebApp;
+  return tg?.initData || (process.env.NODE_ENV === "development" ? "mock-dev-data" : "");
 }
 
 function StatusBadge({ status }: { status: ProgressStatus }) {
@@ -81,17 +86,71 @@ function CourseCard({ course, onClick }: { course: Course; onClick: () => void }
   );
 }
 
+// Only shown to a telegram_id that ToolTrace's own backend confirms is an
+// active field_worker there (spec: independent backends, each checks its
+// own access — see app/api/mini-app/inventory-eligibility/route.ts). Anyone
+// else never sees this screen at all and goes straight into Training below,
+// exactly like before this chooser existed.
+function AppChooser({ onOpenTraining }: { onOpenTraining: () => void }) {
+  const openInventory = () => {
+    const inventoryUrl = env.NEXT_PUBLIC_INVENTORY_APP_URL;
+    if (!inventoryUrl) return;
+    const initData = getInitData();
+    window.location.href = `${inventoryUrl}/field?tid=${encodeURIComponent(initData)}`;
+  };
+
+  return (
+    <main className="flex-1 flex flex-col items-center justify-center gap-4 px-6 bg-slate-950">
+      <p className="text-sm text-slate-400 mb-1">What do you need?</p>
+      <button
+        onClick={onOpenTraining}
+        className="w-full max-w-xs flex items-center gap-3 bg-slate-900 border border-sky-800/40 rounded-2xl p-4 text-left active:bg-slate-800 transition-colors"
+      >
+        <span className="flex-none w-11 h-11 rounded-xl bg-sky-500/15 text-sky-400 flex items-center justify-center">
+          <BookOpen className="h-5 w-5" />
+        </span>
+        <span>
+          <span className="block text-base font-semibold text-white">Safety Training</span>
+          <span className="block text-xs text-slate-400 mt-0.5">Your assigned courses</span>
+        </span>
+      </button>
+      <button
+        onClick={openInventory}
+        className="w-full max-w-xs flex items-center gap-3 bg-slate-900 border border-orange-800/40 rounded-2xl p-4 text-left active:bg-slate-800 transition-colors"
+      >
+        <span className="flex-none w-11 h-11 rounded-xl bg-orange-500/15 text-orange-400 flex items-center justify-center">
+          <Wrench className="h-5 w-5" />
+        </span>
+        <span>
+          <span className="block text-base font-semibold text-white">Tool Inventory</span>
+          <span className="block text-xs text-slate-400 mt-0.5">Report, request, transfer tools</span>
+        </span>
+      </button>
+    </main>
+  );
+}
+
 export default function MiniAppPage() {
   const router = useRouter();
+  // "checking" briefly gates the very first render only; the eligibility
+  // check and the course fetch below both start immediately in parallel so
+  // the common case (not Inventory-eligible) never waits on the extra
+  // network round trip before Training starts loading.
+  const [screen, setScreen] = useState<"checking" | "chooser" | "training">("checking");
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [completedOpen, setCompletedOpen] = useState(false);
 
   useEffect(() => {
-    const initData =
-      (window as any).Telegram?.WebApp?.initData ||
-      (process.env.NODE_ENV === "development" ? "mock-dev-data" : "");
+    const initData = getInitData();
+
+    fetch("/api/mini-app/inventory-eligibility", {
+      headers: initData ? { "Telegram-Init-Data": initData } : {},
+    })
+      .then((res) => (res.ok ? res.json() : { eligible: false }))
+      .then((data) => setScreen(data?.eligible ? "chooser" : "training"))
+      .catch(() => setScreen("training"));
 
     fetch("/api/mini-app/courses", {
       headers: initData ? { "Telegram-Init-Data": initData } : {},
@@ -108,6 +167,19 @@ export default function MiniAppPage() {
   const safeTopStyle = {
     paddingTop: `calc(var(--tg-safe-area-inset-top, 0px) + var(--tg-content-safe-area-inset-top, 0px) + 16px)`,
   };
+
+  if (screen === "checking") {
+    return (
+      <div className="flex flex-col items-center justify-center h-full bg-slate-950 text-slate-400 gap-3">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white" />
+        <p className="text-xs uppercase tracking-widest font-black">Loading...</p>
+      </div>
+    );
+  }
+
+  if (screen === "chooser") {
+    return <AppChooser onOpenTraining={() => setScreen("training")} />;
+  }
 
   if (loading) {
     return (
