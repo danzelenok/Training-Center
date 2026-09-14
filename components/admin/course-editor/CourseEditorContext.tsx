@@ -22,6 +22,7 @@ import {
 import { useJurisdictionsQuery } from "@/hooks/admin/workers/queries";
 import type { JurisdictionRef } from "@/hooks/admin/workers/types";
 import { useMeQuery } from "@/hooks/admin/useMeQuery";
+import { useResendCourseMutation } from "@/hooks/admin/courses/mutations";
 
 export type { Course, MediaLibraryFile };
 
@@ -82,6 +83,12 @@ interface CourseEditorContextType {
   // and which would otherwise leave the header's Draft/Live badge and the
   // publish button stale until a manual refresh.
   handlePublishSuccess: (result: PublishCourseResult) => void;
+
+  // "Прислать уведомление ещё раз" — re-DMs the current run's assignees with
+  // no data changes, separate from handlePublish (which now always starts a
+  // new run). See app/api/courses/[id]/resend/route.ts.
+  handleResend: () => Promise<void>;
+  resending: boolean;
 
   // `palette` is only passed by the Theme System v2 picker (a chosen
   // theme_pattern_variants row); omitting it — as every existing
@@ -789,10 +796,10 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
     }
   };
 
-  // Open publish dialog (validate first, save, then open). Covers both
-  // first publish and resend now — PublishCourseDialog itself branches on
-  // alreadyPublished (see [id]/page.tsx, which passes course?.status ===
-  // "published").
+  // Open publish/relaunch dialog (validate first, save, then open).
+  // PublishCourseDialog branches its copy on mode (see [id]/page.tsx, which
+  // passes course?.status === "published" ? "relaunch" : "publish"). Plain
+  // resend (no new run) is handleResend below, a separate action.
   const handlePublish = async () => {
     if (slidesList.length === 0) {
       toast.error("Cannot publish a course without slides. Add cards or import a PPTX first.");
@@ -800,6 +807,18 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
     }
     await handleSaveCourse();
     setPublishDialogOpen(true);
+  };
+
+  const resendMutation = useResendCourseMutation();
+  const handleResend = async () => {
+    if (!course) return;
+    const toastId = toast.loading("Resending announcement...");
+    try {
+      await resendMutation.mutateAsync(course.id);
+      toast.success("Announcement resent to assigned workers.", { id: toastId });
+    } catch (err: any) {
+      toast.error(err.message || "Failed to resend announcement", { id: toastId });
+    }
   };
 
   // Passed to PublishCourseDialog as onPublishSuccess. The dialog owns the
@@ -939,6 +958,8 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
         publishDialogOpen,
         setPublishDialogOpen,
         handlePublishSuccess,
+        handleResend,
+        resending: resendMutation.isPending,
       }}
     >
       {children}

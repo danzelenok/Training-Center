@@ -50,12 +50,19 @@ export interface CourseSnapshotWorker {
   quizScore: number | null;
 }
 
+export interface CourseRunSummary {
+  id: string;
+  publishedAt: string;
+}
+
 export interface CourseSnapshotResponse {
   course: {
     id: string;
     title: string;
-    publishedAt: string;
+    publishedAt: string; // the selected run's publish date, not the course's first-publish date
   };
+  runId: string;
+  runs: CourseRunSummary[]; // every run of this course, newest first
   workers: CourseSnapshotWorker[];
 }
 
@@ -64,5 +71,5 @@ export const reportCoursesKeys = {
 };
 
 export const courseSnapshotKeys = {
-  detail: (courseId: string) => ["course-snapshot", courseId] as const,
+  detail: (courseId: string, runId?: string | null) => ["course-snapshot", courseId, runId ?? "latest"] as const,
 };

@@ -1,12 +1,19 @@
 import { db } from "@/db";
-import { courses, slides, workers, assignments, courseRoles, jobRoles } from "@/db/schema";
+import { courses, slides, workers, assignments, courseRoles, courseRuns, courseRunRoles, jobRoles } from "@/db/schema";
 import { requireOrgId } from "@/lib/org";
 import { roleOrUnauthorized, canWriteCourse } from "@/lib/adminRoles";
 import { computeAssignmentDueDate } from "@/lib/dates";
+import { auth } from "@clerk/nextjs/server";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { sendCourseAnnouncementDMs } from "@/lib/bot";
 
+// POST /api/courses/[id]/publish — always creates a new course_runs row:
+// the first Go Live for a draft course (run #1) AND every subsequent
+// "Запустить повторно" (run #2, #3, ...) go through this same handler and
+// the same audience picker. A plain re-notification of the CURRENT run with
+// no new run/assignments is a different action — see
+// app/api/courses/[id]/resend/route.ts.
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -20,6 +27,11 @@ export async function POST(
 
     const roleResult = roleOrUnauthorized(req);
     if (roleResult instanceof Response) return roleResult;
+
+    const { userId: actingAdminId } = await auth();
+    if (!actingAdminId) {
+      return new NextResponse("Unauthorized", { status: 401 });
+    }
 
     const body = await req.json().catch(() => ({}));
     const assignTo: "all" | "specific" =
@@ -79,71 +91,91 @@ export async function POST(
 
     const isFirstPublish = course.status !== "published";
 
-    // 3. On first publish, create assignments according to the chosen scope
-    //    and record the role scope itself in course_roles (empty = every
-    //    role, i.e. unrestricted within the jurisdiction).
-    if (isFirstPublish) {
-      const assignedAt = new Date();
-      const dueDate = computeAssignmentDueDate(assignedAt);
-      if (assignTo === "all") {
-        const jurisdictionWorkers = requestedRoleIds.length > 0
-          ? await db
-              .select({ id: workers.id })
-              .from(workers)
-              .where(and(
-                eq(workers.organizationId, orgId),
-                eq(workers.jurisdictionId, course.ownerJurisdictionId),
-                eq(workers.active, true),
-                inArray(workers.roleId, requestedRoleIds)
-              ))
-          : await db
-              .select({ id: workers.id })
-              .from(workers)
-              .where(and(
-                eq(workers.organizationId, orgId),
-                eq(workers.jurisdictionId, course.ownerJurisdictionId),
-                eq(workers.active, true)
-              ));
-        if (jurisdictionWorkers.length > 0) {
-          await db
-            .insert(assignments)
-            .values(jurisdictionWorkers.map((w) => ({ workerId: w.id, courseId: id, assignedAt, dueDate })))
-            .onConflictDoNothing({ target: [assignments.workerId, assignments.courseId] });
-        }
+    // 3. Every publish — first Go Live or a later "Запустить повторно" —
+    //    creates a new course_runs row and a fresh set of assignments for
+    //    it, scoped by the audience picked in this dialog. Old runs' own
+    //    assignments/progress are never touched, so past completions stay
+    //    intact and visible separately (see lib/courseSnapshot.ts).
+    const [run] = await db
+      .insert(courseRuns)
+      .values({ courseId: id, publishedAt: new Date(), createdByAdminId: actingAdminId })
+      .returning();
 
-        // Reconcile course_roles to exactly the roles picked here — this is
-        // now the only writer of course_roles (the editor no longer picks
-        // roles; see components/admin/course-editor/Sidebar.tsx history).
-        const existingRoles = await db
-          .select({ roleId: courseRoles.roleId })
-          .from(courseRoles)
-          .where(eq(courseRoles.courseId, id));
-        const existingRoleIds = new Set(existingRoles.map((r) => r.roleId));
-        const toAdd = requestedRoleIds.filter((rid) => !existingRoleIds.has(rid));
-        const toRemove = [...existingRoleIds].filter((rid) => !requestedRoleIds.includes(rid));
-        if (toRemove.length > 0) {
-          await db
-            .delete(courseRoles)
-            .where(and(eq(courseRoles.courseId, id), inArray(courseRoles.roleId, toRemove)));
-        }
-        if (toAdd.length > 0) {
-          await db
-            .insert(courseRoles)
-            .values(toAdd.map((roleId) => ({ courseId: id, roleId })))
-            .onConflictDoNothing({ target: [courseRoles.courseId, courseRoles.roleId] });
-        }
-      } else if (workerIds.length > 0) {
+    const assignedAt = new Date();
+    const dueDate = computeAssignmentDueDate(assignedAt);
+    if (assignTo === "all") {
+      const jurisdictionWorkers = requestedRoleIds.length > 0
+        ? await db
+            .select({ id: workers.id })
+            .from(workers)
+            .where(and(
+              eq(workers.organizationId, orgId),
+              eq(workers.jurisdictionId, course.ownerJurisdictionId),
+              eq(workers.active, true),
+              inArray(workers.roleId, requestedRoleIds)
+            ))
+        : await db
+            .select({ id: workers.id })
+            .from(workers)
+            .where(and(
+              eq(workers.organizationId, orgId),
+              eq(workers.jurisdictionId, course.ownerJurisdictionId),
+              eq(workers.active, true)
+            ));
+      if (jurisdictionWorkers.length > 0) {
         await db
           .insert(assignments)
-          .values(workerIds.map((workerId) => ({ workerId, courseId: id, assignedAt, dueDate })))
-          .onConflictDoNothing({ target: [assignments.workerId, assignments.courseId] });
+          .values(jurisdictionWorkers.map((w) => ({ workerId: w.id, courseId: id, runId: run.id, assignedAt, dueDate })))
+          .onConflictDoNothing({ target: [assignments.workerId, assignments.runId] });
       }
+
+      // Reconcile course_roles — the *current* effective scope used for
+      // eligibility/auto-assign of new workers going forward — to exactly
+      // the roles picked here. This is now the only writer of course_roles
+      // (the editor no longer picks roles; see
+      // components/admin/course-editor/Sidebar.tsx history). Distinct from
+      // course_run_roles below, which is this run's own frozen snapshot and
+      // is never reconciled/overwritten once written.
+      const existingRoles = await db
+        .select({ roleId: courseRoles.roleId })
+        .from(courseRoles)
+        .where(eq(courseRoles.courseId, id));
+      const existingRoleIds = new Set(existingRoles.map((r) => r.roleId));
+      const toAdd = requestedRoleIds.filter((rid) => !existingRoleIds.has(rid));
+      const toRemove = [...existingRoleIds].filter((rid) => !requestedRoleIds.includes(rid));
+      if (toRemove.length > 0) {
+        await db
+          .delete(courseRoles)
+          .where(and(eq(courseRoles.courseId, id), inArray(courseRoles.roleId, toRemove)));
+      }
+      if (toAdd.length > 0) {
+        await db
+          .insert(courseRoles)
+          .values(toAdd.map((roleId) => ({ courseId: id, roleId })))
+          .onConflictDoNothing({ target: [courseRoles.courseId, courseRoles.roleId] });
+      }
+
+      if (requestedRoleIds.length > 0) {
+        const requestedRoles = await db
+          .select({ name: jobRoles.name })
+          .from(jobRoles)
+          .where(inArray(jobRoles.id, requestedRoleIds));
+        await db
+          .insert(courseRunRoles)
+          .values(requestedRoles.map((r) => ({ courseRunId: run.id, roleName: r.name })))
+          .onConflictDoNothing({ target: [courseRunRoles.courseRunId, courseRunRoles.roleName] });
+      }
+    } else if (workerIds.length > 0) {
+      await db
+        .insert(assignments)
+        .values(workerIds.map((workerId) => ({ workerId, courseId: id, runId: run.id, assignedAt, dueDate })))
+        .onConflictDoNothing({ target: [assignments.workerId, assignments.runId] });
     }
 
-    // 4. Send direct message announcements to assigned workers if requested
+    // 4. Send direct message announcements to this run's assignees if requested
     if (notifyWorkers) {
       try {
-        await sendCourseAnnouncementDMs(course.id, course.title);
+        await sendCourseAnnouncementDMs(course.id, course.title, run.id);
       } catch (botError: any) {
         console.error("Failed to send course DMs to workers:", botError);
         return new NextResponse(
@@ -156,13 +188,16 @@ export async function POST(
       }
     }
 
-    // 5. Update course status in the database
+    // 5. Update course status in the database. publishedAt is deliberately
+    //    left untouched on a relaunch — it still means "first published on",
+    //    per-run dates live on course_runs.publishedAt instead (see
+    //    lib/courseSnapshot.ts and the courses-list "last run" sort/filter).
     const [updatedCourse] = await db
       .update(courses)
       .set({
         status: "published",
         ...(isFirstPublish ? { publishedAt: new Date() } : {}),
-        ...(isFirstPublish && assignTo === "all" ? { autoAssignNewWorkers: true } : {}),
+        ...(assignTo === "all" ? { autoAssignNewWorkers: true } : {}),
         updatedAt: new Date(),
       })
       .where(eq(courses.id, id))
@@ -170,6 +205,7 @@ export async function POST(
 
     return NextResponse.json({
       ...updatedCourse,
+      runId: run.id,
       telegramMessageId: null,
       telegramGroupId: null,
     });

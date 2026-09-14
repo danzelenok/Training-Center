@@ -1,6 +1,7 @@
 import { db } from "@/db";
 import { progress, courses, slides } from "@/db/schema";
 import { withTelegramAuth } from "@/lib/telegram";
+import { getWorkerActiveRunId } from "@/lib/courseRuns";
 import { and, eq, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
@@ -81,13 +82,18 @@ export const GET = withTelegramAuth(async (req, { worker }) => {
       return new NextResponse("Course not found", { status: 404 });
     }
 
+    const runId = await getWorkerActiveRunId(worker.id, courseId);
+    if (!runId) {
+      return NextResponse.json(null);
+    }
+
     const [prog] = await db
       .select()
       .from(progress)
       .where(
         and(
           eq(progress.workerId, worker.id),
-          eq(progress.courseId, courseId)
+          eq(progress.runId, runId)
         )
       )
       .limit(1);
@@ -135,13 +141,18 @@ export const POST = withTelegramAuth(async (req, { worker }) => {
       return new NextResponse("Course not found", { status: 404 });
     }
 
+    const runId = await getWorkerActiveRunId(worker.id, courseId);
+    if (!runId) {
+      return new NextResponse("Worker is not assigned to this course.", { status: 400 });
+    }
+
     const isCompleted = status === "completed";
     const completedAtVal = isCompleted ? new Date() : null;
 
-    // progress has a unique constraint on (worker_id, course_id). Two near-simultaneous
+    // progress has a unique constraint on (worker_id, run_id). Two near-simultaneous
     // requests can both miss the existing row in the select below and both attempt an
     // insert; the loser is caught here and retried as an update so we never end up with
-    // two progress rows for the same worker+course.
+    // two progress rows for the same worker+run.
     let updatedProgress;
     let wasCompleted = false;
 
@@ -152,7 +163,7 @@ export const POST = withTelegramAuth(async (req, { worker }) => {
         .where(
           and(
             eq(progress.workerId, worker.id),
-            eq(progress.courseId, courseId)
+            eq(progress.runId, runId)
           )
         )
         .limit(1);
@@ -196,6 +207,7 @@ export const POST = withTelegramAuth(async (req, { worker }) => {
           .values({
             workerId: worker.id,
             courseId,
+            runId,
             currentSlideIndex,
             status,
             quizScore: computedQuizScore,

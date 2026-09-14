@@ -91,11 +91,15 @@ bot.command("start", async (ctx) => {
 });
 
 /**
- * Sends direct message course announcements to all workers assigned to this course who have a linked Telegram user ID.
- * @param courseId The unique identifier of the course.
+ * Sends direct message course announcements to workers assigned to one
+ * specific course_runs row (not the whole course's history across runs) who
+ * have a linked Telegram user ID — used for both a fresh publish/relaunch
+ * and a plain "resend" of the latest run's announcement.
+ * @param courseId The unique identifier of the course (only used to build the launch URL).
  * @param courseTitle The title of the course.
+ * @param runId The course_runs row whose assignees should be messaged.
  */
-export async function sendCourseAnnouncementDMs(courseId: string, courseTitle: string): Promise<void> {
+export async function sendCourseAnnouncementDMs(courseId: string, courseTitle: string, runId: string): Promise<void> {
   const assignedWorkers = await db
     .select({
       id: workers.id,
@@ -105,7 +109,7 @@ export async function sendCourseAnnouncementDMs(courseId: string, courseTitle: s
     })
     .from(assignments)
     .innerJoin(workers, eq(workers.id, assignments.workerId))
-    .where(eq(assignments.courseId, courseId));
+    .where(eq(assignments.runId, runId));
 
   const botUsername = process.env.TELEGRAM_BOT_USERNAME || "CoolCatTraining_bot";
   const courseUrl = `https://t.me/${botUsername}/CoolCatTraining?startapp=${courseId}`;

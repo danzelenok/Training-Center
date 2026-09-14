@@ -228,6 +228,33 @@ export const courseRoles = pgTable("course_roles", {
   uniqueCourseRole: unique().on(table.courseId, table.roleId),
 }));
 
+// 3.45. COURSE_RUNS TABLE (one row per publish/republish-as-new-run — NOT per
+// plain "resend"; see app/api/courses/[id]/publish/route.ts. Reifies the
+// course_runs concept: a compliance course retaken periodically, with each
+// pass through it kept as separate, non-overwritten history.)
+export const courseRuns = pgTable("course_runs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  courseId: uuid("course_id").notNull().references(() => courses.id, { onDelete: "cascade" }),
+  publishedAt: timestamp("published_at").notNull(),
+  createdByAdminId: text("created_by_admin_id").notNull(), // Clerk user id; not a FK, same convention as admin_roles.clerk_user_id
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// 3.46. COURSE_RUN_ROLES TABLE (frozen role-scope snapshot per run — deliberately
+// NOT a FK to job_roles: a role rename/delete after the fact must never alter
+// what an old run's history says was targeted at the time. Distinct from
+// course_roles below, which stays the *current* effective scope used for
+// eligibility/auto-assign of new workers going forward.)
+export const courseRunRoles = pgTable("course_run_roles", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  courseRunId: uuid("course_run_id").notNull().references(() => courseRuns.id, { onDelete: "cascade" }),
+  roleName: text("role_name").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  uniqueCourseRunRoleName: unique().on(table.courseRunId, table.roleName),
+}));
+
 // 3.5. INVITES TABLE
 export const invites = pgTable("invites", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -255,6 +282,14 @@ export const progress = pgTable("progress", {
   courseId: uuid("course_id")
     .references(() => courses.id, { onDelete: "cascade" })
     .notNull(),
+  // Which course_runs row this progress belongs to. A worker retaking a
+  // course gets a fresh progress row per run — old runs' completedAt/
+  // quizScore are never overwritten. NOT NULL at the schema level, but see
+  // db/migrations/0032_add_course_runs.sql / 0033_course_runs_not_null.sql:
+  // deployed as nullable first, backfilled by scripts/backfill-course-runs.ts,
+  // THEN tightened to NOT NULL — never apply 0033 before the backfill is
+  // confirmed complete and every write path below supplies runId.
+  runId: uuid("run_id").notNull().references(() => courseRuns.id, { onDelete: "cascade" }),
   currentSlideIndex: integer("current_slide_index").default(0).notNull(),
   status: text("status").$type<"not_started" | "in_progress" | "completed">().default("not_started").notNull(),
   quizScore: integer("quiz_score"),
@@ -263,7 +298,8 @@ export const progress = pgTable("progress", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => ({
-  uniqueProgress: unique().on(table.workerId, table.courseId),
+  uniqueProgress: unique().on(table.workerId, table.runId),
+  runIdIdx: index("progress_run_id_idx").on(table.runId),
 }));
 
 // 5. ASSIGNMENTS TABLE
@@ -271,6 +307,11 @@ export const assignments = pgTable("assignments", {
   id: uuid("id").primaryKey().defaultRandom(),
   workerId: uuid("worker_id").notNull().references(() => workers.id, { onDelete: "cascade" }),
   courseId: uuid("course_id").notNull().references(() => courses.id, { onDelete: "cascade" }),
+  // Which course_runs row this assignment belongs to. A worker retaking a
+  // course gets a fresh assignment row (new dueDate) per run — see
+  // db/schema.ts progress.runId for the deploy-order note (nullable first,
+  // backfilled, then tightened to NOT NULL — 0032 then 0033).
+  runId: uuid("run_id").notNull().references(() => courseRuns.id, { onDelete: "cascade" }),
   assignedAt: timestamp("assigned_at").notNull().defaultNow(),
   // assignedAt + 5 business days, computed once at insert time by every
   // write path (see lib/dates.ts). Nullable at the DB level only until the
@@ -280,8 +321,9 @@ export const assignments = pgTable("assignments", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
-  uniqueAssignment: unique().on(table.workerId, table.courseId),
+  uniqueAssignment: unique().on(table.workerId, table.runId),
   dueDateIdx: index("assignments_due_date_idx").on(table.dueDate),
+  runIdIdx: index("assignments_run_id_idx").on(table.runId),
 }));
 
 // 5.5. REMINDER_SETTINGS TABLE (org-wide reminder cadence config; one row per

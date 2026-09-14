@@ -3,6 +3,7 @@ import { assignments, workers, courses } from "@/db/schema";
 import { requireOrgId } from "@/lib/org";
 import { roleOrUnauthorized } from "@/lib/adminRoles";
 import { computeAssignmentDueDate } from "@/lib/dates";
+import { getLatestRunId } from "@/lib/courseRuns";
 import { eq, and } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
@@ -52,12 +53,18 @@ export async function POST(
       return new NextResponse("Course not found", { status: 404 });
     }
 
-    // 2. Insert the assignment; no-op if this worker/course pair already exists
+    const runId = await getLatestRunId(courseId);
+    if (!runId) {
+      return new NextResponse("This course hasn't been published yet.", { status: 400 });
+    }
+
+    // 2. Insert the assignment; no-op if this worker is already assigned to
+    // this course's current run
     const assignedAt = new Date();
     const [inserted] = await db
       .insert(assignments)
-      .values({ workerId, courseId, assignedAt, dueDate: computeAssignmentDueDate(assignedAt) })
-      .onConflictDoNothing({ target: [assignments.workerId, assignments.courseId] })
+      .values({ workerId, courseId, runId, assignedAt, dueDate: computeAssignmentDueDate(assignedAt) })
+      .onConflictDoNothing({ target: [assignments.workerId, assignments.runId] })
       .returning();
 
     if (inserted) {
@@ -67,7 +74,7 @@ export async function POST(
     const [existingAssignment] = await db
       .select()
       .from(assignments)
-      .where(and(eq(assignments.workerId, workerId), eq(assignments.courseId, courseId)))
+      .where(and(eq(assignments.workerId, workerId), eq(assignments.runId, runId)))
       .limit(1);
 
     return NextResponse.json({ ...existingAssignment, isNew: false });

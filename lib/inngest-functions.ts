@@ -772,7 +772,10 @@ export const sendAssignmentReminders = inngest.createFunction(
   async ({ step }) => {
     // 1. Active (non-completed) assignments, reusing the join shape from
     // app/api/reports/route.ts: assignments INNER JOIN workers (active)
-    // INNER JOIN courses, LEFT JOIN progress on (workerId, courseId) so
+    // INNER JOIN courses, LEFT JOIN progress on runId (not courseId — a
+    // worker can have more than one assignment for the same course across
+    // course_runs, so joining on runId is what pairs each assignment with
+    // its OWN run's progress instead of fanning out across every run) so
     // assigned-but-not-started workers are included too.
     const activeAssignments = await step.run("fetch-active-assignments", async () => {
       const rows = await db
@@ -787,7 +790,7 @@ export const sendAssignmentReminders = inngest.createFunction(
         .from(assignments)
         .innerJoin(workers, and(eq(assignments.workerId, workers.id), eq(workers.active, true)))
         .innerJoin(courses, eq(assignments.courseId, courses.id))
-        .leftJoin(progress, and(eq(progress.workerId, assignments.workerId), eq(progress.courseId, assignments.courseId)))
+        .leftJoin(progress, eq(progress.runId, assignments.runId))
         .where(or(isNull(progress.status), ne(progress.status, "completed"))!);
 
       // Inngest step results are serialized to JSON, and raw BigInt values

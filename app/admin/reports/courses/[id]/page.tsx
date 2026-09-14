@@ -90,8 +90,12 @@ export default function CourseSnapshotPage() {
   const [groupByRole, setGroupByRole] = useState(true);
   const [groupByJurisdiction, setGroupByJurisdiction] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  // null = "latest run" (the default); set once the user explicitly picks a
+  // run so switching status/group-by filters doesn't reset the selection.
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
 
-  const { data, isLoading, error } = useCourseSnapshotQuery(courseId);
+  const { data, isLoading, error } = useCourseSnapshotQuery(courseId, selectedRunId);
+  const runs = data?.runs ?? [];
 
   const workers = useMemo(() => data?.workers ?? [], [data]);
   const overall = useMemo(() => statCounts(workers), [workers]);
@@ -110,6 +114,7 @@ export default function CourseSnapshotPage() {
   const handleExport = (fmt: "csv" | "pdf") => {
     const params = new URLSearchParams({ format: fmt });
     if (statusFilter !== "all") params.append("status", statusFilter);
+    if (data?.runId) params.append("runId", data.runId);
     if (fmt === "pdf") {
       if (groupByRole) params.append("groupByRole", "1");
       if (groupByJurisdiction) params.append("groupByJurisdiction", "1");
@@ -183,6 +188,30 @@ export default function CourseSnapshotPage() {
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
+
+          {/* Run selector — only shown once a course has been relaunched;
+              a single-run course has nothing to switch between. */}
+          {runs.length > 1 && (
+            <div className="flex flex-wrap items-center gap-4 bg-card border border-border rounded-2xl px-5 py-3">
+              <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Run</span>
+              <Select
+                value={data.runId}
+                onValueChange={(v) => setSelectedRunId(v === runs[0].id ? null : v)}
+              >
+                <SelectTrigger className="w-full sm:w-64 bg-background border-border rounded-xl h-10">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-card border border-border text-foreground">
+                  {runs.map((r, i) => (
+                    <SelectItem key={r.id} value={r.id}>
+                      Run {runs.length - i} ({format(new Date(r.publishedAt), "MMM yyyy")})
+                      {i === 0 ? " — latest" : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           {/* Summary */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">

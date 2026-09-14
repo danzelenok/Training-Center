@@ -60,10 +60,7 @@ export async function GET() {
       .select({ count: sql<number>`cast(count(*) as int)` })
       .from(assignments)
       .innerJoin(workers, eq(workers.id, assignments.workerId))
-      .leftJoin(
-        progress,
-        sql`${progress.workerId} = ${assignments.workerId} and ${progress.courseId} = ${assignments.courseId}`
-      )
+      .leftJoin(progress, sql`${progress.runId} = ${assignments.runId}`)
       .where(sql`${workers.organizationId} = ${orgId} and ${workers.active} = true and coalesce(${progress.status}, 'not_started') != 'completed'`);
 
     const pendingModules = pendingModulesResult[0]?.count || 0;

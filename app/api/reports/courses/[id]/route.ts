@@ -1,11 +1,11 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { requireOrgId } from "@/lib/org";
-import { getCourseSnapshot, CourseNotPublishedError } from "@/lib/courseSnapshot";
+import { getCourseSnapshot, listCourseRuns, CourseNotPublishedError } from "@/lib/courseSnapshot";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(
-  _req: Request,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -15,10 +15,11 @@ export async function GET(
     }
 
     const { id } = await params;
+    const runId = req.nextUrl.searchParams.get("runId");
 
     let snapshot;
     try {
-      snapshot = await getCourseSnapshot(orgId, id);
+      snapshot = await getCourseSnapshot(orgId, id, runId);
     } catch (err) {
       if (err instanceof CourseNotPublishedError) {
         return NextResponse.json({ error: err.message }, { status: 400 });
@@ -30,7 +31,9 @@ export async function GET(
       return new NextResponse("Course not found", { status: 404 });
     }
 
-    return NextResponse.json(snapshot);
+    const runs = await listCourseRuns(orgId, id);
+
+    return NextResponse.json({ ...snapshot, runs });
   } catch (error: any) {
     console.error("Error building course snapshot:", error);
     return new NextResponse(error.message || "Internal Server Error", { status: 500 });

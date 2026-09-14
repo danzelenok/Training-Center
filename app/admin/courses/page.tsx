@@ -11,6 +11,7 @@ import {
   Sparkles,
   Send,
   RotateCcw,
+  BellRing,
   XCircle,
   Loader2,
   BookOpen,
@@ -65,6 +66,7 @@ import {
   useRevokeCourseMutation,
   useDeleteCourseMutation,
   useCloneCourseMutation,
+  useResendCourseMutation,
 } from "@/hooks/admin/courses/mutations";
 import { PublishCourseDialog } from "@/components/admin/courses/PublishCourseDialog";
 import { BrowseCloneDialog } from "@/components/admin/courses/BrowseCloneDialog";
@@ -81,6 +83,11 @@ interface Course {
   createdAt: string;
   updatedAt: string;
   slideCount: number;
+  // Publish date of the most recent course_runs row — null for a course
+  // that's never been published. Distinct from createdAt (the draft's
+  // creation date, never moves) and from the course's own publishedAt
+  // (frozen at first publish) — see lib/courseRuns.ts.
+  lastRunPublishedAt: string | null;
 }
 
 // AI-generated descriptions embed bare "https://..." source URLs in plain
@@ -143,6 +150,11 @@ export default function CoursesPage() {
   const [jurisdictionFilter, setJurisdictionFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "draft" | "published">("all");
   const [roleFilter, setRoleFilter] = useState<string[]>([]);
+  // "Давно не запускался" — surface courses whose last run.publishedAt is
+  // oldest first, so an admin can find compliance courses overdue for a
+  // relaunch without checking each one by hand. Never-published courses
+  // (lastRunPublishedAt === null) always sort last, in either direction.
+  const [sortBy, setSortBy] = useState<"created" | "lastRunAsc" | "lastRunDesc">("created");
 
   // Default a jurisdiction_admin's view to their own state so the list
   // isn't noisy with every other state's courses on first load — they can
@@ -181,15 +193,24 @@ export default function CoursesPage() {
     return true;
   });
 
-  // Publish/Resend dialog — audience picker for a first publish, re-notify
-  // confirmation for an already-published course (see PublishCourseDialog).
-  // Both used to fire straight at POST /api/courses/:id/publish with no
-  // body, which the API defaults to assignTo: "all" — broadcasting (and, on
-  // first publish, assigning) to literally every worker in the org with no
-  // way to scope it. Routing through the same dialog the course editor uses
-  // fixes that.
+  if (sortBy !== "created") {
+    filteredCourses.sort((a, b) => {
+      if (a.lastRunPublishedAt === null && b.lastRunPublishedAt === null) return 0;
+      if (a.lastRunPublishedAt === null) return 1;
+      if (b.lastRunPublishedAt === null) return -1;
+      const diff = new Date(a.lastRunPublishedAt).getTime() - new Date(b.lastRunPublishedAt).getTime();
+      return sortBy === "lastRunAsc" ? diff : -diff;
+    });
+  }
+
+  // Publish/Relaunch dialog — audience picker for a first publish, and for
+  // "Запустить повторно" on an already-published course (see
+  // PublishCourseDialog). Both fire at POST /api/courses/:id/publish, which
+  // now always creates a new run. Plain "resend" (no new run — just re-DM
+  // the current run's assignees) is a separate action below, not routed
+  // through this dialog at all.
   const [publishDialogCourseId, setPublishDialogCourseId] = useState<string | null>(null);
-  const [publishDialogAlreadyPublished, setPublishDialogAlreadyPublished] = useState(false);
+  const [publishDialogMode, setPublishDialogMode] = useState<"publish" | "relaunch">("publish");
   const [publishDialogRoleIds, setPublishDialogRoleIds] = useState<string[]>([]);
 
   const createCourseMutation = useCreateCourseMutation();
@@ -229,10 +250,10 @@ export default function CoursesPage() {
     }
   };
 
-  // Publish Course — opens the audience-picker dialog rather than firing
-  // straight at the API; see the publishDialogCourseId comment above.
-  const openPublishDialog = (id: string, alreadyPublished: boolean, roleIds: string[]) => {
-    setPublishDialogAlreadyPublished(alreadyPublished);
+  // Publish/Relaunch Course — opens the audience-picker dialog rather than
+  // firing straight at the API; see the publishDialogCourseId comment above.
+  const openPublishDialog = (id: string, mode: "publish" | "relaunch", roleIds: string[]) => {
+    setPublishDialogMode(mode);
     setPublishDialogRoleIds(roleIds);
     setPublishDialogCourseId(id);
   };
@@ -248,6 +269,20 @@ export default function CoursesPage() {
     }
   };
 
+  // Resend Course announcement — no data changes, just re-DMs whoever is
+  // already assigned the course's current run.
+  const resendCourseMutation = useResendCourseMutation();
+  const resendingId = resendCourseMutation.isPending ? resendCourseMutation.variables ?? null : null;
+  const runResendCourse = async (id: string) => {
+    const toastId = toast.loading("Resending announcement...");
+    try {
+      await resendCourseMutation.mutateAsync(id);
+      toast.success("Announcement resent to assigned workers.", { id: toastId });
+    } catch (err: any) {
+      toast.error(err.message || "Failed to resend announcement", { id: toastId });
+    }
+  };
+
   // Delete Course
   const runDeleteCourse = async (id: string) => {
     try {
@@ -258,17 +293,19 @@ export default function CoursesPage() {
     }
   };
 
-  // Shared confirm dialog for the two destructive course actions below —
+  // Shared confirm dialog for course actions below that need one —
   // replaces window.confirm(), which (a) isn't themed and (b) has a known
   // browser quirk where the click right after it closes can get consumed
   // just refocusing the window instead of reaching its target.
-  const [confirmDialog, setConfirmDialog] = useState<{ type: "delete" | "revoke"; id: string } | null>(null);
+  const [confirmDialog, setConfirmDialog] = useState<{ type: "delete" | "revoke" | "resend"; id: string } | null>(null);
   const handleConfirmDialogAction = async () => {
     if (!confirmDialog) return;
     const { type, id } = confirmDialog;
     setConfirmDialog(null);
     if (type === "revoke") {
       await runRevokeCourse(id);
+    } else if (type === "resend") {
+      await runResendCourse(id);
     } else {
       await runDeleteCourse(id);
     }
@@ -427,6 +464,16 @@ export default function CoursesPage() {
               <SelectItem value="published">Published</SelectItem>
             </SelectContent>
           </Select>
+          <Select value={sortBy} onValueChange={(v) => setSortBy(v as "created" | "lastRunAsc" | "lastRunDesc")}>
+            <SelectTrigger className="w-full sm:w-[190px] bg-card border-border rounded-xl h-10">
+              <SelectValue placeholder="Sort" />
+            </SelectTrigger>
+            <SelectContent className="bg-card border border-border text-foreground">
+              <SelectItem value="created">Newest created</SelectItem>
+              <SelectItem value="lastRunAsc">Last run: oldest first</SelectItem>
+              <SelectItem value="lastRunDesc">Last run: newest first</SelectItem>
+            </SelectContent>
+          </Select>
           {jobRoles.length > 0 && (
             <div className="w-full sm:w-[180px]">
               <RoleMultiSelect
@@ -499,6 +546,7 @@ export default function CoursesPage() {
                   <th className="px-6 py-4">Status</th>
                   <th className="px-6 py-4">Slides</th>
                   <th className="px-6 py-4">Created At</th>
+                  <th className="px-6 py-4">Last Run</th>
                   <th className="px-6 py-4 text-right">Actions</th>
                 </tr>
               </thead>
@@ -560,6 +608,16 @@ export default function CoursesPage() {
                         {format(new Date(course.createdAt), "MMM d, yyyy")}
                       </div>
                     </td>
+                    <td className="px-6 py-4 text-muted-foreground text-xs">
+                      {course.lastRunPublishedAt ? (
+                        <div className="flex items-center gap-1.5">
+                          <RotateCcw className="h-3.5 w-3.5 text-muted-foreground" />
+                          {format(new Date(course.lastRunPublishedAt), "MMM d, yyyy")}
+                        </div>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
                     <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-2">
                         {!writable && (
@@ -608,21 +666,39 @@ export default function CoursesPage() {
                             variant="ghost"
                             size="sm"
                             disabled={course.slideCount === 0}
-                            onClick={() => openPublishDialog(course.id, false, course.roleIds)}
+                            onClick={() => openPublishDialog(course.id, "publish", course.roleIds)}
                             className="h-9 px-3 text-xs font-semibold text-[#C8D400] hover:bg-[#C8D400]/10 hover:text-[#B6C200] disabled:opacity-40 disabled:hover:bg-transparent rounded-lg cursor-pointer"
                           >
                             <Send className="h-3.5 w-3.5 mr-1" /> Broadcast
                           </Button>
                         )}
 
-                        {/* Resend Button (Only for published courses) */}
+                        {/* Resend Button — re-DM the current run's assignees, no data changes (Only for published courses) */}
+                        {course.status === "published" && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={revokingId === course.id || resendingId === course.id}
+                            onClick={() => setConfirmDialog({ type: "resend", id: course.id })}
+                            title="Прислать уведомление ещё раз"
+                            className="h-9 w-9 p-0 text-muted-foreground hover:bg-[#C8D400]/10 hover:text-[#C8D400] rounded-lg cursor-pointer"
+                          >
+                            {resendingId === course.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <BellRing className="h-4 w-4" />
+                            )}
+                          </Button>
+                        )}
+
+                        {/* Relaunch Button — opens the audience picker and starts a new run (Only for published courses) */}
                         {course.status === "published" && (
                           <Button
                             variant="ghost"
                             size="sm"
                             disabled={revokingId === course.id}
-                            onClick={() => openPublishDialog(course.id, true, course.roleIds)}
-                            title="Resend to Telegram"
+                            onClick={() => openPublishDialog(course.id, "relaunch", course.roleIds)}
+                            title="Запустить повторно"
                             className="h-9 w-9 p-0 text-muted-foreground hover:bg-[#C8D400]/10 hover:text-[#C8D400] rounded-lg cursor-pointer"
                           >
                             <RotateCcw className="h-4 w-4" />
@@ -678,7 +754,7 @@ export default function CoursesPage() {
         open={publishDialogCourseId !== null}
         onOpenChange={(open) => !open && setPublishDialogCourseId(null)}
         courseId={publishDialogCourseId}
-        alreadyPublished={publishDialogAlreadyPublished}
+        mode={publishDialogMode}
         initialRoleIds={publishDialogRoleIds}
       />
 
@@ -694,18 +770,27 @@ export default function CoursesPage() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {confirmDialog?.type === "delete" ? "Delete this course?" : "Revoke this course?"}
+              {confirmDialog?.type === "delete"
+                ? "Delete this course?"
+                : confirmDialog?.type === "resend"
+                  ? "Resend the announcement?"
+                  : "Revoke this course?"}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {confirmDialog?.type === "delete"
                 ? "This deletes the course and all its slides. This action is permanent!"
-                : "The Telegram message will be deleted and the course will return to draft."}
+                : confirmDialog?.type === "resend"
+                  ? "Re-sends the Telegram “Start Learning” DM to everyone currently assigned this course's latest run. No new run or assignments are created."
+                  : "The Telegram message will be deleted and the course will return to draft."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={handleConfirmDialogAction}>
-              {confirmDialog?.type === "delete" ? "Delete" : "Revoke"}
+            <AlertDialogAction
+              variant={confirmDialog?.type === "resend" ? "default" : "destructive"}
+              onClick={handleConfirmDialogAction}
+            >
+              {confirmDialog?.type === "delete" ? "Delete" : confirmDialog?.type === "resend" ? "Resend" : "Revoke"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

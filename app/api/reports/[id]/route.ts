@@ -55,11 +55,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       return NextResponse.json({ error: "You can only manage workers in your jurisdiction." }, { status: 403 });
     }
 
-    // Check if a progress row already exists for this worker+course (via a different path)
+    // Check if a progress row already exists for this worker+run (via a different path)
     const [existingForPair] = await db
       .select()
       .from(progress)
-      .where(and(eq(progress.workerId, assignment.workerId), eq(progress.courseId, assignment.courseId)))
+      .where(and(eq(progress.workerId, assignment.workerId), eq(progress.runId, assignment.runId)))
       .limit(1);
 
     if (existingForPair) {
@@ -73,7 +73,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     const [inserted] = await db
       .insert(progress)
-      .values({ workerId: assignment.workerId, courseId: assignment.courseId, currentSlideIndex: 0, status: "completed", completedAt: new Date() })
+      .values({ workerId: assignment.workerId, courseId: assignment.courseId, runId: assignment.runId, currentSlideIndex: 0, status: "completed", completedAt: new Date() })
       .returning();
     return NextResponse.json(inserted);
   } catch (error: any) {

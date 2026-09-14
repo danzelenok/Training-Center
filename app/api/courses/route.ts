@@ -1,8 +1,8 @@
 import { db } from "@/db";
-import { courses, slides, jurisdictions, organizationJurisdictions, courseRoles, themePalettes, themePatternVariants } from "@/db/schema";
+import { courses, slides, jurisdictions, organizationJurisdictions, courseRoles, courseRuns, themePalettes, themePatternVariants } from "@/db/schema";
 import { requireOrgId } from "@/lib/org";
 import { roleOrUnauthorized } from "@/lib/adminRoles";
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, max, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 // 1. GET /api/courses - List all courses with slide count
@@ -46,12 +46,25 @@ export async function GET() {
       roleIdsByCourse.set(link.courseId, list);
     }
 
+    // Last-run date per course, for the "hasn't been relaunched in a while"
+    // sort/filter on the list page — courses.createdAt is the draft's
+    // creation date and doesn't move on (re)publish, so it can't serve this
+    // (see lib/courseRuns.ts / db/schema.ts course_runs for why).
+    const lastRunRows = await db
+      .select({ courseId: courseRuns.courseId, lastRunPublishedAt: max(courseRuns.publishedAt) })
+      .from(courseRuns)
+      .innerJoin(courses, eq(courses.id, courseRuns.courseId))
+      .where(eq(courses.organizationId, orgId))
+      .groupBy(courseRuns.courseId);
+    const lastRunPublishedAtByCourse = new Map(lastRunRows.map((r) => [r.courseId, r.lastRunPublishedAt]));
+
     // Convert bigints to strings/numbers to avoid JSON serialization errors
     const serializedResults = results.map(row => ({
       ...row,
       telegramMessageId: row.telegramMessageId ? row.telegramMessageId.toString() : null,
       telegramGroupId: row.telegramGroupId ? row.telegramGroupId.toString() : null,
       roleIds: roleIdsByCourse.get(row.id) ?? [],
+      lastRunPublishedAt: lastRunPublishedAtByCourse.get(row.id) ?? null,
     }));
 
     return NextResponse.json(serializedResults);

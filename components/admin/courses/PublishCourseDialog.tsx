@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, Send } from "lucide-react";
+import { Loader2, Send, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -23,12 +23,16 @@ interface PublishCourseDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   courseId: string | null;
-  // Draft courses get the full audience picker (this is the one and only
-  // moment assignments are created — see app/api/courses/[id]/publish/route.ts,
-  // the "isFirstPublish" branch). Already-published courses can only re-notify
-  // whoever is already assigned; the endpoint silently ignores assignTo/workerIds
-  // once isFirstPublish is false, so the picker would just be inert UI.
-  alreadyPublished: boolean;
+  // "publish": first Go Live for a draft course — creates run #1.
+  // "relaunch": "Запустить повторно" on an already-published course —
+  // creates a new course_runs row and a fresh set of assignments/due dates
+  // for whoever the audience picker below resolves to this time, without
+  // touching older runs' assignments/progress (see
+  // app/api/courses/[id]/publish/route.ts). A plain re-notification of the
+  // CURRENT run with no new run is a different, separate action — see
+  // the "Resend" button next to this one, backed by
+  // app/api/courses/[id]/resend/route.ts.
+  mode: "publish" | "relaunch";
   // When the caller needs the published course's fields reflected somewhere
   // other than the courses list — e.g. the course editor's own local state,
   // which must NOT go through a ["course", id] invalidate (that would reset
@@ -37,17 +41,19 @@ interface PublishCourseDialogProps {
   // replaces the default invalidate; the caller owns refreshing whatever it
   // needs refreshed.
   onPublishSuccess?: (result: PublishCourseResult) => void;
-  // Roles already linked to this course (from a prior pass through this same
-  // dialog, or a leftover pick from the old editor-based role picker) — used
-  // to seed the roles dropdown instead of always starting from "All roles".
+  // Roles currently linked to this course (course_roles — the effective
+  // scope from the last run) — used to seed the roles dropdown for a
+  // relaunch instead of always starting from "All roles", per the spec's
+  // "prefilled with the last run's roles".
   initialRoleIds?: string[];
 }
 
-export function PublishCourseDialog({ open, onOpenChange, courseId, alreadyPublished, onPublishSuccess, initialRoleIds }: PublishCourseDialogProps) {
+export function PublishCourseDialog({ open, onOpenChange, courseId, mode, onPublishSuccess, initialRoleIds }: PublishCourseDialogProps) {
   const queryClient = useQueryClient();
   const workersQuery = useWorkersQuery();
   const jobRolesQuery = useJobRolesQuery();
   const publishMutation = usePublishCourseMutation(courseId ?? "");
+  const isRelaunch = mode === "relaunch";
 
   const [assignTo, setAssignTo] = useState<"all" | "specific">("all");
   const [workerIds, setWorkerIds] = useState<string[]>([]);
@@ -79,8 +85,8 @@ export function PublishCourseDialog({ open, onOpenChange, courseId, alreadyPubli
 
   const handleConfirm = async () => {
     if (!courseId) return;
-    const toastMsg = alreadyPublished
-      ? (notifyTelegram ? "Resending & notifying assigned workers…" : "Resending…")
+    const toastMsg = isRelaunch
+      ? (notifyTelegram ? "Starting a new run & notifying assigned workers…" : "Starting a new run…")
       : (notifyTelegram ? "Publishing & sending direct messages to workers…" : "Publishing course…");
     const toastId = toast.loading(toastMsg);
     try {
@@ -95,8 +101,8 @@ export function PublishCourseDialog({ open, onOpenChange, courseId, alreadyPubli
       } else {
         queryClient.invalidateQueries({ queryKey: ["courses"] });
       }
-      const successMsg = alreadyPublished
-        ? "Announcement resent to assigned workers."
+      const successMsg = isRelaunch
+        ? "New run published! Assigned workers notified."
         : notifyTelegram
           ? "Course is LIVE! Direct messages sent to assigned workers."
           : "Course published without announcements.";
@@ -112,84 +118,82 @@ export function PublishCourseDialog({ open, onOpenChange, courseId, alreadyPubli
       <DialogContent className="sm:max-w-[460px]">
         <DialogHeader>
           <DialogTitle className="text-lg font-bold text-[#1B2A6B] dark:text-[#C8D400]">
-            {alreadyPublished ? "Resend Announcement" : "Publish Course"}
+            {isRelaunch ? "Запустить повторно" : "Publish Course"}
           </DialogTitle>
           <DialogDescription className="text-muted-foreground text-xs mt-1">
-            {alreadyPublished
-              ? "This course is already published. Choose whether to re-send the Telegram announcement to everyone currently assigned."
+            {isRelaunch
+              ? "Starts a new run of this course — past completions stay on record separately. Review who should be assigned this run, then confirm."
               : "Choose who can see this course and whether to post an announcement."}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-5 py-3">
-          {!alreadyPublished && (
-            <div className="space-y-2">
-              <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
-                Assign to
-              </p>
-              <RadioGroup
-                value={assignTo}
-                onValueChange={(v) => setAssignTo(v as "all" | "specific")}
-                className="space-y-2"
-              >
-                <label className="flex items-start gap-3 rounded-xl border border-border p-3 cursor-pointer hover:bg-muted/30 transition-colors">
-                  <RadioGroupItem value="all" className="mt-0.5" />
-                  <div className="w-full">
-                    <p className="text-xs font-bold text-foreground">All current workers in this jurisdiction</p>
-                    <p className="text-[10px] text-muted-foreground mt-0.5">
-                      Every worker in this course&apos;s jurisdiction gets access immediately (optionally restrict to specific roles below). Future workers who match will also be auto-assigned.
-                    </p>
-                    {assignTo === "all" && (
-                      <div className="mt-3">
-                        <RoleMultiSelect
-                          roles={jobRolesList}
-                          selectedIds={roleIds}
-                          onToggle={(roleId, checked) =>
-                            setRoleIds((prev) =>
-                              checked ? [...prev, roleId] : prev.filter((x) => x !== roleId)
-                            )
-                          }
-                          placeholder="All roles"
-                        />
-                      </div>
-                    )}
-                  </div>
-                </label>
-                <label className="flex items-start gap-3 rounded-xl border border-border p-3 cursor-pointer hover:bg-muted/30 transition-colors">
-                  <RadioGroupItem value="specific" className="mt-0.5" />
-                  <div className="w-full">
-                    <p className="text-xs font-bold text-foreground">Specific workers</p>
-                    <p className="text-[10px] text-muted-foreground mt-0.5">
-                      Only the workers you select below will see this course.
-                    </p>
-                    {assignTo === "specific" && (
-                      <div className="mt-3 max-h-40 overflow-y-auto space-y-1 pr-1">
-                        {pickersLoading ? (
-                          <p className="text-[10px] text-muted-foreground">Loading workers…</p>
-                        ) : workersList.length === 0 ? (
-                          <p className="text-[10px] text-muted-foreground">No registered workers yet.</p>
-                        ) : (
-                          workersList.map((w) => (
-                            <label key={w.id} className="flex items-center gap-2 cursor-pointer">
-                              <Checkbox
-                                checked={workerIds.includes(w.id)}
-                                onCheckedChange={(checked) =>
-                                  setWorkerIds((prev) =>
-                                    checked ? [...prev, w.id] : prev.filter((x) => x !== w.id)
-                                  )
-                                }
-                              />
-                              <span className="text-xs text-foreground">{w.label}</span>
-                            </label>
-                          ))
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </label>
-              </RadioGroup>
-            </div>
-          )}
+          <div className="space-y-2">
+            <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+              Assign to
+            </p>
+            <RadioGroup
+              value={assignTo}
+              onValueChange={(v) => setAssignTo(v as "all" | "specific")}
+              className="space-y-2"
+            >
+              <label className="flex items-start gap-3 rounded-xl border border-border p-3 cursor-pointer hover:bg-muted/30 transition-colors">
+                <RadioGroupItem value="all" className="mt-0.5" />
+                <div className="w-full">
+                  <p className="text-xs font-bold text-foreground">All current workers in this jurisdiction</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    Every worker in this course&apos;s jurisdiction gets access immediately (optionally restrict to specific roles below). Future workers who match will also be auto-assigned.
+                  </p>
+                  {assignTo === "all" && (
+                    <div className="mt-3">
+                      <RoleMultiSelect
+                        roles={jobRolesList}
+                        selectedIds={roleIds}
+                        onToggle={(roleId, checked) =>
+                          setRoleIds((prev) =>
+                            checked ? [...prev, roleId] : prev.filter((x) => x !== roleId)
+                          )
+                        }
+                        placeholder="All roles"
+                      />
+                    </div>
+                  )}
+                </div>
+              </label>
+              <label className="flex items-start gap-3 rounded-xl border border-border p-3 cursor-pointer hover:bg-muted/30 transition-colors">
+                <RadioGroupItem value="specific" className="mt-0.5" />
+                <div className="w-full">
+                  <p className="text-xs font-bold text-foreground">Specific workers</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    Only the workers you select below will see this course.
+                  </p>
+                  {assignTo === "specific" && (
+                    <div className="mt-3 max-h-40 overflow-y-auto space-y-1 pr-1">
+                      {pickersLoading ? (
+                        <p className="text-[10px] text-muted-foreground">Loading workers…</p>
+                      ) : workersList.length === 0 ? (
+                        <p className="text-[10px] text-muted-foreground">No registered workers yet.</p>
+                      ) : (
+                        workersList.map((w) => (
+                          <label key={w.id} className="flex items-center gap-2 cursor-pointer">
+                            <Checkbox
+                              checked={workerIds.includes(w.id)}
+                              onCheckedChange={(checked) =>
+                                setWorkerIds((prev) =>
+                                  checked ? [...prev, w.id] : prev.filter((x) => x !== w.id)
+                                )
+                              }
+                            />
+                            <span className="text-xs text-foreground">{w.label}</span>
+                          </label>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+              </label>
+            </RadioGroup>
+          </div>
 
           <div className="flex items-center justify-between rounded-xl border border-border bg-muted/30 px-4 py-3">
             <div>
@@ -226,18 +230,17 @@ export function PublishCourseDialog({ open, onOpenChange, courseId, alreadyPubli
           </Button>
           <Button
             onClick={handleConfirm}
-            disabled={
-              publishMutation.isPending ||
-              (!alreadyPublished && assignTo === "specific" && workerIds.length === 0)
-            }
+            disabled={publishMutation.isPending || (assignTo === "specific" && workerIds.length === 0)}
             className="bg-[#C8D400] hover:bg-[#B6C200] text-[#1B2A6B] font-extrabold border-0 text-xs px-4"
           >
             {publishMutation.isPending ? (
               <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+            ) : isRelaunch ? (
+              <RotateCcw className="h-4 w-4 mr-1.5" />
             ) : (
               <Send className="h-4 w-4 mr-1.5" />
             )}
-            {alreadyPublished ? "Resend" : "Publish"}
+            {isRelaunch ? "Start New Run" : "Publish"}
           </Button>
         </DialogFooter>
       </DialogContent>

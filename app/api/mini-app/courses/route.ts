@@ -1,9 +1,10 @@
 import { db } from "@/db";
 import { courses, progress, assignments, courseRoles } from "@/db/schema";
-import { eq, and, desc, sql, inArray } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { withTelegramAuth } from "@/lib/telegram";
 import { computeAssignmentDueDate } from "@/lib/dates";
+import { getLatestRunId } from "@/lib/courseRuns";
 
 // A course only counts as "this week's training" for a brand-new worker if it
 // was published within a week of the worker's hire date in either direction.
@@ -55,44 +56,76 @@ export const GET = withTelegramAuth(async (_req, { worker }) => {
   if (eligibleCourses.length > 0) {
     const assignedAt = new Date();
     const dueDate = computeAssignmentDueDate(assignedAt);
-    await db
-      .insert(assignments)
-      .values(eligibleCourses.map((c) => ({ workerId: worker.id, courseId: c.id, assignedAt, dueDate })))
-      .onConflictDoNothing();
+    const runIdByCourseId = new Map(
+      (await Promise.all(eligibleCourses.map(async (c) => [c.id, await getLatestRunId(c.id)] as const)))
+        .filter((entry): entry is [string, string] => entry[1] !== null)
+    );
+    const toInsert = eligibleCourses
+      .filter((c) => runIdByCourseId.has(c.id))
+      .map((c) => ({ workerId: worker.id, courseId: c.id, runId: runIdByCourseId.get(c.id)!, assignedAt, dueDate }));
+    if (toInsert.length > 0) {
+      await db.insert(assignments).values(toInsert).onConflictDoNothing({ target: [assignments.workerId, assignments.runId] });
+    }
   }
 
-  const rows = await db
+  // A worker can have more than one assignment for the same course across
+  // runs (a retaken compliance course) — for each course, only the most
+  // recent assignment is what the worker currently acts on; older runs'
+  // history belongs to the admin report, not this list.
+  const workerAssignments = await db
+    .select({ courseId: assignments.courseId, runId: assignments.runId, assignedAt: assignments.assignedAt })
+    .from(assignments)
+    .where(eq(assignments.workerId, worker.id));
+
+  const latestByCourseId = new Map<string, { runId: string; assignedAt: Date }>();
+  for (const a of workerAssignments) {
+    const existing = latestByCourseId.get(a.courseId);
+    if (!existing || a.assignedAt > existing.assignedAt) {
+      latestByCourseId.set(a.courseId, { runId: a.runId, assignedAt: a.assignedAt });
+    }
+  }
+
+  if (latestByCourseId.size === 0) {
+    return NextResponse.json([]);
+  }
+
+  const courseRows = await db
     .select({
       id: courses.id,
       title: courses.title,
       description: courses.description,
-      progressStatus: progress.status,
-      currentSlideIndex: progress.currentSlideIndex,
+      publishedAt: courses.publishedAt,
+      createdAt: courses.createdAt,
     })
-    .from(assignments)
-    .innerJoin(
-      courses,
-      and(
-        eq(courses.id, assignments.courseId),
-        eq(courses.status, "published"),
-        eq(courses.organizationId, worker.organizationId),
-        eq(courses.ownerJurisdictionId, worker.jurisdictionId)
-      )
-    )
-    .leftJoin(
-      progress,
-      and(eq(progress.courseId, assignments.courseId), eq(progress.workerId, worker.id))
-    )
-    .where(eq(assignments.workerId, worker.id))
-    .orderBy(desc(sql`coalesce(${courses.publishedAt}, ${courses.createdAt})`));
+    .from(courses)
+    .where(and(
+      inArray(courses.id, [...latestByCourseId.keys()]),
+      eq(courses.status, "published"),
+      eq(courses.organizationId, worker.organizationId),
+      eq(courses.ownerJurisdictionId, worker.jurisdictionId)
+    ));
 
-  return NextResponse.json(
-    rows.map((r) => ({
-      id: r.id,
-      title: r.title,
-      description: r.description,
-      progressStatus: r.progressStatus ?? "not_started",
-      currentSlideIndex: r.currentSlideIndex ?? 0,
-    }))
-  );
+  const progressRows = await db
+    .select({ runId: progress.runId, status: progress.status, currentSlideIndex: progress.currentSlideIndex })
+    .from(progress)
+    .where(inArray(progress.runId, [...latestByCourseId.values()].map((v) => v.runId)));
+  const progressByRunId = new Map(progressRows.map((p) => [p.runId, p]));
+
+  const result = courseRows
+    .map((c) => {
+      const latest = latestByCourseId.get(c.id)!;
+      const p = progressByRunId.get(latest.runId);
+      return {
+        id: c.id,
+        title: c.title,
+        description: c.description,
+        progressStatus: p?.status ?? "not_started",
+        currentSlideIndex: p?.currentSlideIndex ?? 0,
+        sortDate: c.publishedAt ?? c.createdAt,
+      };
+    })
+    .sort((a, b) => new Date(b.sortDate).getTime() - new Date(a.sortDate).getTime())
+    .map(({ sortDate, ...rest }) => rest);
+
+  return NextResponse.json(result);
 });

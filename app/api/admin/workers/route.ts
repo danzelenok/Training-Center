@@ -3,6 +3,7 @@ import { workers, invites, courses, assignments, jurisdictions, organizationJuri
 import { requireOrgId } from "@/lib/org";
 import { roleOrUnauthorized } from "@/lib/adminRoles";
 import { computeAssignmentDueDate } from "@/lib/dates";
+import { getLatestRunId } from "@/lib/courseRuns";
 import { auth } from "@clerk/nextjs/server";
 import { and, eq, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
@@ -202,17 +203,25 @@ export async function POST(req: Request) {
     if (eligibleCourses.length > 0) {
       const assignedAt = new Date();
       const dueDate = computeAssignmentDueDate(assignedAt);
-      await db
-        .insert(assignments)
-        .values(
-          eligibleCourses.map((c) => ({
-            workerId: worker.id,
-            courseId: c.id,
-            assignedAt,
-            dueDate,
-          }))
-        )
-        .onConflictDoNothing({ target: [assignments.workerId, assignments.courseId] });
+      const runIdByCourseId = new Map(
+        (await Promise.all(eligibleCourses.map(async (c) => [c.id, await getLatestRunId(c.id)] as const)))
+          .filter((entry): entry is [string, string] => entry[1] !== null)
+      );
+      const toInsert = eligibleCourses
+        .filter((c) => runIdByCourseId.has(c.id))
+        .map((c) => ({
+          workerId: worker.id,
+          courseId: c.id,
+          runId: runIdByCourseId.get(c.id)!,
+          assignedAt,
+          dueDate,
+        }));
+      if (toInsert.length > 0) {
+        await db
+          .insert(assignments)
+          .values(toInsert)
+          .onConflictDoNothing({ target: [assignments.workerId, assignments.runId] });
+      }
     }
 
     // 3. Create initial invite

@@ -778,7 +778,7 @@ function CourseEditorContent() {
         open={publishDialogOpen}
         onOpenChange={setPublishDialogOpen}
         courseId={id}
-        alreadyPublished={course?.status === "published"}
+        mode={course?.status === "published" ? "relaunch" : "publish"}
         onPublishSuccess={handlePublishSuccess}
         initialRoleIds={course?.roleIds ?? []}
       />

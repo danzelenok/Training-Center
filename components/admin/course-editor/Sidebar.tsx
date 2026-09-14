@@ -16,6 +16,7 @@ import {
   Sparkles,
   Send,
   RotateCcw,
+  BellRing,
   MapPin,
   Lock,
   Copy,
@@ -90,6 +91,8 @@ export default function Sidebar() {
     jurisdictionsList,
     updateCourseJurisdiction,
     setAdaptJurisdictionDialogOpen,
+    handleResend,
+    resending,
   } = useCourseEditor();
   const { data: me } = useMeQuery();
 
@@ -226,23 +229,36 @@ export default function Sidebar() {
           </div>
         )}
 
-        <Button
-          onClick={handlePublish}
-          disabled={!hasSlides || saveStatus === "saving"}
-          className="w-full bg-[#C8D400] hover:bg-[#B6C200] text-[#1B2A6B] font-extrabold border-0 shadow-lg shadow-[#C8D400]/10 cursor-pointer h-10 transition-transform duration-200 hover:scale-[1.02] gap-1.5 flex items-center justify-center text-xs rounded-xl"
-        >
-          {status === "published" ? (
-            <>
-              <RotateCcw className="h-4 w-4 shrink-0" />
-              Resend Announcement
-            </>
-          ) : (
-            <>
-              <Send className="h-4 w-4 shrink-0" />
-              Go Live on TG
-            </>
+        <div className="flex gap-2">
+          <Button
+            onClick={handlePublish}
+            disabled={!hasSlides || saveStatus === "saving"}
+            className="flex-1 bg-[#C8D400] hover:bg-[#B6C200] text-[#1B2A6B] font-extrabold border-0 shadow-lg shadow-[#C8D400]/10 cursor-pointer h-10 transition-transform duration-200 hover:scale-[1.02] gap-1.5 flex items-center justify-center text-xs rounded-xl"
+          >
+            {status === "published" ? (
+              <>
+                <RotateCcw className="h-4 w-4 shrink-0" />
+                Запустить повторно
+              </>
+            ) : (
+              <>
+                <Send className="h-4 w-4 shrink-0" />
+                Go Live on TG
+              </>
+            )}
+          </Button>
+          {status === "published" && (
+            <Button
+              onClick={handleResend}
+              disabled={resending}
+              variant="outline"
+              title="Прислать уведомление ещё раз"
+              className="h-10 w-10 shrink-0 p-0 bg-background border-border text-muted-foreground hover:text-[#C8D400] hover:border-[#C8D400]/40 cursor-pointer rounded-xl"
+            >
+              {resending ? <Loader2 className="h-4 w-4 animate-spin" /> : <BellRing className="h-4 w-4" />}
+            </Button>
           )}
-        </Button>
+        </div>
       </div>
     </div>
   );

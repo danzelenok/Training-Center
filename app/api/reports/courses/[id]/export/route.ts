@@ -76,10 +76,11 @@ export async function GET(
     const { id } = await params;
     const format = req.nextUrl.searchParams.get("format") === "pdf" ? "pdf" : "csv";
     const statusFilter = parseCourseSnapshotStatusFilter(req.nextUrl.searchParams.get("status"));
+    const runId = req.nextUrl.searchParams.get("runId");
 
     let snapshot;
     try {
-      snapshot = await getCourseSnapshot(orgId, id);
+      snapshot = await getCourseSnapshot(orgId, id, runId);
     } catch (err) {
       if (err instanceof CourseNotPublishedError) {
         return NextResponse.json({ error: err.message }, { status: 400 });

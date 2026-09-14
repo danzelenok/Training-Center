@@ -89,6 +89,23 @@ export function useRevokeCourseMutation() {
   });
 }
 
+// "Прислать уведомление ещё раз" — re-sends the Telegram DM to whoever is
+// assigned the course's current run. Makes no data changes (no new run, no
+// new assignments/due dates) — see app/api/courses/[id]/resend/route.ts.
+// retry:0 for the same reason as publish: a retried resend should never
+// silently double-send.
+export function useResendCourseMutation() {
+  return useMutation({
+    retry: 0,
+    mutationFn: async (courseId: string) => {
+      const res = await fetch(`/api/courses/${courseId}/resend`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Failed to resend announcement");
+      return data;
+    },
+  });
+}
+
 export function useDeleteCourseMutation() {
   const queryClient = useQueryClient();
   return useMutation({
