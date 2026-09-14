@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { courses, slides, jobRoles, courseRoles, jurisdictions, organizationJurisdictions } from "@/db/schema";
+import { courses, slides, courseRoles, jurisdictions, organizationJurisdictions } from "@/db/schema";
 import { requireOrgId } from "@/lib/org";
 import { roleOrUnauthorized, canWriteCourse } from "@/lib/adminRoles";
 import { resolveCourseTheme } from "@/lib/theme-server";
@@ -86,17 +86,7 @@ export async function PATCH(
     }
 
     const body = await req.json();
-    const { title, description, themeType, themeValue, themePaletteId, themeVariantId, fontFamilyOverride, textColorOverride, autoAssignNewWorkers, slides: updatedSlides, generationStatus, roleIds: requestedRoleIds, jurisdictionId: requestedJurisdictionId } = body;
-
-    // Write-time invariant: only ever link roles that belong to this organization.
-    const roleIds: string[] | null = Array.isArray(requestedRoleIds)
-      ? (
-          await db
-            .select({ id: jobRoles.id })
-            .from(jobRoles)
-            .where(and(inArray(jobRoles.id, requestedRoleIds), eq(jobRoles.organizationId, orgId)))
-        ).map((r) => r.id)
-      : null;
+    const { title, description, themeType, themeValue, themePaletteId, themeVariantId, fontFamilyOverride, textColorOverride, autoAssignNewWorkers, slides: updatedSlides, generationStatus, jurisdictionId: requestedJurisdictionId } = body;
 
     // Reassigning ownerJurisdictionId changes who can edit this course, so
     // only org_admin can do it — same invariant as course creation
@@ -146,32 +136,6 @@ export async function PATCH(
 
     if (!updatedCourse) {
       return new NextResponse("Course not found or could not be updated", { status: 404 });
-    }
-
-    // 1.5. Reconcile course roles (if provided) — same add/remove-diff pattern
-    // as worker_teams reconciliation in app/api/workers/[id]/route.ts.
-    if (roleIds !== null) {
-      const existingRoles = await db
-        .select({ roleId: courseRoles.roleId })
-        .from(courseRoles)
-        .where(eq(courseRoles.courseId, id));
-      const existingRoleIds = new Set(existingRoles.map((r) => r.roleId));
-
-      const toAdd = roleIds.filter((rid) => !existingRoleIds.has(rid));
-      const toRemove = [...existingRoleIds].filter((rid) => !roleIds.includes(rid));
-
-      if (toRemove.length > 0) {
-        await db
-          .delete(courseRoles)
-          .where(and(eq(courseRoles.courseId, id), inArray(courseRoles.roleId, toRemove)));
-      }
-
-      if (toAdd.length > 0) {
-        await db
-          .insert(courseRoles)
-          .values(toAdd.map((roleId) => ({ courseId: id, roleId })))
-          .onConflictDoNothing({ target: [courseRoles.courseId, courseRoles.roleId] });
-      }
     }
 
     // 2. Reconcile Slides (if provided)

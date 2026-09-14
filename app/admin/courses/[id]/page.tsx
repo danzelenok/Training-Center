@@ -780,6 +780,7 @@ function CourseEditorContent() {
         courseId={id}
         alreadyPublished={course?.status === "published"}
         onPublishSuccess={handlePublishSuccess}
+        initialRoleIds={course?.roleIds ?? []}
       />
 
       {/* Global Radix Dialog for AI Slide Generation */}

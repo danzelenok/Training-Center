@@ -37,15 +37,19 @@ interface PublishCourseDialogProps {
   // replaces the default invalidate; the caller owns refreshing whatever it
   // needs refreshed.
   onPublishSuccess?: (result: PublishCourseResult) => void;
+  // Roles already linked to this course (from a prior pass through this same
+  // dialog, or a leftover pick from the old editor-based role picker) — used
+  // to seed the roles dropdown instead of always starting from "All roles".
+  initialRoleIds?: string[];
 }
 
-export function PublishCourseDialog({ open, onOpenChange, courseId, alreadyPublished, onPublishSuccess }: PublishCourseDialogProps) {
+export function PublishCourseDialog({ open, onOpenChange, courseId, alreadyPublished, onPublishSuccess, initialRoleIds }: PublishCourseDialogProps) {
   const queryClient = useQueryClient();
   const workersQuery = useWorkersQuery();
   const jobRolesQuery = useJobRolesQuery();
   const publishMutation = usePublishCourseMutation(courseId ?? "");
 
-  const [assignTo, setAssignTo] = useState<"all" | "roles" | "specific">("all");
+  const [assignTo, setAssignTo] = useState<"all" | "specific">("all");
   const [workerIds, setWorkerIds] = useState<string[]>([]);
   const [roleIds, setRoleIds] = useState<string[]>([]);
   const [notifyTelegram, setNotifyTelegram] = useState(true);
@@ -59,7 +63,7 @@ export function PublishCourseDialog({ open, onOpenChange, courseId, alreadyPubli
     if (open) {
       setAssignTo("all");
       setWorkerIds([]);
-      setRoleIds([]);
+      setRoleIds(initialRoleIds ?? []);
       setNotifyTelegram(true);
     }
   }
@@ -83,7 +87,7 @@ export function PublishCourseDialog({ open, onOpenChange, courseId, alreadyPubli
       const data = await publishMutation.mutateAsync({
         assignTo,
         workerIds: assignTo === "specific" ? workerIds : [],
-        roleIds: assignTo === "roles" ? roleIds : [],
+        roleIds: assignTo === "all" ? roleIds : [],
         notifyWorkers: notifyTelegram,
       });
       if (onPublishSuccess) {
@@ -125,26 +129,17 @@ export function PublishCourseDialog({ open, onOpenChange, courseId, alreadyPubli
               </p>
               <RadioGroup
                 value={assignTo}
-                onValueChange={(v) => setAssignTo(v as "all" | "roles" | "specific")}
+                onValueChange={(v) => setAssignTo(v as "all" | "specific")}
                 className="space-y-2"
               >
                 <label className="flex items-start gap-3 rounded-xl border border-border p-3 cursor-pointer hover:bg-muted/30 transition-colors">
                   <RadioGroupItem value="all" className="mt-0.5" />
-                  <div>
+                  <div className="w-full">
                     <p className="text-xs font-bold text-foreground">All current workers in this jurisdiction</p>
                     <p className="text-[10px] text-muted-foreground mt-0.5">
-                      Every worker in this course&apos;s jurisdiction gets access immediately. Future workers here will also be auto-assigned.
+                      Every worker in this course&apos;s jurisdiction gets access immediately (optionally restrict to specific roles below). Future workers who match will also be auto-assigned.
                     </p>
-                  </div>
-                </label>
-                <label className="flex items-start gap-3 rounded-xl border border-border p-3 cursor-pointer hover:bg-muted/30 transition-colors">
-                  <RadioGroupItem value="roles" className="mt-0.5" />
-                  <div className="w-full">
-                    <p className="text-xs font-bold text-foreground">Specific roles</p>
-                    <p className="text-[10px] text-muted-foreground mt-0.5">
-                      Workers with the selected role(s) in this course&apos;s jurisdiction get access immediately. Workers hired into these roles later are not added automatically — re-publish to catch them.
-                    </p>
-                    {assignTo === "roles" && (
+                    {assignTo === "all" && (
                       <div className="mt-3">
                         <RoleMultiSelect
                           roles={jobRolesList}
@@ -154,7 +149,7 @@ export function PublishCourseDialog({ open, onOpenChange, courseId, alreadyPubli
                               checked ? [...prev, roleId] : prev.filter((x) => x !== roleId)
                             )
                           }
-                          placeholder="Select roles"
+                          placeholder="All roles"
                         />
                       </div>
                     )}
@@ -233,8 +228,7 @@ export function PublishCourseDialog({ open, onOpenChange, courseId, alreadyPubli
             onClick={handleConfirm}
             disabled={
               publishMutation.isPending ||
-              (!alreadyPublished && assignTo === "specific" && workerIds.length === 0) ||
-              (!alreadyPublished && assignTo === "roles" && roleIds.length === 0)
+              (!alreadyPublished && assignTo === "specific" && workerIds.length === 0)
             }
             className="bg-[#C8D400] hover:bg-[#B6C200] text-[#1B2A6B] font-extrabold border-0 text-xs px-4"
           >

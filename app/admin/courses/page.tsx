@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -144,6 +144,20 @@ export default function CoursesPage() {
   const [statusFilter, setStatusFilter] = useState<"all" | "draft" | "published">("all");
   const [roleFilter, setRoleFilter] = useState<string[]>([]);
 
+  // Default a jurisdiction_admin's view to their own state so the list
+  // isn't noisy with every other state's courses on first load — they can
+  // still switch to "All states" since the role already permits seeing
+  // everything, this only changes the initial filter value. Applied once,
+  // so it doesn't fight a manual switch back to "All states" later.
+  const appliedDefaultJurisdictionFilter = useRef(false);
+  useEffect(() => {
+    if (appliedDefaultJurisdictionFilter.current || !me) return;
+    appliedDefaultJurisdictionFilter.current = true;
+    if (me.role === "jurisdiction_admin" && me.jurisdiction) {
+      setJurisdictionFilter(me.jurisdiction.id);
+    }
+  }, [me]);
+
   const hasActiveFilters =
     searchQuery.trim() !== "" || jurisdictionFilter !== "all" || statusFilter !== "all" || roleFilter.length > 0;
   const clearFilters = () => {
@@ -159,7 +173,9 @@ export default function CoursesPage() {
   const filteredCourses = courses.filter((course) => {
     if (jurisdictionFilter !== "all" && course.ownerJurisdictionId !== jurisdictionFilter) return false;
     if (statusFilter !== "all" && course.status !== statusFilter) return false;
-    if (roleFilter.length > 0 && !course.roleIds.some((id) => roleFilter.includes(id))) return false;
+    // A course with no roleIds is unrestricted (every role) — it should
+    // match any role filter, not be hidden by one.
+    if (roleFilter.length > 0 && course.roleIds.length > 0 && !course.roleIds.some((id) => roleFilter.includes(id))) return false;
     const q = searchQuery.trim().toLowerCase();
     if (q && !course.title.toLowerCase().includes(q) && !course.description.toLowerCase().includes(q)) return false;
     return true;
@@ -174,6 +190,7 @@ export default function CoursesPage() {
   // fixes that.
   const [publishDialogCourseId, setPublishDialogCourseId] = useState<string | null>(null);
   const [publishDialogAlreadyPublished, setPublishDialogAlreadyPublished] = useState(false);
+  const [publishDialogRoleIds, setPublishDialogRoleIds] = useState<string[]>([]);
 
   const createCourseMutation = useCreateCourseMutation();
   const revokeCourseMutation = useRevokeCourseMutation();
@@ -214,8 +231,9 @@ export default function CoursesPage() {
 
   // Publish Course — opens the audience-picker dialog rather than firing
   // straight at the API; see the publishDialogCourseId comment above.
-  const openPublishDialog = (id: string, alreadyPublished: boolean) => {
+  const openPublishDialog = (id: string, alreadyPublished: boolean, roleIds: string[]) => {
     setPublishDialogAlreadyPublished(alreadyPublished);
+    setPublishDialogRoleIds(roleIds);
     setPublishDialogCourseId(id);
   };
 
@@ -590,7 +608,7 @@ export default function CoursesPage() {
                             variant="ghost"
                             size="sm"
                             disabled={course.slideCount === 0}
-                            onClick={() => openPublishDialog(course.id, false)}
+                            onClick={() => openPublishDialog(course.id, false, course.roleIds)}
                             className="h-9 px-3 text-xs font-semibold text-[#C8D400] hover:bg-[#C8D400]/10 hover:text-[#B6C200] disabled:opacity-40 disabled:hover:bg-transparent rounded-lg cursor-pointer"
                           >
                             <Send className="h-3.5 w-3.5 mr-1" /> Broadcast
@@ -603,7 +621,7 @@ export default function CoursesPage() {
                             variant="ghost"
                             size="sm"
                             disabled={revokingId === course.id}
-                            onClick={() => openPublishDialog(course.id, true)}
+                            onClick={() => openPublishDialog(course.id, true, course.roleIds)}
                             title="Resend to Telegram"
                             className="h-9 w-9 p-0 text-muted-foreground hover:bg-[#C8D400]/10 hover:text-[#C8D400] rounded-lg cursor-pointer"
                           >
@@ -661,6 +679,7 @@ export default function CoursesPage() {
         onOpenChange={(open) => !open && setPublishDialogCourseId(null)}
         courseId={publishDialogCourseId}
         alreadyPublished={publishDialogAlreadyPublished}
+        initialRoleIds={publishDialogRoleIds}
       />
 
       <BrowseCloneDialog

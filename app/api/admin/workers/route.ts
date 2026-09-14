@@ -1,10 +1,10 @@
 import { db } from "@/db";
-import { workers, invites, courses, assignments, jurisdictions, organizationJurisdictions, jobRoles, employmentEvents } from "@/db/schema";
+import { workers, invites, courses, assignments, jurisdictions, organizationJurisdictions, jobRoles, employmentEvents, courseRoles } from "@/db/schema";
 import { requireOrgId } from "@/lib/org";
 import { roleOrUnauthorized } from "@/lib/adminRoles";
 import { computeAssignmentDueDate } from "@/lib/dates";
 import { auth } from "@clerk/nextjs/server";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { normalizePhone } from "@/lib/phone";
@@ -172,10 +172,31 @@ export async function POST(req: Request) {
       .from(courses)
       .where(and(eq(courses.organizationId, orgId), eq(courses.autoAssignNewWorkers, true), eq(courses.status, "published")));
 
-    const eligibleCourses = autoAssignCourses.filter((c) => {
+    const dateEligibleCourses = autoAssignCourses.filter((c) => {
       if (c.ownerJurisdictionId !== worker.jurisdictionId) return false;
       const publishDate = c.publishedAt ?? c.createdAt;
       return Math.abs(worker.createdAt.getTime() - new Date(publishDate).getTime()) <= AUTO_ASSIGN_WINDOW_MS;
+    });
+
+    // A course scoped to specific roles at publish time (course_roles rows
+    // present) should only auto-assign new hires matching one of those roles;
+    // a course with no course_roles rows is unrestricted.
+    const scopedRoleRows = dateEligibleCourses.length > 0
+      ? await db
+          .select({ courseId: courseRoles.courseId, roleId: courseRoles.roleId })
+          .from(courseRoles)
+          .where(inArray(courseRoles.courseId, dateEligibleCourses.map((c) => c.id)))
+      : [];
+    const scopedRoleIdsByCourse = new Map<string, string[]>();
+    for (const row of scopedRoleRows) {
+      const list = scopedRoleIdsByCourse.get(row.courseId) ?? [];
+      list.push(row.roleId);
+      scopedRoleIdsByCourse.set(row.courseId, list);
+    }
+    const eligibleCourses = dateEligibleCourses.filter((c) => {
+      const scopedRoleIds = scopedRoleIdsByCourse.get(c.id);
+      if (!scopedRoleIds || scopedRoleIds.length === 0) return true;
+      return !!worker.roleId && scopedRoleIds.includes(worker.roleId);
     });
 
     if (eligibleCourses.length > 0) {

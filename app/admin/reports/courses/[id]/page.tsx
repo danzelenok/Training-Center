@@ -240,7 +240,7 @@ export default function CourseSnapshotPage() {
               {workers.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-20 text-center px-4">
                   <p className="text-muted-foreground text-sm max-w-md">
-                    No workers were active as of the publish date.
+                    No workers were assigned this course as of the publish date.
                   </p>
                 </div>
               ) : filteredWorkers.length === 0 ? (

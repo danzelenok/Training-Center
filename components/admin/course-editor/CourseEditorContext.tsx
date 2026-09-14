@@ -19,8 +19,8 @@ import {
   useAdaptJurisdictionMutation,
   type PublishCourseResult,
 } from "@/hooks/admin/course-editor/mutations";
-import { useJurisdictionsQuery, useJobRolesQuery } from "@/hooks/admin/workers/queries";
-import type { JurisdictionRef, JobRoleRef } from "@/hooks/admin/workers/types";
+import { useJurisdictionsQuery } from "@/hooks/admin/workers/queries";
+import type { JurisdictionRef } from "@/hooks/admin/workers/types";
 import { useMeQuery } from "@/hooks/admin/useMeQuery";
 
 export type { Course, MediaLibraryFile };
@@ -29,7 +29,6 @@ interface CourseEditorContextType {
   course: Course | null;
   slidesList: Slide[];
   jurisdictionsList: JurisdictionRef[];
-  jobRolesList: JobRoleRef[];
   // True once we know (me query resolved) this course belongs to another
   // jurisdiction than the caller's own — same check the courses list page
   // uses to hide write actions. Undefined/false while `me`/`course` are
@@ -120,7 +119,6 @@ interface CourseEditorContextType {
   handleSelectPexelsPhoto: (photo: { id: number; url: string; thumbnail: string; photographer: string }) => void;
   handleSelectFromLibrary: (file: MediaLibraryFile) => void;
   updateCourseMeta: (field: "title" | "description", value: string) => void;
-  toggleCourseRole: (roleId: string, checked: boolean) => void;
   updateCourseJurisdiction: (jurisdictionId: string) => void;
   addSlide: (type: Slide["type"]) => void;
   deleteSlide: (indexToDelete: number) => void;
@@ -210,7 +208,6 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
         fontFamilyOverride: currentCourse.fontFamilyOverride ?? null,
         textColorOverride: currentCourse.textColorOverride ?? null,
         autoAssignNewWorkers: currentCourse.autoAssignNewWorkers,
-        roleIds: currentCourse.roleIds,
         jurisdictionId: currentCourse.ownerJurisdictionId,
         slides: slidesListRef.current,
       },
@@ -374,8 +371,6 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
 
   const jurisdictionsQuery = useJurisdictionsQuery();
   const jurisdictionsList = jurisdictionsQuery.data ?? [];
-  const jobRolesQuery = useJobRolesQuery();
-  const jobRolesList = jobRolesQuery.data ?? [];
 
   // Sync course + slidesList from the server whenever a fresh payload for
   // this courseId arrives — mirrors the old fetchCourse() success path.
@@ -577,20 +572,8 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
     setCourse({ ...course, [field]: value });
   };
 
-  // roleIds isn't in the debounced-effect's dependency list (title/description/
-  // theme only), so trigger the save explicitly rather than relying on that
-  // effect to notice the change.
-  const toggleCourseRole = (roleId: string, checked: boolean) => {
-    if (!course) return;
-    const roleIds = checked
-      ? [...course.roleIds, roleId]
-      : course.roleIds.filter((id) => id !== roleId);
-    setCourse({ ...course, roleIds });
-    triggerAutoSave();
-  };
-
-  // Same reasoning as toggleCourseRole — not in the debounced-effect deps,
-  // so trigger the save explicitly.
+  // ownerJurisdictionId isn't in the debounced-effect's dependency list, so
+  // trigger the save explicitly.
   const updateCourseJurisdiction = (jurisdictionId: string) => {
     if (!course) return;
     setCourse({ ...course, ownerJurisdictionId: jurisdictionId });
@@ -897,7 +880,6 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
         course,
         slidesList,
         jurisdictionsList,
-        jobRolesList,
         isReadOnly: !!isReadOnly,
         loading,
         saveStatus,
@@ -946,7 +928,6 @@ export function CourseEditorProvider({ children }: { children: React.ReactNode }
         handleSelectPexelsPhoto,
         handleSelectFromLibrary,
         updateCourseMeta,
-        toggleCourseRole,
         updateCourseJurisdiction,
         addSlide,
         deleteSlide,

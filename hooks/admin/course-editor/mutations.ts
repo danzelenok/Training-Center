@@ -12,7 +12,6 @@ interface AutosavePayload {
   fontFamilyOverride: string | null;
   textColorOverride: string | null;
   autoAssignNewWorkers: boolean;
-  roleIds: string[];
   jurisdictionId: string;
   slides: Slide[];
 }
@@ -171,7 +170,7 @@ export function usePPTXUploadMutation(courseId: string) {
 }
 
 export interface PublishCourseVars {
-  assignTo: "all" | "specific" | "roles";
+  assignTo: "all" | "specific";
   workerIds: string[];
   roleIds: string[];
   notifyWorkers: boolean;

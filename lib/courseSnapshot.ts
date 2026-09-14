@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { courses, workers, employmentEvents, jobRoles, jurisdictions, progress } from "@/db/schema";
+import { courses, workers, employmentEvents, jobRoles, jurisdictions, progress, assignments } from "@/db/schema";
 import { and, eq, inArray } from "drizzle-orm";
 
 export interface CourseSnapshotWorkerResult {
@@ -47,11 +47,16 @@ export function filterSnapshotWorkersByStatus(
 }
 
 /**
- * Reconstructs the active workforce as of a course's publishedAt date, using
+ * Reconstructs, for workers actually assigned this course (an assignments
+ * row for this courseId — via publish-time targeting or auto-assign of new
+ * hires), the workforce as of the course's publishedAt date, using
  * employment_events as the source of truth for who was hired/active and what
- * role they held at that date. Jurisdiction is NOT reconstructed historically
- * — workers.jurisdiction_id has no versioning (same gap team had before it
- * was removed), so this always reflects the worker's CURRENT jurisdiction,
+ * role they held at that date. A worker with no assignment for this course
+ * never appears here, regardless of activity/jurisdiction/role.
+ *
+ * Jurisdiction is NOT reconstructed historically — workers.jurisdiction_id
+ * has no versioning (same gap team had before it was removed), so this
+ * always reflects the worker's CURRENT jurisdiction,
  * labeled as such by callers, never presented as "jurisdiction on date X".
  *
  * A worker with no role-bearing event (hired.newRoleId or role_changed) at or
@@ -71,7 +76,7 @@ export async function getCourseSnapshot(orgId: string, courseId: string): Promis
   }
   const publishedAt = course.publishedAt;
 
-  const orgWorkers = await db
+  const allOrgWorkers = await db
     .select({
       id: workers.id,
       firstName: workers.firstName,
@@ -81,6 +86,27 @@ export async function getCourseSnapshot(orgId: string, courseId: string): Promis
     })
     .from(workers)
     .where(eq(workers.organizationId, orgId));
+
+  if (allOrgWorkers.length === 0) {
+    return { course: { id: course.id, title: course.title, publishedAt }, workers: [] };
+  }
+
+  // Only workers actually assigned this course (via "all in jurisdiction",
+  // "specific roles", "specific workers" at publish time, or auto-assign of
+  // new hires) belong in the snapshot — everyone else has no assignments row
+  // for this courseId and would otherwise show up as a misleading "Not
+  // Started" despite never having been asked to take the course.
+  const assignmentRows = await db
+    .select({ workerId: assignments.workerId })
+    .from(assignments)
+    .where(
+      and(
+        eq(assignments.courseId, courseId),
+        inArray(assignments.workerId, allOrgWorkers.map((w) => w.id))
+      )
+    );
+  const assignedWorkerIds = new Set(assignmentRows.map((a) => a.workerId));
+  const orgWorkers = allOrgWorkers.filter((w) => assignedWorkerIds.has(w.id));
 
   if (orgWorkers.length === 0) {
     return { course: { id: course.id, title: course.title, publishedAt }, workers: [] };

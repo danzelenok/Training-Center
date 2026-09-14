@@ -28,7 +28,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { RoleMultiSelect } from "@/components/admin/RoleMultiSelect";
 import { useCourseEditor } from "./CourseEditorContext";
 import { useCloneCourseMutation } from "@/hooks/admin/courses/mutations";
 import { useMeQuery } from "@/hooks/admin/useMeQuery";
@@ -89,8 +88,6 @@ export default function Sidebar() {
     slidesList,
     saveStatus,
     jurisdictionsList,
-    jobRolesList,
-    toggleCourseRole,
     updateCourseJurisdiction,
     setAdaptJurisdictionDialogOpen,
   } = useCourseEditor();
@@ -199,19 +196,6 @@ export default function Sidebar() {
             </>
           )}
         </div>
-
-        {jobRolesList.length > 0 && (
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block px-1">
-              Roles {(course?.roleIds.length ?? 0) === 0 && <span className="text-red-400">(required to publish)</span>}
-            </label>
-            <RoleMultiSelect
-              roles={jobRolesList}
-              selectedIds={course?.roleIds ?? []}
-              onToggle={toggleCourseRole}
-            />
-          </div>
-        )}
 
         {jurisdictionsList.length > 0 && (
           <div className="space-y-1.5">

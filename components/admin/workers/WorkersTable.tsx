@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Search,
   Users,
@@ -69,6 +69,21 @@ export function WorkersTable({
   const [statusTab, setStatusTab] = useState<"active" | "deactivated">("active");
   const [jurisdictionFilter, setJurisdictionFilter] = useState<string>("all");
   const { data: me } = useMeQuery();
+
+  // Default a jurisdiction_admin's view to their own state so the table
+  // isn't noisy with every other state's workers on first load — they can
+  // still switch to "All states" since the role already permits seeing
+  // everything, this only changes the initial filter value. Applied once,
+  // so it doesn't fight a manual switch back to "All states" later.
+  const appliedDefaultJurisdictionFilter = useRef(false);
+  useEffect(() => {
+    if (appliedDefaultJurisdictionFilter.current || !me) return;
+    appliedDefaultJurisdictionFilter.current = true;
+    if (me.role === "jurisdiction_admin" && me.jurisdiction) {
+      setJurisdictionFilter(me.jurisdiction.id);
+    }
+  }, [me]);
+
   // Same rule as WorkerDetailSheet: every action in this row's dropdown now
   // 403s server-side for a worker outside a jurisdiction_admin's own state
   // (see app/api/workers/[id]/{assign,invites,unbind} and app/api/reports/[id]).

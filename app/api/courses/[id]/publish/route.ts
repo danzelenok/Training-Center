@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { courses, slides, workers, assignments, courseRoles } from "@/db/schema";
+import { courses, slides, workers, assignments, courseRoles, jobRoles } from "@/db/schema";
 import { requireOrgId } from "@/lib/org";
 import { roleOrUnauthorized, canWriteCourse } from "@/lib/adminRoles";
 import { computeAssignmentDueDate } from "@/lib/dates";
@@ -22,10 +22,10 @@ export async function POST(
     if (roleResult instanceof Response) return roleResult;
 
     const body = await req.json().catch(() => ({}));
-    const assignTo: "all" | "specific" | "roles" =
-      body.assignTo === "specific" ? "specific" : body.assignTo === "roles" ? "roles" : "all";
+    const assignTo: "all" | "specific" =
+      body.assignTo === "specific" ? "specific" : "all";
     const requestedWorkerIds: string[] = Array.isArray(body.workerIds) ? body.workerIds : [];
-    const requestedRoleIds: string[] = Array.isArray(body.roleIds) ? body.roleIds : [];
+    const rawRoleIds: string[] = Array.isArray(body.roleIds) ? body.roleIds : [];
     const notifyWorkers: boolean = body.notifyWorkers ?? body.notifyTelegram ?? true;
 
     // 1. Fetch the course, scoped to this organization
@@ -53,6 +53,16 @@ export async function POST(
         ).map((w) => w.id)
       : [];
 
+    // Write-time invariant: only ever scope by roles that belong to this organization.
+    const requestedRoleIds = rawRoleIds.length
+      ? (
+          await db
+            .select({ id: jobRoles.id })
+            .from(jobRoles)
+            .where(and(inArray(jobRoles.id, rawRoleIds), eq(jobRoles.organizationId, orgId)))
+        ).map((r) => r.id)
+      : [];
+
     // 2. Enforce slide existence before publishing
     const [countResult] = await db
       .select({ count: sql<number>`cast(count(${slides.id}) as int)` })
@@ -67,57 +77,60 @@ export async function POST(
       );
     }
 
-    // A course must target at least one job role before it can go live —
-    // there's no DB-level way to express "at least one row in course_roles
-    // per course" (it's a many-to-many join table), so this is enforced here.
-    const [roleCountResult] = await db
-      .select({ count: sql<number>`cast(count(${courseRoles.id}) as int)` })
-      .from(courseRoles)
-      .where(eq(courseRoles.courseId, id));
-
-    if ((roleCountResult?.count || 0) === 0) {
-      return new NextResponse(
-        JSON.stringify({ error: "Cannot publish a course with no role assigned. Please select at least one role first." }),
-        { status: 400, headers: { "Content-Type": "application/json" } }
-      );
-    }
-
     const isFirstPublish = course.status !== "published";
 
     // 3. On first publish, create assignments according to the chosen scope
+    //    and record the role scope itself in course_roles (empty = every
+    //    role, i.e. unrestricted within the jurisdiction).
     if (isFirstPublish) {
       const assignedAt = new Date();
       const dueDate = computeAssignmentDueDate(assignedAt);
       if (assignTo === "all") {
-        const allWorkers = await db
-          .select({ id: workers.id })
-          .from(workers)
-          .where(and(
-            eq(workers.organizationId, orgId),
-            eq(workers.jurisdictionId, course.ownerJurisdictionId),
-            eq(workers.active, true)
-          ));
-        if (allWorkers.length > 0) {
+        const jurisdictionWorkers = requestedRoleIds.length > 0
+          ? await db
+              .select({ id: workers.id })
+              .from(workers)
+              .where(and(
+                eq(workers.organizationId, orgId),
+                eq(workers.jurisdictionId, course.ownerJurisdictionId),
+                eq(workers.active, true),
+                inArray(workers.roleId, requestedRoleIds)
+              ))
+          : await db
+              .select({ id: workers.id })
+              .from(workers)
+              .where(and(
+                eq(workers.organizationId, orgId),
+                eq(workers.jurisdictionId, course.ownerJurisdictionId),
+                eq(workers.active, true)
+              ));
+        if (jurisdictionWorkers.length > 0) {
           await db
             .insert(assignments)
-            .values(allWorkers.map((w) => ({ workerId: w.id, courseId: id, assignedAt, dueDate })))
+            .values(jurisdictionWorkers.map((w) => ({ workerId: w.id, courseId: id, assignedAt, dueDate })))
             .onConflictDoNothing({ target: [assignments.workerId, assignments.courseId] });
         }
-      } else if (assignTo === "roles" && requestedRoleIds.length > 0) {
-        const roleWorkers = await db
-          .select({ id: workers.id })
-          .from(workers)
-          .where(and(
-            eq(workers.organizationId, orgId),
-            eq(workers.jurisdictionId, course.ownerJurisdictionId),
-            eq(workers.active, true),
-            inArray(workers.roleId, requestedRoleIds)
-          ));
-        if (roleWorkers.length > 0) {
+
+        // Reconcile course_roles to exactly the roles picked here — this is
+        // now the only writer of course_roles (the editor no longer picks
+        // roles; see components/admin/course-editor/Sidebar.tsx history).
+        const existingRoles = await db
+          .select({ roleId: courseRoles.roleId })
+          .from(courseRoles)
+          .where(eq(courseRoles.courseId, id));
+        const existingRoleIds = new Set(existingRoles.map((r) => r.roleId));
+        const toAdd = requestedRoleIds.filter((rid) => !existingRoleIds.has(rid));
+        const toRemove = [...existingRoleIds].filter((rid) => !requestedRoleIds.includes(rid));
+        if (toRemove.length > 0) {
           await db
-            .insert(assignments)
-            .values(roleWorkers.map((w) => ({ workerId: w.id, courseId: id, assignedAt, dueDate })))
-            .onConflictDoNothing({ target: [assignments.workerId, assignments.courseId] });
+            .delete(courseRoles)
+            .where(and(eq(courseRoles.courseId, id), inArray(courseRoles.roleId, toRemove)));
+        }
+        if (toAdd.length > 0) {
+          await db
+            .insert(courseRoles)
+            .values(toAdd.map((roleId) => ({ courseId: id, roleId })))
+            .onConflictDoNothing({ target: [courseRoles.courseId, courseRoles.roleId] });
         }
       } else if (workerIds.length > 0) {
         await db
