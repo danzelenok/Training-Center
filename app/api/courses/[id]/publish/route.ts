@@ -10,7 +10,7 @@ import { sendCourseAnnouncementDMs } from "@/lib/bot";
 
 // POST /api/courses/[id]/publish — always creates a new course_runs row:
 // the first Go Live for a draft course (run #1) AND every subsequent
-// "Запустить повторно" (run #2, #3, ...) go through this same handler and
+// "Relaunch" (run #2, #3, ...) go through this same handler and
 // the same audience picker. A plain re-notification of the CURRENT run with
 // no new run/assignments is a different action — see
 // app/api/courses/[id]/resend/route.ts.
@@ -91,7 +91,7 @@ export async function POST(
 
     const isFirstPublish = course.status !== "published";
 
-    // 3. Every publish — first Go Live or a later "Запустить повторно" —
+    // 3. Every publish — first Go Live or a later "Relaunch" —
     //    creates a new course_runs row and a fresh set of assignments for
     //    it, scoped by the audience picked in this dialog. Old runs' own
     //    assignments/progress are never touched, so past completions stay

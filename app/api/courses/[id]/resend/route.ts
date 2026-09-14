@@ -7,7 +7,7 @@ import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { sendCourseAnnouncementDMs } from "@/lib/bot";
 
-// POST /api/courses/[id]/resend — "Прислать уведомление ещё раз": re-sends
+// POST /api/courses/[id]/resend — "Resend Announcement": re-sends
 // the Telegram DM announcement to whoever is assigned the course's CURRENT
 // (latest) run. Deliberately makes no data changes — no new course_runs row,
 // no new assignments, no new due dates. This is the old "Resend to

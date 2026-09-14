@@ -24,7 +24,7 @@ interface PublishCourseDialogProps {
   onOpenChange: (open: boolean) => void;
   courseId: string | null;
   // "publish": first Go Live for a draft course — creates run #1.
-  // "relaunch": "Запустить повторно" on an already-published course —
+  // "relaunch": "Relaunch" on an already-published course —
   // creates a new course_runs row and a fresh set of assignments/due dates
   // for whoever the audience picker below resolves to this time, without
   // touching older runs' assignments/progress (see
@@ -118,7 +118,7 @@ export function PublishCourseDialog({ open, onOpenChange, courseId, mode, onPubl
       <DialogContent className="sm:max-w-[460px]">
         <DialogHeader>
           <DialogTitle className="text-lg font-bold text-[#1B2A6B] dark:text-[#C8D400]">
-            {isRelaunch ? "Запустить повторно" : "Publish Course"}
+            {isRelaunch ? "Relaunch Course" : "Publish Course"}
           </DialogTitle>
           <DialogDescription className="text-muted-foreground text-xs mt-1">
             {isRelaunch

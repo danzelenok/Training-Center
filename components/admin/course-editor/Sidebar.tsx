@@ -238,7 +238,7 @@ export default function Sidebar() {
             {status === "published" ? (
               <>
                 <RotateCcw className="h-4 w-4 shrink-0" />
-                Запустить повторно
+                Relaunch Course
               </>
             ) : (
               <>
@@ -252,7 +252,7 @@ export default function Sidebar() {
               onClick={handleResend}
               disabled={resending}
               variant="outline"
-              title="Прислать уведомление ещё раз"
+              title="Resend Announcement"
               className="h-10 w-10 shrink-0 p-0 bg-background border-border text-muted-foreground hover:text-[#C8D400] hover:border-[#C8D400]/40 cursor-pointer rounded-xl"
             >
               {resending ? <Loader2 className="h-4 w-4 animate-spin" /> : <BellRing className="h-4 w-4" />}

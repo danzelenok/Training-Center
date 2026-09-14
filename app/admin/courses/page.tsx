@@ -24,6 +24,7 @@ import {
   Lock,
   Search,
   X,
+  MoreHorizontal,
 } from "lucide-react";
 import { format } from "date-fns";
 import { toast, Toaster } from "sonner";
@@ -58,6 +59,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 import { useCoursesQuery, useJurisdictionsQuery, useJobRolesQuery } from "@/hooks/admin/workers/queries";
 import { RoleMultiSelect } from "@/components/admin/RoleMultiSelect";
 import { useMeQuery } from "@/hooks/admin/useMeQuery";
@@ -150,10 +158,10 @@ export default function CoursesPage() {
   const [jurisdictionFilter, setJurisdictionFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "draft" | "published">("all");
   const [roleFilter, setRoleFilter] = useState<string[]>([]);
-  // "Давно не запускался" — surface courses whose last run.publishedAt is
-  // oldest first, so an admin can find compliance courses overdue for a
-  // relaunch without checking each one by hand. Never-published courses
-  // (lastRunPublishedAt === null) always sort last, in either direction.
+  // "Hasn't been relaunched in a while" — surface courses whose last
+  // run.publishedAt is oldest first, so an admin can find compliance courses
+  // overdue for a relaunch without checking each one by hand. Never-published
+  // courses (lastRunPublishedAt === null) always sort last, in either direction.
   const [sortBy, setSortBy] = useState<"created" | "lastRunAsc" | "lastRunDesc">("created");
 
   // Default a jurisdiction_admin's view to their own state so the list
@@ -204,7 +212,7 @@ export default function CoursesPage() {
   }
 
   // Publish/Relaunch dialog — audience picker for a first publish, and for
-  // "Запустить повторно" on an already-published course (see
+  // "Relaunch" on an already-published course (see
   // PublishCourseDialog). Both fire at POST /api/courses/:id/publish, which
   // now always creates a new run. Plain "resend" (no new run — just re-DM
   // the current run's assignees) is a separate action below, not routed
@@ -596,22 +604,22 @@ export default function CoursesPage() {
                         </span>
                       )}
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center gap-1.5 text-foreground font-medium">
-                        <Layers className="h-4 w-4 text-muted-foreground" />
+                        <Layers className="h-4 w-4 text-muted-foreground shrink-0" />
                         {course.slideCount} {course.slideCount === 1 ? "slide" : "slides"}
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-muted-foreground text-xs">
+                    <td className="px-6 py-4 text-muted-foreground text-xs whitespace-nowrap">
                       <div className="flex items-center gap-1.5">
-                        <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
+                        <Calendar className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                         {format(new Date(course.createdAt), "MMM d, yyyy")}
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-muted-foreground text-xs">
+                    <td className="px-6 py-4 text-muted-foreground text-xs whitespace-nowrap">
                       {course.lastRunPublishedAt ? (
                         <div className="flex items-center gap-1.5">
-                          <RotateCcw className="h-3.5 w-3.5 text-muted-foreground" />
+                          <RotateCcw className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                           {format(new Date(course.lastRunPublishedAt), "MMM d, yyyy")}
                         </div>
                       ) : (
@@ -649,7 +657,12 @@ export default function CoursesPage() {
                         )}
                         {writable && (
                         <>
-                        {/* Edit Button */}
+                        {/* Edit — the one action used on nearly every visit, kept
+                            one click away; everything else (publish-flow actions,
+                            revoke, delete) is rarer and lives in the overflow menu
+                            below so the row doesn't fight the date/slide columns
+                            for width (see WorkersTable's "Actions" dropdown for
+                            the same pattern). */}
                         <Link href={`/admin/courses/${course.id}`}>
                           <Button
                             variant="ghost"
@@ -660,83 +673,76 @@ export default function CoursesPage() {
                           </Button>
                         </Link>
 
-                        {/* Publish Button (Only for drafts with slides) */}
-                        {course.status === "draft" && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            disabled={course.slideCount === 0}
-                            onClick={() => openPublishDialog(course.id, "publish", course.roleIds)}
-                            className="h-9 px-3 text-xs font-semibold text-[#C8D400] hover:bg-[#C8D400]/10 hover:text-[#B6C200] disabled:opacity-40 disabled:hover:bg-transparent rounded-lg cursor-pointer"
-                          >
-                            <Send className="h-3.5 w-3.5 mr-1" /> Broadcast
-                          </Button>
-                        )}
-
-                        {/* Resend Button — re-DM the current run's assignees, no data changes (Only for published courses) */}
-                        {course.status === "published" && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            disabled={revokingId === course.id || resendingId === course.id}
-                            onClick={() => setConfirmDialog({ type: "resend", id: course.id })}
-                            title="Прислать уведомление ещё раз"
-                            className="h-9 w-9 p-0 text-muted-foreground hover:bg-[#C8D400]/10 hover:text-[#C8D400] rounded-lg cursor-pointer"
-                          >
-                            {resendingId === course.id ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <BellRing className="h-4 w-4" />
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              disabled={
+                                revokingId === course.id || resendingId === course.id || deletingId === course.id
+                              }
+                              className="h-9 w-9 p-0 text-muted-foreground hover:bg-muted hover:text-foreground rounded-lg cursor-pointer"
+                            >
+                              {revokingId === course.id || resendingId === course.id || deletingId === course.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <MoreHorizontal className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-56 bg-card border border-border text-foreground rounded-xl shadow-lg p-1 z-50">
+                            {/* Publish Button (Only for drafts with slides) */}
+                            {course.status === "draft" && (
+                              <DropdownMenuItem
+                                disabled={course.slideCount === 0}
+                                onClick={() => openPublishDialog(course.id, "publish", course.roleIds)}
+                                className="cursor-pointer hover:bg-[#C8D400]/10 text-xs rounded-lg px-3 py-2 transition-colors font-semibold text-[#C8D400] gap-2"
+                              >
+                                <Send className="h-3.5 w-3.5" /> Broadcast
+                              </DropdownMenuItem>
                             )}
-                          </Button>
-                        )}
 
-                        {/* Relaunch Button — opens the audience picker and starts a new run (Only for published courses) */}
-                        {course.status === "published" && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            disabled={revokingId === course.id}
-                            onClick={() => openPublishDialog(course.id, "relaunch", course.roleIds)}
-                            title="Запустить повторно"
-                            className="h-9 w-9 p-0 text-muted-foreground hover:bg-[#C8D400]/10 hover:text-[#C8D400] rounded-lg cursor-pointer"
-                          >
-                            <RotateCcw className="h-4 w-4" />
-                          </Button>
-                        )}
-
-                        {/* Revoke Button (Only for published courses) */}
-                        {course.status === "published" && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            disabled={revokingId === course.id}
-                            onClick={() => setConfirmDialog({ type: "revoke", id: course.id })}
-                            title="Revoke course from Telegram"
-                            className="h-9 w-9 p-0 text-muted-foreground hover:bg-orange-500/10 hover:text-orange-400 rounded-lg cursor-pointer"
-                          >
-                            {revokingId === course.id ? (
-                              <Loader2 className="h-4 w-4 animate-spin text-orange-500" />
-                            ) : (
-                              <XCircle className="h-4 w-4" />
+                            {/* Resend — re-DM the current run's assignees, no data changes */}
+                            {course.status === "published" && (
+                              <DropdownMenuItem
+                                onClick={() => setConfirmDialog({ type: "resend", id: course.id })}
+                                className="cursor-pointer hover:bg-[#C8D400]/10 text-xs rounded-lg px-3 py-2 transition-colors font-semibold text-foreground gap-2"
+                              >
+                                <BellRing className="h-3.5 w-3.5" /> Resend Announcement
+                              </DropdownMenuItem>
                             )}
-                          </Button>
-                        )}
- 
-                        {/* Delete Button */}
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          disabled={deletingId === course.id}
-                          onClick={() => setConfirmDialog({ type: "delete", id: course.id })}
-                          className="h-9 w-9 p-0 text-muted-foreground hover:bg-red-500/10 hover:text-red-400 rounded-lg cursor-pointer"
-                        >
-                          {deletingId === course.id ? (
-                            <Loader2 className="h-4 w-4 animate-spin text-red-500" />
-                          ) : (
-                            <Trash2 className="h-4 w-4" />
-                          )}
-                        </Button>
+
+                            {/* Relaunch — opens the audience picker and starts a new run */}
+                            {course.status === "published" && (
+                              <DropdownMenuItem
+                                onClick={() => openPublishDialog(course.id, "relaunch", course.roleIds)}
+                                className="cursor-pointer hover:bg-[#C8D400]/10 text-xs rounded-lg px-3 py-2 transition-colors font-semibold text-foreground gap-2"
+                              >
+                                <RotateCcw className="h-3.5 w-3.5" /> Relaunch Course
+                              </DropdownMenuItem>
+                            )}
+
+                            {course.status === "published" && <DropdownMenuSeparator className="bg-border" />}
+
+                            {/* Revoke (Only for published courses) */}
+                            {course.status === "published" && (
+                              <DropdownMenuItem
+                                onClick={() => setConfirmDialog({ type: "revoke", id: course.id })}
+                                className="cursor-pointer hover:bg-orange-500/10 text-xs rounded-lg px-3 py-2 transition-colors font-semibold text-orange-400 gap-2"
+                              >
+                                <XCircle className="h-3.5 w-3.5" /> Revoke from Telegram
+                              </DropdownMenuItem>
+                            )}
+
+                            {/* Delete */}
+                            <DropdownMenuItem
+                              onClick={() => setConfirmDialog({ type: "delete", id: course.id })}
+                              className="cursor-pointer hover:bg-red-500/10 text-xs rounded-lg px-3 py-2 transition-colors font-semibold text-red-400 gap-2"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" /> Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                         </>
                         )}
                       </div>

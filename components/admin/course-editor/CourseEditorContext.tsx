@@ -84,7 +84,7 @@ interface CourseEditorContextType {
   // publish button stale until a manual refresh.
   handlePublishSuccess: (result: PublishCourseResult) => void;
 
-  // "Прислать уведомление ещё раз" — re-DMs the current run's assignees with
+  // "Resend Announcement" — re-DMs the current run's assignees with
   // no data changes, separate from handlePublish (which now always starts a
   // new run). See app/api/courses/[id]/resend/route.ts.
   handleResend: () => Promise<void>;

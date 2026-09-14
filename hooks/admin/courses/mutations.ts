@@ -89,7 +89,7 @@ export function useRevokeCourseMutation() {
   });
 }
 
-// "Прислать уведомление ещё раз" — re-sends the Telegram DM to whoever is
+// "Resend Announcement" — re-sends the Telegram DM to whoever is
 // assigned the course's current run. Makes no data changes (no new run, no
 // new assignments/due dates) — see app/api/courses/[id]/resend/route.ts.
 // retry:0 for the same reason as publish: a retried resend should never
