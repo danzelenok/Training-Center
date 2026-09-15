@@ -1,8 +1,8 @@
 import { db } from "@/db";
-import { courses, slides } from "@/db/schema";
+import { assignments, courses, slides } from "@/db/schema";
 import { withTelegramAuth } from "@/lib/telegram";
 import { resolveCourseTheme } from "@/lib/theme-server";
-import { and, asc, eq, isNull, or, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, or } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 export const GET = withTelegramAuth<{ params: Promise<{ id: string }> }>(
@@ -16,7 +16,7 @@ export const GET = withTelegramAuth<{ params: Promise<{ id: string }> }>(
         return new NextResponse("Unauthorized", { status: 401 });
       }
 
-      // Fetch course details, scoped to the worker's organization and jurisdiction
+      // Fetch course details, scoped to the worker's organization.
       const [course] = await db
         .select({
           title: courses.title,
@@ -30,12 +30,26 @@ export const GET = withTelegramAuth<{ params: Promise<{ id: string }> }>(
         .from(courses)
         .where(and(
           eq(courses.id, id),
-          eq(courses.organizationId, worker.organizationId),
-          worker.jurisdictionId ? eq(courses.ownerJurisdictionId, worker.jurisdictionId) : sql`false`
+          eq(courses.organizationId, worker.organizationId)
         ))
         .limit(1);
 
       if (!course) {
+        return new NextResponse("Course not found", { status: 404 });
+      }
+
+      // Authorization: an assignment (any run) is what grants access to a
+      // course, not whether the worker's CURRENT jurisdiction still matches
+      // the course's owner jurisdiction — a worker reassigned to a different
+      // state after being assigned this course must still be able to open
+      // it (see app/api/mini-app/courses/route.ts for the matching list-view fix).
+      const [assignment] = await db
+        .select({ id: assignments.id })
+        .from(assignments)
+        .where(and(eq(assignments.workerId, worker.id), eq(assignments.courseId, id)))
+        .limit(1);
+
+      if (!assignment) {
         return new NextResponse("Course not found", { status: 404 });
       }
 

@@ -89,6 +89,13 @@ export const GET = withTelegramAuth(async (_req, { worker }) => {
     return NextResponse.json([]);
   }
 
+  // Visibility of an already-assigned course is governed by the assignment
+  // itself (latestByCourseId, above — scoped to this worker), not by whether
+  // the course's owner jurisdiction still matches the worker's CURRENT
+  // jurisdiction. A worker reassigned to a different state after being
+  // assigned a course (e.g. a relocation) must keep seeing it — jurisdiction
+  // only decides who gets assigned going forward (see the auto-assign
+  // eligibility filter above), never whether an existing assignment is shown.
   const courseRows = await db
     .select({
       id: courses.id,
@@ -101,8 +108,7 @@ export const GET = withTelegramAuth(async (_req, { worker }) => {
     .where(and(
       inArray(courses.id, [...latestByCourseId.keys()]),
       eq(courses.status, "published"),
-      eq(courses.organizationId, worker.organizationId),
-      eq(courses.ownerJurisdictionId, worker.jurisdictionId)
+      eq(courses.organizationId, worker.organizationId)
     ));
 
   const progressRows = await db
