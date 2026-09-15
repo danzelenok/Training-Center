@@ -108,7 +108,10 @@ export const GET = withTelegramAuth(async (_req, { worker }) => {
   const progressRows = await db
     .select({ runId: progress.runId, status: progress.status, currentSlideIndex: progress.currentSlideIndex })
     .from(progress)
-    .where(inArray(progress.runId, [...latestByCourseId.values()].map((v) => v.runId)));
+    .where(and(
+      eq(progress.workerId, worker.id),
+      inArray(progress.runId, [...latestByCourseId.values()].map((v) => v.runId))
+    ));
   const progressByRunId = new Map(progressRows.map((p) => [p.runId, p]));
 
   const result = courseRows

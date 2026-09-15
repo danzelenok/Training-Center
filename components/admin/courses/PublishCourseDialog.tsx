@@ -46,9 +46,13 @@ interface PublishCourseDialogProps {
   // relaunch instead of always starting from "All roles", per the spec's
   // "prefilled with the last run's roles".
   initialRoleIds?: string[];
+  // The course's owner jurisdiction — the "Specific workers" list must only
+  // ever offer workers from this jurisdiction, same scope the "All current
+  // workers in this jurisdiction" option already enforces server-side.
+  courseJurisdictionId?: string | null;
 }
 
-export function PublishCourseDialog({ open, onOpenChange, courseId, mode, onPublishSuccess, initialRoleIds }: PublishCourseDialogProps) {
+export function PublishCourseDialog({ open, onOpenChange, courseId, mode, onPublishSuccess, initialRoleIds, courseJurisdictionId }: PublishCourseDialogProps) {
   const queryClient = useQueryClient();
   const workersQuery = useWorkersQuery();
   const jobRolesQuery = useJobRolesQuery();
@@ -75,11 +79,12 @@ export function PublishCourseDialog({ open, onOpenChange, courseId, mode, onPubl
   }
 
   const workersList = (workersQuery.data?.workers ?? [])
-    .filter((w) => w.active)
+    .filter((w) => w.active && (!courseJurisdictionId || w.jurisdictionId === courseJurisdictionId))
     .map((w) => ({
       id: w.id,
       label: w.displayName || [w.firstName, w.lastName].filter(Boolean).join(" ") || w.telegramUsername || w.telegramUserId || "",
-    }));
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label));
   const pickersLoading = workersQuery.isLoading;
   const jobRolesList = jobRolesQuery.data ?? [];
 

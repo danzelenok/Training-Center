@@ -43,7 +43,7 @@ export async function GET(
       })
       .from(assignments)
       .innerJoin(courses, eq(courses.id, assignments.courseId))
-      .leftJoin(progress, eq(progress.runId, assignments.runId))
+      .leftJoin(progress, and(eq(progress.runId, assignments.runId), eq(progress.workerId, assignments.workerId)))
       .leftJoin(slides, eq(slides.courseId, courses.id))
       .where(eq(assignments.workerId, id))
       .groupBy(

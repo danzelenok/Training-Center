@@ -790,7 +790,7 @@ export const sendAssignmentReminders = inngest.createFunction(
         .from(assignments)
         .innerJoin(workers, and(eq(assignments.workerId, workers.id), eq(workers.active, true)))
         .innerJoin(courses, eq(assignments.courseId, courses.id))
-        .leftJoin(progress, eq(progress.runId, assignments.runId))
+        .leftJoin(progress, and(eq(progress.runId, assignments.runId), eq(progress.workerId, assignments.workerId)))
         .where(or(isNull(progress.status), ne(progress.status, "completed"))!);
 
       // Inngest step results are serialized to JSON, and raw BigInt values

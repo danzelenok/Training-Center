@@ -53,7 +53,7 @@ export async function GET(req: Request) {
       .from(assignments)
       .innerJoin(workers, and(eq(assignments.workerId, workers.id), eq(workers.organizationId, orgId), eq(workers.active, true)))
       .innerJoin(courses, eq(assignments.courseId, courses.id))
-      .leftJoin(progress, eq(progress.runId, assignments.runId))
+      .leftJoin(progress, and(eq(progress.runId, assignments.runId), eq(progress.workerId, assignments.workerId)))
       .leftJoin(afterCounts, eq(afterCounts.assignmentId, assignments.id))
       .where(and(
         or(isNull(progress.status), ne(progress.status, "completed"))!,

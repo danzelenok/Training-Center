@@ -762,6 +762,7 @@ export default function CoursesPage() {
         courseId={publishDialogCourseId}
         mode={publishDialogMode}
         initialRoleIds={publishDialogRoleIds}
+        courseJurisdictionId={courses.find((c) => c.id === publishDialogCourseId)?.ownerJurisdictionId ?? null}
       />
 
       <BrowseCloneDialog

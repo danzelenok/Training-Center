@@ -64,7 +64,7 @@ export async function GET(req: NextRequest) {
       .from(assignments)
       .innerJoin(workers, eq(assignments.workerId, workers.id))
       .innerJoin(courses, eq(assignments.courseId, courses.id))
-      .leftJoin(progress, eq(progress.runId, assignments.runId))
+      .leftJoin(progress, and(eq(progress.runId, assignments.runId), eq(progress.workerId, assignments.workerId)))
       .where(and(...conditions)!)
       .orderBy(sql`${progress.completedAt} DESC NULLS LAST`);
 

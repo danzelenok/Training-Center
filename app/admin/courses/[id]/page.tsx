@@ -781,6 +781,7 @@ function CourseEditorContent() {
         mode={course?.status === "published" ? "relaunch" : "publish"}
         onPublishSuccess={handlePublishSuccess}
         initialRoleIds={course?.roleIds ?? []}
+        courseJurisdictionId={course?.ownerJurisdictionId ?? null}
       />
 
       {/* Global Radix Dialog for AI Slide Generation */}
